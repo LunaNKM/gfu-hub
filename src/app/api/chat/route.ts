@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
 
         // 2단계: 병렬 검색
         const [ragSources, webResult] = await Promise.all([
-          routing.needsRag ? searchRelevantDocs(message, 5) : Promise.resolve([]),
+          routing.needsRag ? searchRelevantDocs(message, 15) : Promise.resolve([]),
           routing.needsWebSearch ? webSearch(message) : Promise.resolve({ answer: null, results: [] }),
         ])
 

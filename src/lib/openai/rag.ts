@@ -90,7 +90,7 @@ export async function searchRelevantDocs(
     }
 
     return scored
-      .filter((item) => item.score > 0)
+      .filter((item) => item.score > 0.05)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
   } catch (error) {
