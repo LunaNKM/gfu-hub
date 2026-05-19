@@ -8,10 +8,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 })
   }
 
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-  const key = process.env.GOOGLE_PRIVATE_KEY
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
+  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID
-  const configured = !!(email && key && folderId)
+  const configured = !!(clientId && clientSecret && refreshToken && folderId)
 
   const db = getFirestoreInstance()
   if (!db) {

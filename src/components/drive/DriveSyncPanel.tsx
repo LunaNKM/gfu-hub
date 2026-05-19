@@ -97,8 +97,9 @@ export function DriveSyncPanel() {
               Drive 파일을 자동으로 동기화하려면 환경변수를 설정하세요.
             </p>
             <div className="mt-2 bg-amber-100 rounded p-2 text-xs font-mono text-amber-900 space-y-1">
-              <div>GOOGLE_SERVICE_ACCOUNT_EMAIL=...</div>
-              <div>GOOGLE_PRIVATE_KEY=&quot;-----BEGIN PRIVATE KEY-----\n...&quot;</div>
+              <div>GOOGLE_OAUTH_CLIENT_ID=...</div>
+              <div>GOOGLE_OAUTH_CLIENT_SECRET=...</div>
+              <div>GOOGLE_OAUTH_REFRESH_TOKEN=...</div>
               <div>GOOGLE_DRIVE_FOLDER_ID=1xxxxxxxx...</div>
             </div>
           </div>
