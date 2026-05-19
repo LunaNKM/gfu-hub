@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { listDriveFiles, extractDriveFileText } from '@/lib/services/drive'
+import { listDriveFiles, extractDriveFileText, DriveFile } from '@/lib/services/drive'
 import { chunkText } from '@/lib/utils/chunking'
 import { getOpenAIClient } from '@/lib/openai/client'
 import {
@@ -9,6 +9,7 @@ import {
   where,
   doc,
   setDoc,
+  getDoc,
   updateDoc,
   Timestamp,
   addDoc,
@@ -17,9 +18,7 @@ import { getFirestoreInstance } from '@/lib/firebase/firestore'
 
 export const maxDuration = 60
 
-// Hobby 플랜: 한 번에 5개 파일씩 처리
-const BATCH_SIZE = 5
-// 10MB 초과 파일 건너뜀
+const BATCH_SIZE = 3
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
 export async function POST(req: NextRequest) {
@@ -28,10 +27,6 @@ export async function POST(req: NextRequest) {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 })
     }
-
-    // cursor: 이번 배치의 시작 인덱스
-    const body = await req.json().catch(() => ({}))
-    const cursor: number = typeof body.cursor === 'number' ? body.cursor : 0
 
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID
     if (!folderId) {
@@ -46,52 +41,72 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Firestore가 초기화되지 않았습니다.' }, { status: 503 })
     }
 
-    const openai = getOpenAIClient()
+    const body = await req.json().catch(() => ({}))
+    const action: string = body.action ?? 'process'
+    const cursor: number = typeof body.cursor === 'number' ? body.cursor : 0
 
-    // 전체 파일 목록 (cursor=0일 때만 로그)
-    const allFiles = await listDriveFiles(folderId)
-    const totalFiles = allFiles.length
+    // ── 1단계: 파일 목록 수집 후 Firestore에 캐싱 ──────────────
+    if (action === 'list') {
+      const files = await listDriveFiles(folderId)
+      const filesMeta = files.map((f) => ({
+        id: f.id,
+        name: f.name,
+        mimeType: f.mimeType,
+        modifiedTime: f.modifiedTime,
+        size: f.size ?? null,
+      }))
+
+      await setDoc(doc(db, 'settings', 'driveSyncQueue'), {
+        files: filesMeta,
+        totalFiles: filesMeta.length,
+        createdAt: Timestamp.now(),
+      })
+
+      return NextResponse.json({ phase: 'listed', totalFiles: filesMeta.length })
+    }
+
+    // ── 2단계: 캐싱된 목록으로 배치 처리 ──────────────────────
+    const queueSnap = await getDoc(doc(db, 'settings', 'driveSyncQueue'))
+    if (!queueSnap.exists()) {
+      return NextResponse.json({ error: '파일 목록이 없습니다. 다시 시도해주세요.' }, { status: 400 })
+    }
+
+    const queueData = queueSnap.data()
+    const allFiles: DriveFile[] = queueData.files ?? []
+    const totalFiles: number = queueData.totalFiles ?? allFiles.length
     const batch = allFiles.slice(cursor, cursor + BATCH_SIZE)
     const nextCursor = cursor + BATCH_SIZE < totalFiles ? cursor + BATCH_SIZE : null
+    const progress = Math.min(100, Math.round(((cursor + batch.length) / totalFiles) * 100))
 
+    const openai = getOpenAIClient()
     let synced = 0
     let skipped = 0
     const errors: string[] = []
 
     for (const file of batch) {
       try {
-        // 파일 크기 초과 건너뜀
         if (file.size && parseInt(file.size) > MAX_FILE_SIZE_BYTES) {
-          console.log(`건너뜀 (크기 초과): ${file.name}`)
           skipped++
           continue
         }
 
-        // 기존 문서 확인
-        const existingQ = query(
-          collection(db, 'docs'),
-          where('driveFileId', '==', file.id)
-        )
+        const existingQ = query(collection(db, 'docs'), where('driveFileId', '==', file.id))
         const existingSnap = await getDocs(existingQ)
 
-        // 변경 여부 확인
         if (!existingSnap.empty) {
-          const existingDoc = existingSnap.docs[0]
-          const existingModified = existingDoc.data().driveModifiedTime
+          const existingModified = existingSnap.docs[0].data().driveModifiedTime
           if (existingModified === file.modifiedTime) {
             skipped++
             continue
           }
         }
 
-        // 텍스트 추출
         const text = await extractDriveFileText(file.id, file.mimeType, file.name)
         if (!text || text.trim().length === 0) {
           skipped++
           continue
         }
 
-        // Firestore docs 컬렉션에 upsert
         const docData = {
           title: file.name,
           content: text.slice(0, 50000),
@@ -109,7 +124,6 @@ export async function POST(req: NextRequest) {
           docId = existingSnap.docs[0].id
           await updateDoc(doc(db, 'docs', docId), docData)
 
-          // 기존 청크 삭제
           const chunksQ = query(collection(db, 'docChunks'), where('docId', '==', docId))
           const chunksSnap = await getDocs(chunksQ)
           for (const chunkDoc of chunksSnap.docs) {
@@ -126,9 +140,7 @@ export async function POST(req: NextRequest) {
           docId = newDocRef.id
         }
 
-        // 청크 분할 (최대 10개로 제한)
         const chunks = chunkText(text).slice(0, 10)
-
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i]
           let embedding: number[] | undefined
@@ -141,7 +153,7 @@ export async function POST(req: NextRequest) {
               })
               embedding = embRes.data[0].embedding
             } catch (embErr) {
-              console.error(`청크 임베딩 실패 [${file.name}] chunk ${i}:`, embErr)
+              console.error(`임베딩 실패 [${file.name}] chunk ${i}:`, embErr)
             }
           }
 
@@ -159,12 +171,12 @@ export async function POST(req: NextRequest) {
 
         synced++
       } catch (fileErr) {
-        console.error(`파일 동기화 오류 [${file.name}]:`, fileErr)
+        console.error(`파일 오류 [${file.name}]:`, fileErr)
         errors.push(`${file.name}: ${fileErr instanceof Error ? fileErr.message : '알 수 없는 오류'}`)
       }
     }
 
-    // 마지막 배치일 때만 설정 저장
+    // 마지막 배치: 설정 저장 + 큐 삭제
     if (nextCursor === null) {
       await setDoc(doc(db, 'settings', 'driveSync'), {
         lastSyncAt: Timestamp.now(),
@@ -174,21 +186,10 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    return NextResponse.json({
-      synced,
-      skipped,
-      errors,
-      totalFiles,
-      cursor,
-      nextCursor,
-      progress: Math.min(100, Math.round(((cursor + batch.length) / totalFiles) * 100)),
-    })
+    return NextResponse.json({ synced, skipped, errors, totalFiles, cursor, nextCursor, progress })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error('Drive 동기화 오류:', error)
-    return NextResponse.json(
-      { error: `동기화 오류: ${message}` },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: `동기화 오류: ${message}` }, { status: 500 })
   }
 }

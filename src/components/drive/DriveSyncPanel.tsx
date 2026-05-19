@@ -60,21 +60,39 @@ export function DriveSyncPanel() {
     let totalSynced = 0
     let totalSkipped = 0
     const allErrors: string[] = []
-    let cursor: number | null = 0
 
     try {
       const token = await user.getIdToken()
 
+      // 1단계: 파일 목록 수집
+      const listRes: Response = await fetch('/api/drive/sync', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'list' }),
+      })
+      const listData = await listRes.json()
+      if (!listRes.ok) {
+        setErrorMessage(listData.error || '파일 목록 조회에 실패했습니다.')
+        showToast(listData.error || '파일 목록 조회에 실패했습니다.', 'error')
+        return
+      }
+
+      const totalFiles: number = listData.totalFiles ?? 0
+      if (totalFiles === 0) {
+        showToast('동기화할 파일이 없습니다.', 'info')
+        return
+      }
+
+      setProgress(5)
+
+      // 2단계: 배치 처리
+      let cursor: number | null = 0
       while (cursor !== null) {
         const res: Response = await fetch('/api/drive/sync', {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ cursor }),
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'process', cursor }),
         })
-
         const data = await res.json()
 
         if (!res.ok) {
@@ -86,7 +104,8 @@ export function DriveSyncPanel() {
         totalSynced += data.synced ?? 0
         totalSkipped += data.skipped ?? 0
         if (data.errors) allErrors.push(...data.errors)
-        setProgress(data.progress ?? 100)
+        // 5%는 목록 수집에 썼으니 나머지 95%를 처리 진행률로
+        setProgress(5 + Math.round((data.progress ?? 100) * 0.95))
 
         cursor = data.nextCursor ?? null
       }
