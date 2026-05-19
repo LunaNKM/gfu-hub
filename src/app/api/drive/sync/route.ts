@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { listDriveFiles, extractDriveFileText, DriveFile } from '@/lib/services/drive'
+import { listDriveFilesPage, extractDriveFileText } from '@/lib/services/drive'
 import { chunkText } from '@/lib/utils/chunking'
 import { getOpenAIClient } from '@/lib/openai/client'
 import {
@@ -9,7 +9,6 @@ import {
   where,
   doc,
   setDoc,
-  getDoc,
   updateDoc,
   Timestamp,
   addDoc,
@@ -18,7 +17,8 @@ import { getFirestoreInstance } from '@/lib/firebase/firestore'
 
 export const maxDuration = 60
 
-const BATCH_SIZE = 3
+// 한 요청당 처리할 파일 수 (Drive 리스트 + 텍스트 추출 + 임베딩 포함)
+const PAGE_SIZE = 5
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
 export async function POST(req: NextRequest) {
@@ -42,48 +42,18 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}))
-    const action: string = body.action ?? 'process'
-    const cursor: number = typeof body.cursor === 'number' ? body.cursor : 0
+    // pageToken: Drive API pageToken (null이면 처음부터)
+    const pageToken: string | undefined = body.pageToken ?? undefined
 
-    // ── 1단계: 파일 목록 수집 후 Firestore에 캐싱 ──────────────
-    if (action === 'list') {
-      const files = await listDriveFiles(folderId)
-      const filesMeta = files.map((f) => ({
-        id: f.id,
-        name: f.name,
-        mimeType: f.mimeType,
-        modifiedTime: f.modifiedTime,
-        size: f.size ?? null,
-      }))
-
-      await setDoc(doc(db, 'settings', 'driveSyncQueue'), {
-        files: filesMeta,
-        totalFiles: filesMeta.length,
-        createdAt: Timestamp.now(),
-      })
-
-      return NextResponse.json({ phase: 'listed', totalFiles: filesMeta.length })
-    }
-
-    // ── 2단계: 캐싱된 목록으로 배치 처리 ──────────────────────
-    const queueSnap = await getDoc(doc(db, 'settings', 'driveSyncQueue'))
-    if (!queueSnap.exists()) {
-      return NextResponse.json({ error: '파일 목록이 없습니다. 다시 시도해주세요.' }, { status: 400 })
-    }
-
-    const queueData = queueSnap.data()
-    const allFiles: DriveFile[] = queueData.files ?? []
-    const totalFiles: number = queueData.totalFiles ?? allFiles.length
-    const batch = allFiles.slice(cursor, cursor + BATCH_SIZE)
-    const nextCursor = cursor + BATCH_SIZE < totalFiles ? cursor + BATCH_SIZE : null
-    const progress = Math.min(100, Math.round(((cursor + batch.length) / totalFiles) * 100))
+    // Drive에서 PAGE_SIZE개 파일 가져오기 (재귀 없이 ancestors 쿼리)
+    const { files, nextPageToken } = await listDriveFilesPage(folderId, PAGE_SIZE, pageToken)
 
     const openai = getOpenAIClient()
     let synced = 0
     let skipped = 0
     const errors: string[] = []
 
-    for (const file of batch) {
+    for (const file of files) {
       try {
         if (file.size && parseInt(file.size) > MAX_FILE_SIZE_BYTES) {
           skipped++
@@ -142,18 +112,16 @@ export async function POST(req: NextRequest) {
 
         const chunks = chunkText(text).slice(0, 10)
         for (let i = 0; i < chunks.length; i++) {
-          const chunk = chunks[i]
           let embedding: number[] | undefined
-
           if (openai) {
             try {
               const embRes = await openai.embeddings.create({
                 model: 'text-embedding-3-small',
-                input: chunk.slice(0, 8000),
+                input: chunks[i].slice(0, 8000),
               })
               embedding = embRes.data[0].embedding
-            } catch (embErr) {
-              console.error(`임베딩 실패 [${file.name}] chunk ${i}:`, embErr)
+            } catch {
+              // 임베딩 실패해도 계속 진행
             }
           }
 
@@ -161,7 +129,7 @@ export async function POST(req: NextRequest) {
             docId,
             title: file.name,
             chunkIndex: i,
-            content: chunk,
+            content: chunks[i],
             category: 'Google Drive',
             tags: ['drive'],
             updatedAt: Timestamp.now(),
@@ -171,13 +139,12 @@ export async function POST(req: NextRequest) {
 
         synced++
       } catch (fileErr) {
-        console.error(`파일 오류 [${file.name}]:`, fileErr)
         errors.push(`${file.name}: ${fileErr instanceof Error ? fileErr.message : '알 수 없는 오류'}`)
       }
     }
 
-    // 마지막 배치: 설정 저장 + 큐 삭제
-    if (nextCursor === null) {
+    // 마지막 페이지: 동기화 완료 시간 저장
+    if (!nextPageToken) {
       await setDoc(doc(db, 'settings', 'driveSync'), {
         lastSyncAt: Timestamp.now(),
         synced,
@@ -186,7 +153,13 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    return NextResponse.json({ synced, skipped, errors, totalFiles, cursor, nextCursor, progress })
+    return NextResponse.json({
+      synced,
+      skipped,
+      errors,
+      nextPageToken,
+      done: !nextPageToken,
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error('Drive 동기화 오류:', error)

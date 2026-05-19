@@ -63,35 +63,14 @@ export function DriveSyncPanel() {
 
     try {
       const token = await user.getIdToken()
+      let pageToken: string | null = null
+      let batchCount = 0
 
-      // 1단계: 파일 목록 수집
-      const listRes: Response = await fetch('/api/drive/sync', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'list' }),
-      })
-      const listData = await listRes.json()
-      if (!listRes.ok) {
-        setErrorMessage(listData.error || '파일 목록 조회에 실패했습니다.')
-        showToast(listData.error || '파일 목록 조회에 실패했습니다.', 'error')
-        return
-      }
-
-      const totalFiles: number = listData.totalFiles ?? 0
-      if (totalFiles === 0) {
-        showToast('동기화할 파일이 없습니다.', 'info')
-        return
-      }
-
-      setProgress(5)
-
-      // 2단계: 배치 처리
-      let cursor: number | null = 0
-      while (cursor !== null) {
+      do {
         const res: Response = await fetch('/api/drive/sync', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'process', cursor }),
+          body: JSON.stringify({ pageToken }),
         })
         const data = await res.json()
 
@@ -104,11 +83,12 @@ export function DriveSyncPanel() {
         totalSynced += data.synced ?? 0
         totalSkipped += data.skipped ?? 0
         if (data.errors) allErrors.push(...data.errors)
-        // 5%는 목록 수집에 썼으니 나머지 95%를 처리 진행률로
-        setProgress(5 + Math.round((data.progress ?? 100) * 0.95))
+        batchCount++
+        // 완료 여부 모르므로 진행 중 표시 (완료시 100%)
+        setProgress(data.done ? 100 : Math.min(95, batchCount * 10))
 
-        cursor = data.nextCursor ?? null
-      }
+        pageToken = data.nextPageToken ?? null
+      } while (pageToken)
 
       const result = { synced: totalSynced, skipped: totalSkipped, errors: allErrors }
       setLastResult(result)

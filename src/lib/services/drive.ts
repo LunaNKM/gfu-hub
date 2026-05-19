@@ -9,6 +9,11 @@ export interface DriveFile {
   size?: string
 }
 
+export interface DriveFilePage {
+  files: DriveFile[]
+  nextPageToken: string | null
+}
+
 export function getDriveClient() {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
@@ -25,57 +30,73 @@ export function getDriveClient() {
   }
 }
 
-type DriveClient = NonNullable<ReturnType<typeof getDriveClient>>
-
-async function listFolderRecursive(
-  drive: DriveClient,
+/**
+ * 폴더 내 파일을 pageToken 기반으로 페이지 단위로 가져옴.
+ * 재귀 스캔 없이 'ancestors' 쿼리로 하위 폴더까지 한 번에 검색.
+ */
+export async function listDriveFilesPage(
   folderId: string,
-  results: DriveFile[]
-): Promise<void> {
-  let pageToken: string | undefined = undefined
-  do {
-    const params: {
-      q: string
-      fields: string
-      pageSize: number
-      pageToken?: string
-      supportsAllDrives: boolean
-      includeItemsFromAllDrives: boolean
-      corpora: string
-    } = {
-      q: `'${folderId}' in parents and trashed = false`,
-      fields: 'nextPageToken, files(id,name,mimeType,modifiedTime,size)',
-      pageSize: 100,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-      corpora: 'allDrives',
-    }
-    if (pageToken) params.pageToken = pageToken
-    const res = await drive.files.list(params)
-    const files = res.data.files ?? []
-    for (const file of files) {
-      if (file.mimeType === 'application/vnd.google-apps.folder') {
-        await listFolderRecursive(drive, file.id!, results)
-      } else {
-        results.push({
-          id: file.id!,
-          name: file.name!,
-          mimeType: file.mimeType!,
-          modifiedTime: file.modifiedTime ?? '',
-          size: file.size ?? undefined,
-        })
-      }
-    }
-    pageToken = res.data.nextPageToken ?? undefined
-  } while (pageToken)
+  pageSize: number = 10,
+  pageToken?: string
+): Promise<DriveFilePage> {
+  const drive = getDriveClient()
+  if (!drive) return { files: [], nextPageToken: null }
+
+  const res = await drive.files.list({
+    q: `'${folderId}' in ancestors and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
+    fields: 'nextPageToken, files(id,name,mimeType,modifiedTime,size)',
+    pageSize,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+    corpora: 'allDrives',
+    ...(pageToken ? { pageToken } : {}),
+  })
+
+  const files = (res.data.files ?? []).map((f) => ({
+    id: f.id!,
+    name: f.name!,
+    mimeType: f.mimeType!,
+    modifiedTime: f.modifiedTime ?? '',
+    size: f.size ?? undefined,
+  }))
+
+  return {
+    files,
+    nextPageToken: res.data.nextPageToken ?? null,
+  }
 }
 
+// 하위 호환성을 위해 유지 (status route에서 사용)
 export async function listDriveFiles(folderId: string): Promise<DriveFile[]> {
   const drive = getDriveClient()
   if (!drive) return []
 
   const results: DriveFile[] = []
-  await listFolderRecursive(drive, folderId, results)
+  let pageToken: string | undefined = undefined
+
+  do {
+    const res = await drive.files.list({
+      q: `'${folderId}' in ancestors and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: 'nextPageToken, files(id,name,mimeType,modifiedTime,size)',
+      pageSize: 100,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+      corpora: 'allDrives',
+      ...(pageToken ? { pageToken } : {}),
+    })
+
+    for (const f of res.data.files ?? []) {
+      results.push({
+        id: f.id!,
+        name: f.name!,
+        mimeType: f.mimeType!,
+        modifiedTime: f.modifiedTime ?? '',
+        size: f.size ?? undefined,
+      })
+    }
+    pageToken = res.data.nextPageToken ?? undefined
+  } while (pageToken)
+
   return results
 }
 
@@ -88,7 +109,6 @@ export async function extractDriveFileText(
   if (!drive) return null
 
   try {
-    // Google Workspace 파일
     if (mimeType === 'application/vnd.google-apps.document') {
       const res = await drive.files.export(
         { fileId, mimeType: 'text/plain' },
@@ -113,7 +133,6 @@ export async function extractDriveFileText(
       return (res.data as string) ?? null
     }
 
-    // 일반 파일 다운로드 후 처리
     const res = await drive.files.get(
       { fileId, alt: 'media', supportsAllDrives: true },
       { responseType: 'arraybuffer' }
@@ -135,13 +154,7 @@ export async function extractDriveFileText(
       return result.value
     }
 
-    const textTypes = [
-      'text/plain',
-      'text/markdown',
-      'application/json',
-      'text/csv',
-      'text/html',
-    ]
+    const textTypes = ['text/plain', 'text/markdown', 'application/json', 'text/csv', 'text/html']
     const textExtensions = ['.txt', '.md', '.json', '.csv', '.html', '.htm']
     const isText =
       textTypes.includes(mimeType) ||
@@ -151,7 +164,6 @@ export async function extractDriveFileText(
       return buffer.toString('utf-8')
     }
 
-    // 이미지, 동영상 등 지원 불가 파일
     return null
   } catch (err) {
     console.error(`Drive 파일 텍스트 추출 오류 [${fileName}]:`, err)
