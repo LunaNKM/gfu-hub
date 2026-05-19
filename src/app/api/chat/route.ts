@@ -178,7 +178,7 @@ export async function POST(req: NextRequest) {
           ],
           stream: true,
           stream_options: { include_usage: true },
-          max_tokens: 4000,
+          max_completion_tokens: 4000,
         })
 
         let inputTokens = 0
