@@ -7,6 +7,10 @@ export const metadata: Metadata = {
   title: 'GFU Hub',
   description: 'GFutures 내부 통합 런처',
   robots: 'noindex, nofollow',
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
+  },
 }
 
 export default function RootLayout({
