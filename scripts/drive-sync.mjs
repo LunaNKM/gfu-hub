@@ -246,7 +246,7 @@ async function main() {
       // Firestore upsert
       const docData = {
         title: file.name,
-        content: text.slice(0, 100000),
+        content: text.slice(0, 50000),
         category: 'Google Drive',
         tags: ['drive'],
         isActive: true,
@@ -281,11 +281,9 @@ async function main() {
         docId = ref.id
       }
 
-      // 청크 + 임베딩 생성 (파일당 최대 50청크 = ~100,000자)
-      const chunks = chunkText(text).slice(0, 50)
+      // 청크 + 임베딩 생성 (파일당 최대 30청크 = ~60,000자)
+      const chunks = chunkText(text).slice(0, 30)
 
-      // 청크를 400개 단위 배치로 나눠서 Firestore에 쓰기
-      // (배치당 최대 500, 임베딩 포함 고려해 400으로 제한)
       const chunkDocs = []
       for (let ci = 0; ci < chunks.length; ci++) {
         let embedding = undefined
@@ -312,14 +310,29 @@ async function main() {
         })
       }
 
-      // WriteBatch로 400개씩 커밋
-      for (let bi = 0; bi < chunkDocs.length; bi += 400) {
+      // WriteBatch로 20개씩 커밋 (임베딩 포함 시 트랜잭션 크기 초과 방지)
+      for (let bi = 0; bi < chunkDocs.length; bi += 20) {
+        const slice = chunkDocs.slice(bi, bi + 20)
         const batch = writeBatch(db)
-        chunkDocs.slice(bi, bi + 400).forEach((data) => {
+        slice.forEach((data) => {
           batch.set(doc(collection(db, 'docChunks')), data)
         })
-        await batch.commit()
-        if (bi + 400 < chunkDocs.length) await sleep(300)
+        try {
+          await batch.commit()
+        } catch (batchErr) {
+          const msg = batchErr?.message ?? ''
+          if (msg.includes('too big') || msg.includes('INVALID_ARGUMENT')) {
+            // 배치가 너무 클 경우 개별 write로 fallback
+            console.warn(`  ⚠️ 배치 too big, 개별 write로 재시도 (청크 ${bi}~${bi + slice.length - 1})`)
+            for (const data of slice) {
+              await addDoc(collection(db, 'docChunks'), data)
+              await sleep(100)
+            }
+          } else {
+            throw batchErr
+          }
+        }
+        if (bi + 20 < chunkDocs.length) await sleep(500)
       }
 
       console.log(`  ✅ 완료 (청크 ${chunks.length}개)`)
