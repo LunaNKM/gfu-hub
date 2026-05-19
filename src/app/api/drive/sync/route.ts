@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { listFolderPage, extractDriveFileText } from '@/lib/services/drive'
+import { listFolderPage, extractDriveFileText, isSupportedFileType } from '@/lib/services/drive'
 import { chunkText } from '@/lib/utils/chunking'
 import { getOpenAIClient } from '@/lib/openai/client'
 import {
@@ -65,6 +65,12 @@ export async function POST(req: NextRequest) {
 
     for (const file of files) {
       try {
+        // 지원하지 않는 파일 타입 건너뜀 (PDF, DOCX 등 메모리 과다 사용)
+        if (!isSupportedFileType(file.mimeType, file.name)) {
+          skipped++
+          continue
+        }
+
         if (file.size && parseInt(file.size) > MAX_FILE_SIZE_BYTES) {
           skipped++
           continue

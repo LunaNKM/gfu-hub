@@ -104,6 +104,25 @@ export async function listDriveFiles(folderId: string): Promise<DriveFile[]> {
   return results
 }
 
+// Hobby 플랜에서 처리 가능한 파일 타입 체크
+export function isSupportedFileType(mimeType: string, fileName: string): boolean {
+  // Google Workspace 파일은 export API 사용 (메모리 효율적)
+  if (
+    mimeType === 'application/vnd.google-apps.document' ||
+    mimeType === 'application/vnd.google-apps.spreadsheet' ||
+    mimeType === 'application/vnd.google-apps.presentation'
+  ) return true
+
+  // 텍스트 기반 파일 (크기가 작음)
+  const textTypes = ['text/plain', 'text/markdown', 'application/json', 'text/csv', 'text/html']
+  const textExtensions = ['.txt', '.md', '.json', '.csv', '.html', '.htm']
+  if (textTypes.includes(mimeType)) return true
+  if (textExtensions.some((ext) => fileName.toLowerCase().endsWith(ext))) return true
+
+  // PDF, DOCX 등 대용량 파싱 파일은 Hobby 플랜에서 메모리 초과 → 건너뜀
+  return false
+}
+
 export async function extractDriveFileText(
   fileId: string,
   mimeType: string,
@@ -137,34 +156,20 @@ export async function extractDriveFileText(
       return (res.data as string) ?? null
     }
 
-    const res = await drive.files.get(
-      { fileId, alt: 'media', supportsAllDrives: true },
-      { responseType: 'arraybuffer' }
-    )
-    const buffer = Buffer.from(res.data as ArrayBuffer)
-
-    if (mimeType === 'application/pdf') {
-      const pdfParse = (await import('pdf-parse')).default
-      const data = await pdfParse(buffer)
-      return data.text
-    }
-
-    if (
-      mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      fileName.endsWith('.docx')
-    ) {
-      const mammoth = await import('mammoth')
-      const result = await mammoth.extractRawText({ buffer })
-      return result.value
-    }
-
+    // 텍스트 파일만 다운로드 (PDF/DOCX 제외)
     const textTypes = ['text/plain', 'text/markdown', 'application/json', 'text/csv', 'text/html']
     const textExtensions = ['.txt', '.md', '.json', '.csv', '.html', '.htm']
     const isText =
       textTypes.includes(mimeType) ||
       textExtensions.some((ext) => fileName.toLowerCase().endsWith(ext))
 
-    if (isText) return buffer.toString('utf-8')
+    if (isText) {
+      const res = await drive.files.get(
+        { fileId, alt: 'media', supportsAllDrives: true },
+        { responseType: 'text' }
+      )
+      return (res.data as string) ?? null
+    }
 
     return null
   } catch (err) {
