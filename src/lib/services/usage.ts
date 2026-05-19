@@ -3,7 +3,6 @@ import {
   getDocs,
   addDoc,
   Timestamp,
-  orderBy,
   query,
   where,
 } from 'firebase/firestore'
@@ -67,18 +66,22 @@ export async function getMyUsage(userId: string): Promise<AiUsageLog[]> {
   if (!db) return []
 
   try {
+    // orderBy를 Firestore 쿼리에서 제거 → 복합 인덱스 불필요
+    // 정렬은 클라이언트에서 처리
     const q = query(
       collection(db, 'aiUsageLogs'),
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
+      where('userId', '==', userId)
     )
     const snapshot = await getDocs(q)
-    return snapshot.docs.map((d) => ({
+    const logs = snapshot.docs.map((d) => ({
       id: d.id,
       ...d.data(),
-      costUsd: d.data().costUsd ?? calcCostUsd(d.data().model, d.data().inputTokens, d.data().outputTokens),
+      costUsd: d.data().costUsd ?? calcCostUsd(d.data().model, d.data().inputTokens ?? 0, d.data().outputTokens ?? 0),
       createdAt: convertTimestamp(d.data().createdAt),
     })) as AiUsageLog[]
+
+    // 최신순 정렬
+    return logs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
   } catch (error) {
     console.error('사용량 조회 오류:', error)
     return []
