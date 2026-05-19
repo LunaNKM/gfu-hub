@@ -14,25 +14,44 @@ function routeQuery(message: string): {
 } {
   const msg = message.toLowerCase()
 
-  const internalKeywords = [
-    '우리', '회사', '사내', '내부', '지난', '이전', '저번', '예전',
+  // 사내 데이터가 필요한 신호 — 과거·우리·특정 프로젝트 언급
+  const internalSignals = [
+    '우리', '회사', '사내', '내부', '지난', '이전', '저번', '예전', '기존',
     '캠페인', '프로젝트', '클라이언트', '진행', '결과', '보고', '우리팀',
-    '지금까지', '했던', '했었', '진행했', '작업했',
-  ]
-  const strategyKeywords = [
-    '전략', '기획', '제안', '방향', '어떻게', '방법', '트렌드', '분석',
-    '시장', '경쟁', '최신', '현황', '인사이트', '추천', '알려줘',
-  ]
-  const japanKeywords = [
-    '일본', 'japan', 'jp', '도쿄', '오사카', '일본어',
-    '인플루언서', 'sns', '인스타', '틱톡', '유튜브', 'line', 'x트위터',
+    '지금까지', '했던', '했었', '진행했', '작업했', '담당', '계약', '제안서',
+    '인플루언서', '섭외', '집행', '예산', '실적', '성과', '리스트', '목록',
+    '정리해', '찾아줘', '알려줘', '뭐야', '뭐였', '어떻게 됐',
   ]
 
-  const isInternal = internalKeywords.some((k) => msg.includes(k))
-  const isStrategy = strategyKeywords.some((k) => msg.includes(k))
-  const isJapan = japanKeywords.some((k) => msg.includes(k))
+  // 최신 외부 정보가 필요한 신호 — 트렌드·시장·경쟁
+  const webSignals = [
+    '트렌드', '최신', '요즘', '올해', '2024', '2025', '2026',
+    '시장', '경쟁사', '업계', '현황', '동향', '뉴스',
+    '알고리즘', '변경', '업데이트', '새로운',
+  ]
 
-  if (isInternal && !isStrategy) {
+  // 전략·기획 — 두 소스를 모두 활용해야 가장 좋은 답변
+  const strategySignals = [
+    '전략', '기획', '제안', '방향', '어떻게 하면', '방법', '어떻게 해야',
+    '분석', '인사이트', '추천', '개선', '아이디어', '플랜',
+  ]
+
+  const isInternal = internalSignals.some((k) => msg.includes(k))
+  const isWeb = webSignals.some((k) => msg.includes(k))
+  const isStrategy = strategySignals.some((k) => msg.includes(k))
+
+  // 단순 대화·일반 질문 — 검색 불필요
+  const isSimpleChat = !isInternal && !isWeb && !isStrategy
+
+  if (isSimpleChat) {
+    return {
+      needsRag: false,
+      needsWebSearch: false,
+      planText: '💬 질문을 분석합니다.',
+    }
+  }
+
+  if (isInternal && !isWeb && !isStrategy) {
     return {
       needsRag: true,
       needsWebSearch: false,
@@ -40,26 +59,19 @@ function routeQuery(message: string): {
     }
   }
 
-  if (isStrategy && isJapan) {
+  if ((isWeb || isStrategy) && !isInternal) {
     return {
-      needsRag: isInternal,
+      needsRag: false,
       needsWebSearch: true,
-      planText: '🔍 일본 마케팅 최신 동향을 조사하고' + (isInternal ? ' 사내 자료와 함께' : '') + ' 전략을 구성합니다.',
+      planText: '🔍 최신 데이터를 조사하여 근거 있는 답변을 구성합니다.',
     }
   }
 
-  if (isStrategy) {
-    return {
-      needsRag: isInternal,
-      needsWebSearch: true,
-      planText: '🔍 최신 데이터를 조사하고' + (isInternal ? ' 사내 자료와 함께' : '') + ' 근거 있는 전략을 구성합니다.',
-    }
-  }
-
+  // 사내 + 외부 모두 필요
   return {
     needsRag: true,
-    needsWebSearch: false,
-    planText: '💬 질문을 분석하고 최적의 답변을 준비합니다.',
+    needsWebSearch: isWeb || isStrategy,
+    planText: '📂🔍 사내 자료와 최신 외부 데이터를 함께 조합하여 전략을 구성합니다.',
   }
 }
 
@@ -69,49 +81,99 @@ function buildSystemPrompt(
   webResults: { title: string; url: string; content: string }[],
   webAnswer: string | null
 ): string {
-  const base = `당신은 GFutures의 마케팅 전략 전문 AI 어시스턴트입니다.
-특히 일본 디지털 마케팅 분야의 최고 전문가입니다.
+  const hasSources = ragSources.length > 0 || webResults.length > 0 || !!webAnswer
 
-[전문 분야]
+  const base = `# 정체성 및 역할
+
+당신은 **GFutures AI**입니다. GFutures는 한국 기반의 일본 디지털 마케팅 전문 에이전시이며, 당신은 이 회사의 전략 파트너 AI입니다.
+
+당신의 핵심 역량:
 - 일본 SNS 마케팅 (Instagram, TikTok, LINE, X(Twitter), YouTube)
-- 일본 인플루언서 마케팅 (캐스팅, 캠페인 기획, KPI 설정, ROI 측정)
-- 일본 소비자 심리와 문화적 맥락 (혼네/타테마에, 집단주의, 신뢰 문화)
+- 일본 인플루언서 마케팅 전반 (캐스팅, 캠페인 기획, KPI 설정, ROI 분석)
+- 일본 소비자 심리 및 문화 맥락 (혼네/타테마에, 신뢰 기반 소비, 집단주의)
 - K-콘텐츠·K-뷰티의 일본 시장 진입 전략
-- 한일 크로스보더 마케팅 캠페인
+- 한일 크로스보더 캠페인 기획 및 실행
 
-[답변 원칙]
-1. 전략 기획 질문: 학습 데이터에만 의존하지 말고, 제공된 조사 결과를 반드시 활용하라.
-2. 일본 특수성: 일본 문화·소비자 행동·플랫폼 특성을 항상 반영하라.
-3. 실행 가능성: 이론보다 구체적 액션 아이템과 실행 방법을 제시하라.
-4. 근거 기반: 수치, 통계, 구체적 사례로 반드시 뒷받침하라.
-5. 구조화: 마크다운으로 명확하게 구조화하라.
-6. 한국어로 답변하라.`
+---
+
+# 사고 방식 (Reasoning Protocol)
+
+답변을 생성하기 전에 반드시 아래 순서로 판단하라.
+
+1. **질문 의도 파악**: 사용자가 진짜로 원하는 것이 무엇인지 파악한다. 표면적 질문 뒤에 있는 실제 필요를 읽어라.
+2. **정보 우선순위 결정**: 아래 우선순위에 따라 사용할 정보를 결정한다.
+   - 1순위: 제공된 사내 문서 (가장 신뢰할 수 있는 실제 데이터)
+   - 2순위: 제공된 웹 조사 결과 (최신 외부 정보)
+   - 3순위: 학습된 일반 지식 (사내 문서·웹 조사로 보완되지 않은 영역에만)
+3. **정보 공백 인식**: 사내 문서에 관련 정보가 없다면, 없다고 명확히 밝히고 추론임을 표시하라.
+4. **답변 깊이 설정**: 질문의 복잡도에 비례해 답변 길이를 결정한다. 간단한 질문에 장황하게 답하지 마라.
+
+---
+
+# 답변 품질 기준
+
+## 반드시 지킬 것
+- **결론 우선**: 핵심 답변을 맨 앞에 배치하고, 근거와 세부 내용은 그 뒤에 전개한다.
+- **수치 기반**: 전략·분석 답변은 수치, 통계, 구체적 사례로 반드시 뒷받침한다. 수치 없는 주장은 "(추정)" 또는 "(일반적 경향)"으로 표시한다.
+- **실행 가능성**: 이론이나 프레임워크 나열로 끝내지 말고, 내일 당장 실행 가능한 액션 아이템을 포함한다.
+- **일본 맥락 반영**: 마케팅 전략 답변은 일본 특유의 소비자 행동·플랫폼 문화·규제 환경을 항상 반영한다.
+- **출처 명시**: 사내 문서에서 가져온 내용은 "사내 자료에 따르면", 웹 조사 결과는 "최신 조사 결과" 또는 출처 URL을 함께 표시한다.
+
+## 절대 하지 말 것
+- 모른다는 사실을 숨기거나, 모르는 내용을 아는 척 지어내는 것
+- "~할 수 있습니다", "~하는 것이 좋을 것 같습니다" 같은 불필요한 완충 표현 남발
+- 질문과 무관한 일반론 전개
+- 동일한 내용을 다른 표현으로 반복하는 패딩
+- 사용자가 이미 아는 배경 설명을 장황하게 서술
+
+---
+
+# 정보 공백 처리 원칙
+
+사내 문서에서 요청한 정보를 찾지 못한 경우:
+1. "사내 문서에서 해당 내용을 찾지 못했습니다."라고 먼저 명확히 밝힌다.
+2. 그 다음, 보유한 일반 지식을 기반으로 답변하되 "(일반 지식 기반)" 또는 "(추정)"으로 표시한다.
+3. 필요시 "해당 정보가 Google Drive에 동기화되어 있는지 확인해보세요."라고 안내한다.
+
+---
+
+# 출력 형식 규칙
+
+| 질문 유형 | 형식 |
+|---|---|
+| 전략·기획 | 헤더(##) 구분, 핵심 요약 먼저, 표/리스트 적극 활용 |
+| 데이터 정리·요약 | 표 우선, 없으면 번호 목록 |
+| 단답형 질문 | 마크다운 없이 간결하게 |
+| 비교·분석 | 반드시 표로 정리 |
+| 액션 플랜 | 번호 목록 + 각 항목에 담당·기한·기대효과 포함 |
+
+모든 답변은 한국어로 작성한다. 단, 일본어 고유명사(플랫폼명, 브랜드명, 문화 용어)는 원어 병기한다.`
 
   let context = ''
 
+  if (hasSources) {
+    context += '\n\n---\n\n# 참고 자료\n\n> ⚠️ 아래 자료를 최우선으로 활용하여 답변하라. 자료에 있는 내용은 반드시 인용하고, 자료에 없는 내용은 없다고 밝혀라.\n'
+  }
+
   if (ragSources.length > 0) {
-    context += '\n\n---\n## 📂 관련 사내 문서\n'
+    context += '\n## 📂 사내 문서\n'
     context += ragSources
-      .map((s) => `### ${s.title}\n${s.content}`)
+      .map((s, i) => `### [사내문서 ${i + 1}] ${s.title}\n${s.content}`)
       .join('\n\n')
   }
 
   if (webAnswer) {
-    context += `\n\n---\n## 🔍 웹 조사 요약\n${webAnswer}`
+    context += `\n\n## 🔍 웹 조사 요약\n${webAnswer}`
   }
 
   if (webResults.length > 0) {
-    context += '\n\n---\n## 🌐 웹 조사 상세 결과\n'
+    context += '\n\n## 🌐 웹 조사 상세\n'
     context += webResults
-      .map((r) => `**${r.title}** (${r.url})\n${r.content}`)
+      .map((r, i) => `### [웹자료 ${i + 1}] ${r.title}\n출처: ${r.url}\n${r.content}`)
       .join('\n\n')
   }
 
-  if (context) {
-    return base + '\n\n[참고 자료 - 반드시 활용하여 답변할 것]' + context
-  }
-
-  return base
+  return base + context
 }
 
 // ── 메인 핸들러 (SSE 스트리밍) ────────────────────────────────
