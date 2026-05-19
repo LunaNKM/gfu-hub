@@ -190,7 +190,7 @@ export default function UsagePage() {
       <div className="mb-6">
         <h1 className="text-xl font-bold text-gray-900">AI 사용량</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          GPT-5.4 &nbsp;·&nbsp; 입력 $2.50/1M · 출력 $15.00/1M 토큰
+          GPT-5.4-mini &nbsp;·&nbsp; 입력 $0.75/1M · 출력 $4.50/1M 토큰
         </p>
       </div>
 

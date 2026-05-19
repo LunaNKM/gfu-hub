@@ -12,10 +12,11 @@ import { AiUsageLog } from '@/types'
 // ── 모델별 단가 (USD / 1M 토큰) ──────────────────────────────
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'gpt-5.4':              { input: 2.50,  output: 15.00 },
-  'gpt-5.4-mini':         { input: 0.40,  output: 1.60  },
-  'gpt-5.4-nano':         { input: 0.10,  output: 0.40  },
+  'gpt-5.4-mini':         { input: 0.75,  output: 4.50  },
+  'gpt-5.4-nano':         { input: 0.20,  output: 1.25  },
   'gpt-4.1':              { input: 2.00,  output: 8.00  },
   'gpt-4.1-mini':         { input: 0.40,  output: 1.60  },
+  'gpt-4.1-nano':         { input: 0.10,  output: 0.40  },
   'gpt-4o':               { input: 2.50,  output: 10.00 },
   'gpt-4o-mini':          { input: 0.15,  output: 0.60  },
   'text-embedding-3-small': { input: 0.02, output: 0.00 },
