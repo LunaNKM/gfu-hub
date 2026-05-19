@@ -1,0 +1,12 @@
+{
+  "functions": {
+    "src/app/api/drive/sync/route.ts": {
+      "memory": 3008,
+      "maxDuration": 300
+    },
+    "src/app/api/ai/chat/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  }
+}

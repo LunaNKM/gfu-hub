@@ -15,6 +15,11 @@ import {
 } from 'firebase/firestore'
 import { getFirestoreInstance } from '@/lib/firebase/firestore'
 
+export const maxDuration = 300
+
+// 50MB 초과 파일 건너뜀
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
+
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization')
@@ -46,6 +51,13 @@ export async function POST(req: NextRequest) {
 
     for (const file of files) {
       try {
+        // 파일 크기 초과 건너뜀
+        if (file.size && parseInt(file.size) > MAX_FILE_SIZE_BYTES) {
+          console.log(`건너뜀 (크기 초과): ${file.name} (${Math.round(parseInt(file.size) / 1024 / 1024)}MB)`)
+          skipped++
+          continue
+        }
+
         // 기존 문서 확인
         const existingQ = query(
           collection(db, 'docs'),
@@ -105,8 +117,10 @@ export async function POST(req: NextRequest) {
           docId = newDocRef.id
         }
 
-        // 청크 분할 및 임베딩 생성
-        const chunks = chunkText(text)
+        // 청크 분할 (최대 20개로 제한해 메모리 절약)
+        const allChunks = chunkText(text)
+        const chunks = allChunks.slice(0, 20)
+
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i]
           let embedding: number[] | undefined
