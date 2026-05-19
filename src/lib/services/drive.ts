@@ -31,27 +31,44 @@ export function getDriveClient() {
 }
 
 /**
- * 폴더 내 파일을 pageToken 기반으로 페이지 단위로 가져옴.
- * 재귀 스캔 없이 'ancestors' 쿼리로 하위 폴더까지 한 번에 검색.
+ * 특정 폴더의 파일(non-folder)을 pageToken 기반으로 가져옴.
+ * 첫 방문(pageToken 없음)일 때 하위 폴더 ID도 함께 반환.
  */
-export async function listDriveFilesPage(
+export async function listFolderPage(
   folderId: string,
-  pageSize: number = 10,
+  pageSize: number,
   pageToken?: string
-): Promise<DriveFilePage> {
+): Promise<{ files: DriveFile[]; subfolderIds: string[]; nextPageToken: string | null }> {
   const drive = getDriveClient()
-  if (!drive) return { files: [], nextPageToken: null }
+  if (!drive) return { files: [], subfolderIds: [], nextPageToken: null }
 
-  const res = await drive.files.list({
-    q: `'${folderId}' in ancestors and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
-    fields: 'nextPageToken, files(id,name,mimeType,modifiedTime,size)',
-    pageSize,
+  const baseParams = {
     supportsAllDrives: true,
     includeItemsFromAllDrives: true,
+  }
+
+  // 첫 방문: 하위 폴더 목록 가져오기
+  let subfolderIds: string[] = []
+  if (!pageToken) {
+    const folderRes = await drive.files.list({
+      ...baseParams,
+      q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: 'files(id)',
+      pageSize: 100,
+    })
+    subfolderIds = (folderRes.data.files ?? []).map((f) => f.id!)
+  }
+
+  // 파일 목록 (페이지네이션)
+  const fileRes = await drive.files.list({
+    ...baseParams,
+    q: `'${folderId}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
+    fields: 'nextPageToken, files(id,name,mimeType,modifiedTime,size)',
+    pageSize,
     ...(pageToken ? { pageToken } : {}),
   })
 
-  const files = (res.data.files ?? []).map((f) => ({
+  const files = (fileRes.data.files ?? []).map((f) => ({
     id: f.id!,
     name: f.name!,
     mimeType: f.mimeType!,
@@ -61,20 +78,27 @@ export async function listDriveFilesPage(
 
   return {
     files,
-    nextPageToken: res.data.nextPageToken ?? null,
+    subfolderIds,
+    nextPageToken: fileRes.data.nextPageToken ?? null,
   }
 }
 
-// 하위 호환성을 위해 유지 (status route에서 사용)
+// status route용
 export async function listDriveFiles(folderId: string): Promise<DriveFile[]> {
   const results: DriveFile[] = []
-  let token: string | undefined = undefined
+  const folderQueue: string[] = [folderId]
 
-  while (true) {
-    const page = await listDriveFilesPage(folderId, 100, token)
-    results.push(...page.files)
-    if (!page.nextPageToken) break
-    token = page.nextPageToken
+  while (folderQueue.length > 0) {
+    const currentFolder = folderQueue.shift()!
+    let pageToken: string | undefined = undefined
+
+    while (true) {
+      const page = await listFolderPage(currentFolder, 100, pageToken)
+      results.push(...page.files)
+      folderQueue.push(...page.subfolderIds)
+      if (!page.nextPageToken) break
+      pageToken = page.nextPageToken
+    }
   }
 
   return results
@@ -140,9 +164,7 @@ export async function extractDriveFileText(
       textTypes.includes(mimeType) ||
       textExtensions.some((ext) => fileName.toLowerCase().endsWith(ext))
 
-    if (isText) {
-      return buffer.toString('utf-8')
-    }
+    if (isText) return buffer.toString('utf-8')
 
     return null
   } catch (err) {

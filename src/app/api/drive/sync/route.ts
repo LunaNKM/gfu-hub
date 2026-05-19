@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { listDriveFilesPage, extractDriveFileText } from '@/lib/services/drive'
+import { listFolderPage, extractDriveFileText } from '@/lib/services/drive'
 import { chunkText } from '@/lib/utils/chunking'
 import { getOpenAIClient } from '@/lib/openai/client'
 import {
@@ -17,7 +17,6 @@ import { getFirestoreInstance } from '@/lib/firebase/firestore'
 
 export const maxDuration = 60
 
-// 한 요청당 처리할 파일 수 (Drive 리스트 + 텍스트 추출 + 임베딩 포함)
 const PAGE_SIZE = 5
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
@@ -28,8 +27,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 })
     }
 
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID
-    if (!folderId) {
+    const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID
+    if (!rootFolderId) {
       return NextResponse.json(
         { error: 'GOOGLE_DRIVE_FOLDER_ID 환경변수가 설정되지 않았습니다.' },
         { status: 503 }
@@ -42,11 +41,22 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}))
-    // pageToken: Drive API pageToken (null이면 처음부터)
-    const pageToken: string | undefined = body.pageToken ?? undefined
 
-    // Drive에서 PAGE_SIZE개 파일 가져오기 (재귀 없이 ancestors 쿼리)
-    const { files, nextPageToken } = await listDriveFilesPage(folderId, PAGE_SIZE, pageToken)
+    // 첫 요청: folderQueue = [rootFolderId], currentFolder = rootFolderId
+    // 이후: 클라이언트에서 받은 상태 그대로 사용
+    const currentFolder: string = body.currentFolder ?? rootFolderId
+    const pageToken: string | undefined = body.pageToken ?? undefined
+    const folderQueue: string[] = Array.isArray(body.folderQueue) ? body.folderQueue : []
+
+    // 현재 폴더에서 파일 + 하위 폴더 가져오기
+    const { files, subfolderIds, nextPageToken } = await listFolderPage(
+      currentFolder,
+      PAGE_SIZE,
+      pageToken
+    )
+
+    // 새로 발견된 하위 폴더를 큐에 추가
+    const updatedQueue = [...folderQueue, ...subfolderIds]
 
     const openai = getOpenAIClient()
     let synced = 0
@@ -121,10 +131,9 @@ export async function POST(req: NextRequest) {
               })
               embedding = embRes.data[0].embedding
             } catch {
-              // 임베딩 실패해도 계속 진행
+              // 임베딩 실패해도 계속
             }
           }
-
           await addDoc(collection(db, 'docChunks'), {
             docId,
             title: file.name,
@@ -143,8 +152,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 마지막 페이지: 동기화 완료 시간 저장
-    if (!nextPageToken) {
+    // 다음 요청 파라미터 계산
+    let nextCurrentFolder: string | null = null
+    let nextQueue: string[] = updatedQueue
+
+    if (nextPageToken) {
+      // 현재 폴더에 더 파일이 있음
+      nextCurrentFolder = currentFolder
+    } else if (updatedQueue.length > 0) {
+      // 다음 폴더로 이동
+      nextCurrentFolder = updatedQueue[0]
+      nextQueue = updatedQueue.slice(1)
+    }
+
+    const done = nextCurrentFolder === null
+
+    if (done) {
       await setDoc(doc(db, 'settings', 'driveSync'), {
         lastSyncAt: Timestamp.now(),
         synced,
@@ -157,8 +180,11 @@ export async function POST(req: NextRequest) {
       synced,
       skipped,
       errors,
-      nextPageToken,
-      done: !nextPageToken,
+      done,
+      // 다음 요청용 상태
+      nextCurrentFolder,
+      nextPageToken: nextPageToken ?? null,
+      nextFolderQueue: nextQueue,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

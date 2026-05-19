@@ -63,14 +63,22 @@ export function DriveSyncPanel() {
 
     try {
       const token = await user.getIdToken()
+      let currentFolder: string | null = null
       let pageToken: string | null = null
+      let folderQueue: string[] = []
       let batchCount = 0
+      let isDone = false
 
-      do {
+      while (!isDone) {
+        const body: Record<string, unknown> = {}
+        if (currentFolder) body.currentFolder = currentFolder
+        if (pageToken) body.pageToken = pageToken
+        if (folderQueue.length > 0) body.folderQueue = folderQueue
+
         const res: Response = await fetch('/api/drive/sync', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pageToken }),
+          body: JSON.stringify(body),
         })
         const data = await res.json()
 
@@ -84,11 +92,13 @@ export function DriveSyncPanel() {
         totalSkipped += data.skipped ?? 0
         if (data.errors) allErrors.push(...data.errors)
         batchCount++
-        // 완료 여부 모르므로 진행 중 표시 (완료시 100%)
-        setProgress(data.done ? 100 : Math.min(95, batchCount * 10))
+        isDone = data.done ?? false
+        setProgress(isDone ? 100 : Math.min(95, batchCount * 5))
 
+        currentFolder = data.nextCurrentFolder ?? null
         pageToken = data.nextPageToken ?? null
-      } while (pageToken)
+        folderQueue = data.nextFolderQueue ?? []
+      }
 
       const result = { synced: totalSynced, skipped: totalSkipped, errors: allErrors }
       setLastResult(result)
