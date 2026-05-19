@@ -17,8 +17,8 @@ import { getFirestoreInstance } from '@/lib/firebase/firestore'
 
 export const maxDuration = 60
 
-const PAGE_SIZE = 5
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
+const PAGE_SIZE = 1
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
 
 export async function POST(req: NextRequest) {
   try {
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
 
         const docData = {
           title: file.name,
-          content: text.slice(0, 50000),
+          content: text.slice(0, 20000),
           category: 'Google Drive',
           tags: ['drive'],
           isActive: true,
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
           docId = newDocRef.id
         }
 
-        const chunks = chunkText(text).slice(0, 10)
+        const chunks = chunkText(text.slice(0, 20000)).slice(0, 5)
         for (let i = 0; i < chunks.length; i++) {
           let embedding: number[] | undefined
           if (openai) {
