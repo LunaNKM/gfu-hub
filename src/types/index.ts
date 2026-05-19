@@ -31,6 +31,9 @@ export interface Doc {
   updatedAt: Date
   createdBy: string
   updatedBy: string
+  source?: 'manual' | 'drive'
+  driveFileId?: string
+  driveModifiedTime?: string
 }
 
 export interface DocChunk {

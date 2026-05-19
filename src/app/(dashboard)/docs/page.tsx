@@ -14,6 +14,7 @@ import { FileText } from 'lucide-react'
 import { useToast } from '@/components/ui/Toast'
 import { useSearchParams } from 'next/navigation'
 import { useEffect } from 'react'
+import { DriveSyncPanel } from '@/components/drive/DriveSyncPanel'
 
 export default function DocsPage() {
   const { docs, loading, error, createDoc, updateDoc, deleteDoc, refetch } = useDocs()
@@ -89,6 +90,9 @@ export default function DocsPage() {
           문서 추가
         </Button>
       </div>
+
+      {/* Google Drive 동기화 패널 */}
+      <DriveSyncPanel />
 
       {/* 검색 + 필터 */}
       <div className="flex items-center gap-3 mb-6">

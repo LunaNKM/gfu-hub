@@ -140,6 +140,27 @@ export async function createDocChunks(
   await batch.commit()
 }
 
+export async function getDriveDoc(driveFileId: string): Promise<Doc | null> {
+  const db = getFirestoreInstance()
+  if (!db) return null
+
+  try {
+    const q = query(collection(db, 'docs'), where('driveFileId', '==', driveFileId))
+    const snapshot = await firestoreGetDocs(q)
+    if (snapshot.empty) return null
+    const d = snapshot.docs[0]
+    return {
+      id: d.id,
+      ...d.data(),
+      createdAt: convertTimestamp(d.data().createdAt),
+      updatedAt: convertTimestamp(d.data().updatedAt),
+    } as Doc
+  } catch (error) {
+    console.error('Drive 문서 조회 오류:', error)
+    return null
+  }
+}
+
 export async function deleteDocChunks(docId: string): Promise<void> {
   const db = getFirestoreInstance()
   if (!db) return
