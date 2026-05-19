@@ -75,7 +75,7 @@ export async function listDriveFiles(folderId: string): Promise<DriveFile[]> {
   let pageToken: string | undefined = undefined
 
   do {
-    const res = await drive.files.list({
+    const res: Awaited<ReturnType<typeof drive.files.list>> = await drive.files.list({
       q: `'${folderId}' in ancestors and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
       fields: 'nextPageToken, files(id,name,mimeType,modifiedTime,size)',
       pageSize: 100,
