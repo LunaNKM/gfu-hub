@@ -57,18 +57,7 @@ export async function signInWithGoogle(): Promise<{ user: User | null; error: st
   const provider = new GoogleAuthProvider()
   provider.setCustomParameters({ hd: 'gfutures.co' })
 
-  // Electron에서는 redirect 방식 사용 (팝업 차단 우회)
-  if (isElectron()) {
-    try {
-      await signInWithRedirect(auth, provider)
-      return { user: null, error: null } // redirect 이후 getRedirectResult로 처리
-    } catch (error: unknown) {
-      const err = error as { message?: string }
-      return { user: null, error: err.message || '로그인 중 오류가 발생했습니다.' }
-    }
-  }
-
-  // 일반 브라우저에서는 popup 방식 시도, 실패 시 redirect로 폴백
+  // popup 방식 우선 시도 (Electron은 main.js에서 팝업 허용 처리)
   try {
     const result = await signInWithPopup(auth, provider)
     const user = result.user
@@ -78,11 +67,8 @@ export async function signInWithGoogle(): Promise<{ user: User | null; error: st
   } catch (error: unknown) {
     const err = error as { code?: string; message?: string }
 
-    // 팝업 차단 시 redirect로 자동 전환
-    if (
-      err.code === 'auth/popup-blocked' ||
-      err.code === 'auth/popup-closed-by-user'
-    ) {
+    // popup이 완전히 막힌 환경에서만 redirect로 폴백
+    if (err.code === 'auth/popup-blocked') {
       try {
         await signInWithRedirect(auth, provider)
         return { user: null, error: null }
@@ -90,6 +76,10 @@ export async function signInWithGoogle(): Promise<{ user: User | null; error: st
         const rErr = redirectError as { message?: string }
         return { user: null, error: rErr.message || '로그인 중 오류가 발생했습니다.' }
       }
+    }
+
+    if (err.code === 'auth/popup-closed-by-user') {
+      return { user: null, error: '로그인이 취소되었습니다.' }
     }
 
     return { user: null, error: err.message || '로그인 중 오류가 발생했습니다.' }
