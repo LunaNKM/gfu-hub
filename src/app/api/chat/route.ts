@@ -292,14 +292,16 @@ export async function POST(req: NextRequest) {
 
         // 사용량 로그
         try {
-          const token = authHeader.replace('Bearer ', '')
-          const parts = token.split('.')
+          const jwtToken = authHeader.replace('Bearer ', '')
+          const parts = jwtToken.split('.')
           if (parts.length === 3) {
             const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'))
             const userId = payload.user_id || payload.sub || payload.uid
+            const userEmail = payload.email ?? undefined
             if (userId) {
               await logAiUsage({
                 userId,
+                userEmail,
                 conversationId,
                 model: OPENAI_MODEL,
                 inputTokens,
@@ -310,8 +312,8 @@ export async function POST(req: NextRequest) {
               })
             }
           }
-        } catch {
-          // 로그 실패 무시
+        } catch (logErr) {
+          console.error('사용량 로그 실패:', logErr)
         }
 
         controller.enqueue(

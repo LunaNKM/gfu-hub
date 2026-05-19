@@ -83,11 +83,13 @@ export interface TokenUsage {
 export interface AiUsageLog {
   id: string
   userId: string
+  userEmail?: string
   conversationId?: string
   model: string
   inputTokens: number
   outputTokens: number
   totalTokens: number
+  costUsd: number
   createdAt: Date
   feature: 'chat' | 'prompt_optimizer' | 'rag' | 'embedding'
   success: boolean

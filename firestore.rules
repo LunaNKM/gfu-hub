@@ -65,8 +65,9 @@ service cloud.firestore {
     }
 
     // ── AI 사용량 로그 ────────────────────────────────────────
+    // 팀원 전체 통계 조회를 위해 gfutures 계정은 전체 읽기 허용
     match /aiUsageLogs/{logId} {
-      allow read: if isGfutures() && isOwner(resource.data.userId);
+      allow read: if isGfutures();
       allow create: if isGfutures() || request.auth == null;
       allow update, delete: if false;
     }
