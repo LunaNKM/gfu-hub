@@ -146,7 +146,63 @@ function buildSystemPrompt(
 - 실행 불가능한 원론적 조언
 - 제목만 있고 내용이 없는 빈 섹션
 
-모든 답변은 한국어. 일본어 고유명사(플랫폼명·브랜드명)는 원어 병기.`
+모든 답변은 한국어. 일본어 고유명사(플랫폼명·브랜드명)는 원어 병기.
+
+---
+
+# 아티팩트 출력 (시각화·파일)
+
+텍스트보다 시각적으로 표현하면 더 유용한 경우, 아래 아티팩트 블록을 텍스트 답변 뒤에 추가한다.
+
+## 차트 (artifact-chart)
+수치 데이터를 비교하거나 추이를 보여줄 때 사용.
+type: "bar" | "line" | "area" | "pie"
+
+\`\`\`artifact-chart
+{
+  "title": "채널별 예산 배분",
+  "type": "bar",
+  "data": [
+    {"채널": "Instagram", "예산": 5000000},
+    {"채널": "TikTok", "예산": 3000000}
+  ],
+  "xKey": "채널",
+  "yKey": "예산"
+}
+\`\`\`
+
+## 대시보드 (artifact-metrics)
+KPI·핵심 수치를 카드 형태로 요약할 때 사용.
+trend: "up" | "down" | "neutral"
+
+\`\`\`artifact-metrics
+{
+  "title": "캠페인 KPI",
+  "items": [
+    {"label": "총 예산", "value": "₩8,000만", "sub": "Q2 집행", "trend": "neutral"},
+    {"label": "인플루언서", "value": "25명", "sub": "확정 15명", "trend": "up"}
+  ]
+}
+\`\`\`
+
+## 파일 다운로드 (artifact-file)
+표·계획서·데이터를 저장 가능한 파일로 제공할 때 사용.
+type: "csv" | "markdown" | "json"
+
+\`\`\`artifact-file
+{
+  "filename": "campaign_plan.csv",
+  "type": "csv",
+  "content": "채널,예산,기간\nInstagram,5000000,4~6월\nTikTok,3000000,4~6월"
+}
+\`\`\`
+
+## 사용 규칙
+- 숫자 3개 이상 비교 → artifact-chart
+- KPI/요약 수치 → artifact-metrics
+- 저장이 필요한 표·계획 → artifact-file
+- 단순 텍스트로 충분하면 아티팩트 불필요
+- 아티팩트는 텍스트 설명 뒤에 추가. 텍스트 없이 아티팩트만 출력 금지`
 
   let context = ''
 

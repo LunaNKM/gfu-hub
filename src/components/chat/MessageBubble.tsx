@@ -5,8 +5,7 @@ import { Copy, Check } from 'lucide-react'
 import { Message } from '@/types'
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { ArtifactRenderer } from './artifacts/ArtifactRenderer'
 
 interface MessageBubbleProps {
   message: Message
@@ -51,11 +50,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           {isUser ? (
             <p className="whitespace-pre-wrap">{message.content}</p>
           ) : (
-            <div className="prose prose-sm max-w-none prose-headings:font-bold prose-headings:text-gray-900 prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-p:text-gray-800 prose-p:my-1 prose-strong:text-gray-900 prose-strong:font-semibold prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-blockquote:text-gray-500 prose-blockquote:border-gray-300 prose-code:text-blue-600 prose-code:bg-blue-50 prose-code:px-1 prose-code:rounded prose-table:text-xs prose-td:px-2 prose-td:py-1 prose-th:px-2 prose-th:py-1">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {message.content}
-              </ReactMarkdown>
-            </div>
+            <ArtifactRenderer content={message.content} />
           )}
         </div>
 
