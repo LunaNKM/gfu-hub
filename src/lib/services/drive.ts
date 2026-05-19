@@ -34,10 +34,21 @@ async function listFolderRecursive(
 ): Promise<void> {
   let pageToken: string | undefined = undefined
   do {
-    const params: { q: string; fields: string; pageSize: number; pageToken?: string } = {
+    const params: {
+      q: string
+      fields: string
+      pageSize: number
+      pageToken?: string
+      supportsAllDrives: boolean
+      includeItemsFromAllDrives: boolean
+      corpora: string
+    } = {
       q: `'${folderId}' in parents and trashed = false`,
       fields: 'nextPageToken, files(id,name,mimeType,modifiedTime,size)',
       pageSize: 100,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+      corpora: 'allDrives',
     }
     if (pageToken) params.pageToken = pageToken
     const res = await drive.files.list(params)
@@ -80,7 +91,7 @@ export async function extractDriveFileText(
     // Google Workspace 파일
     if (mimeType === 'application/vnd.google-apps.document') {
       const res = await drive.files.export(
-        { fileId, mimeType: 'text/plain' },
+        { fileId, mimeType: 'text/plain', supportsAllDrives: true },
         { responseType: 'text' }
       )
       return (res.data as string) ?? null
@@ -88,7 +99,7 @@ export async function extractDriveFileText(
 
     if (mimeType === 'application/vnd.google-apps.spreadsheet') {
       const res = await drive.files.export(
-        { fileId, mimeType: 'text/csv' },
+        { fileId, mimeType: 'text/csv', supportsAllDrives: true },
         { responseType: 'text' }
       )
       return (res.data as string) ?? null
@@ -96,7 +107,7 @@ export async function extractDriveFileText(
 
     if (mimeType === 'application/vnd.google-apps.presentation') {
       const res = await drive.files.export(
-        { fileId, mimeType: 'text/plain' },
+        { fileId, mimeType: 'text/plain', supportsAllDrives: true },
         { responseType: 'text' }
       )
       return (res.data as string) ?? null
@@ -104,7 +115,7 @@ export async function extractDriveFileText(
 
     // 일반 파일 다운로드 후 처리
     const res = await drive.files.get(
-      { fileId, alt: 'media' },
+      { fileId, alt: 'media', supportsAllDrives: true },
       { responseType: 'arraybuffer' }
     )
     const buffer = Buffer.from(res.data as ArrayBuffer)

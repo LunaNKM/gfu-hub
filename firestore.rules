@@ -1,78 +1,86 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
+
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function isGfuturesEmail() {
-      return isAuthenticated() && request.auth.token.email.matches('.*@gfutures\\.co$');
+    function isGfutures() {
+      return request.auth != null &&
+             request.auth.token.email.matches('.*@gfutures\\.co$');
     }
 
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Users collection
+    // ── 사용자 정보 ──────────────────────────────────────────
     match /users/{userId} {
-      allow read: if isGfuturesEmail();
-      allow write: if isOwner(userId) && isGfuturesEmail();
+      allow read: if isGfutures();
+      allow write: if isOwner(userId) && isGfutures();
     }
 
-    // Disabled users (read-only for auth check)
+    // ── 비활성 사용자 (로그인 체크용, 쓰기 불가) ────────────
     match /disabledUsers/{email} {
       allow read: if isAuthenticated();
-      allow write: if false; // Admin only
+      allow write: if false;
     }
 
-    // Apps collection
+    // ── 앱 런처 ──────────────────────────────────────────────
     match /apps/{appId} {
-      allow read: if isGfuturesEmail();
-      allow write: if isGfuturesEmail();
+      allow read, write: if isGfutures();
     }
 
-    // Docs collection
+    // ── 사내 문서 ─────────────────────────────────────────────
+    // 서버 측 Drive 동기화(request.auth == null)도 허용
     match /docs/{docId} {
-      allow read: if isGfuturesEmail();
-      allow write: if isGfuturesEmail();
+      allow read: if isGfutures() || request.auth == null;
+      allow write: if isGfutures() || request.auth == null;
     }
 
-    // Doc chunks collection
+    // ── 문서 청크 (RAG용) ─────────────────────────────────────
+    // 서버 측 임베딩 저장 허용
     match /docChunks/{chunkId} {
-      allow read: if isGfuturesEmail();
-      allow write: if isGfuturesEmail();
+      allow read: if isGfutures() || request.auth == null;
+      allow write: if isGfutures() || request.auth == null;
     }
 
-    // Conversations collection
-    match /conversations/{conversationId} {
-      allow read: if isGfuturesEmail() && isOwner(resource.data.userId);
-      allow create: if isGfuturesEmail() && isOwner(request.resource.data.userId);
-      allow update, delete: if isGfuturesEmail() && isOwner(resource.data.userId);
+    // ── 시스템 설정 (동기화 시간 등) ─────────────────────────
+    // 서버 측 업데이트 허용
+    match /settings/{settingId} {
+      allow read: if isGfutures() || request.auth == null;
+      allow write: if isGfutures() || request.auth == null;
+    }
 
-      // Messages subcollection
+    // ── AI 대화 ───────────────────────────────────────────────
+    match /conversations/{conversationId} {
+      allow read: if isGfutures() && isOwner(resource.data.userId);
+      allow create: if isGfutures() && isOwner(request.resource.data.userId);
+      allow update, delete: if isGfutures() && isOwner(resource.data.userId);
+
       match /messages/{messageId} {
-        allow read, write: if isGfuturesEmail();
+        allow read, write: if isGfutures();
       }
     }
 
-    // AI Usage logs
+    // ── AI 사용량 로그 ────────────────────────────────────────
     match /aiUsageLogs/{logId} {
-      allow read: if isGfuturesEmail() && isOwner(resource.data.userId);
-      allow create: if isGfuturesEmail() && isOwner(request.resource.data.userId);
+      allow read: if isGfutures() && isOwner(resource.data.userId);
+      allow create: if isGfutures() || request.auth == null;
       allow update, delete: if false;
     }
 
-    // Files collection
+    // ── 업로드 파일 ───────────────────────────────────────────
     match /files/{fileId} {
-      allow read: if isGfuturesEmail() && isOwner(resource.data.userId);
-      allow create: if isGfuturesEmail() && isOwner(request.resource.data.userId);
-      allow update, delete: if isGfuturesEmail() && isOwner(resource.data.userId);
+      allow read: if isGfutures() && isOwner(resource.data.userId);
+      allow create: if isGfutures() && isOwner(request.resource.data.userId);
+      allow update, delete: if isGfutures() && isOwner(resource.data.userId);
     }
 
-    // User settings
+    // ── 사용자 설정 ───────────────────────────────────────────
     match /userSettings/{userId} {
-      allow read, write: if isGfuturesEmail() && isOwner(userId);
+      allow read, write: if isGfutures() && isOwner(userId);
     }
   }
 }
