@@ -57,19 +57,28 @@ export async function logAiUsage(
       costUsd,
       createdAt: Timestamp.now(),
     })
+    invalidateMyUsageCache(data.userId)
   } catch (error) {
     console.error('사용량 로그 저장 오류:', error)
   }
 }
 
-// ── 내 사용량 조회 ────────────────────────────────────────────
+// ── 내 사용량 조회 (5분 세션 캐시) ──────────────────────────
+const myUsageCache = new Map<string, { data: AiUsageLog[]; ts: number }>()
+const MY_USAGE_TTL = 5 * 60 * 1000
+
+export function invalidateMyUsageCache(userId: string): void {
+  myUsageCache.delete(userId)
+}
+
 export async function getMyUsage(userId: string): Promise<AiUsageLog[]> {
+  const cached = myUsageCache.get(userId)
+  if (cached && Date.now() - cached.ts < MY_USAGE_TTL) return cached.data
+
   const db = getFirestoreInstance()
   if (!db) return []
 
   try {
-    // orderBy를 Firestore 쿼리에서 제거 → 복합 인덱스 불필요
-    // 정렬은 클라이언트에서 처리
     const q = query(
       collection(db, 'aiUsageLogs'),
       where('userId', '==', userId)
@@ -82,8 +91,9 @@ export async function getMyUsage(userId: string): Promise<AiUsageLog[]> {
       createdAt: convertTimestamp(d.data().createdAt),
     })) as AiUsageLog[]
 
-    // 최신순 정렬
-    return logs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    const sorted = logs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    myUsageCache.set(userId, { data: sorted, ts: Date.now() })
+    return sorted
   } catch (error) {
     console.error('사용량 조회 오류:', error)
     return []

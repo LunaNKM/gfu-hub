@@ -3,6 +3,27 @@ import { getFirestoreInstance } from '../firebase/firestore'
 import { DocChunk } from '@/types'
 import { getOpenAIClient } from './client'
 
+// docChunks 10분 세션 캐시 — 문서가 자주 바뀌지 않으므로 재요청 불필요
+let chunksCache: { data: DocChunk[]; ts: number } | null = null
+const CHUNKS_TTL = 10 * 60 * 1000
+
+export function invalidateChunksCache(): void {
+  chunksCache = null
+}
+
+async function getAllChunks(): Promise<DocChunk[]> {
+  if (chunksCache && Date.now() - chunksCache.ts < CHUNKS_TTL) return chunksCache.data
+
+  const db = getFirestoreInstance()
+  if (!db) return []
+
+  const q = query(collection(db, 'docChunks'), orderBy('updatedAt', 'desc'))
+  const snapshot = await getDocs(q)
+  const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as DocChunk[]
+  chunksCache = { data, ts: Date.now() }
+  return data
+}
+
 export async function getEmbedding(text: string): Promise<number[]> {
   const client = getOpenAIClient()
   if (!client) return []
@@ -40,16 +61,8 @@ export async function searchRelevantDocs(
   limit = 15,
   minScore = 0.05
 ): Promise<{ docId: string; title: string; content: string; score: number }[]> {
-  const db = getFirestoreInstance()
-  if (!db) return []
-
   try {
-    const q = query(collection(db, 'docChunks'), orderBy('updatedAt', 'desc'))
-    const snapshot = await getDocs(q)
-    const chunks: DocChunk[] = snapshot.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    })) as DocChunk[]
+    const chunks = await getAllChunks()
 
     if (chunks.length === 0) return []
 
@@ -105,16 +118,8 @@ export async function searchAllChunksFromTopDocs(
   topDocCount = 5,
   maxTotalChunks = 80
 ): Promise<{ docId: string; title: string; content: string; score: number }[]> {
-  const db = getFirestoreInstance()
-  if (!db) return []
-
   try {
-    const q = query(collection(db, 'docChunks'), orderBy('updatedAt', 'desc'))
-    const snapshot = await getDocs(q)
-    const chunks: DocChunk[] = snapshot.docs.map((d) => ({
-      id: d.id,
-      ...d.data(),
-    })) as DocChunk[]
+    const chunks = await getAllChunks()
 
     if (chunks.length === 0) return []
 

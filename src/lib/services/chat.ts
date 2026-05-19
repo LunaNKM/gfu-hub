@@ -10,6 +10,7 @@ import {
   orderBy,
   query,
   where,
+  limit,
 } from 'firebase/firestore'
 import { getFirestoreInstance } from '../firebase/firestore'
 import { Conversation, Message } from '@/types'
@@ -20,16 +21,17 @@ function convertTimestamp(ts: unknown): Date {
   return new Date()
 }
 
-export async function getConversations(userId: string): Promise<Conversation[]> {
+export async function getConversations(userId: string, limitCount?: number): Promise<Conversation[]> {
   const db = getFirestoreInstance()
   if (!db) return []
 
   try {
-    const q = query(
-      collection(db, 'conversations'),
+    const constraints = [
       where('userId', '==', userId),
-      orderBy('updatedAt', 'desc')
-    )
+      orderBy('updatedAt', 'desc'),
+      ...(limitCount ? [limit(limitCount)] : []),
+    ] as const
+    const q = query(collection(db, 'conversations'), ...constraints)
     const snapshot = await getDocs(q)
     return snapshot.docs.map((d) => ({
       id: d.id,

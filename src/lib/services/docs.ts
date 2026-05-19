@@ -15,6 +15,7 @@ import {
 import { getFirestoreInstance } from '../firebase/firestore'
 import { Doc, DocChunk } from '@/types'
 import { chunkText } from '../utils/chunking'
+import { invalidateChunksCache } from '../openai/rag'
 
 function convertTimestamp(ts: unknown): Date {
   if (ts instanceof Timestamp) return ts.toDate()
@@ -138,6 +139,7 @@ export async function createDocChunks(
   })
 
   await batch.commit()
+  invalidateChunksCache()
 }
 
 export async function getDriveDoc(driveFileId: string): Promise<Doc | null> {

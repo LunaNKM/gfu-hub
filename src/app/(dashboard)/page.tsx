@@ -19,9 +19,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (user) {
-      getConversations(user.uid).then((convs) => {
-        setRecentConversations(convs.slice(0, 3))
-      })
+      getConversations(user.uid, 3).then(setRecentConversations)
     }
   }, [user])
 
