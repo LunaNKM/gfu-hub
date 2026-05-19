@@ -26,6 +26,7 @@ export function DriveSyncPanel() {
   const [status, setStatus] = useState<DriveStatus | null>(null)
   const [loadingStatus, setLoadingStatus] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [lastResult, setLastResult] = useState<SyncResult | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -54,33 +55,58 @@ export function DriveSyncPanel() {
     setSyncing(true)
     setErrorMessage(null)
     setLastResult(null)
+    setProgress(0)
+
+    let totalSynced = 0
+    let totalSkipped = 0
+    const allErrors: string[] = []
+    let cursor: number | null = 0
 
     try {
       const token = await user.getIdToken()
-      const res = await fetch('/api/drive/sync', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = await res.json()
 
-      if (!res.ok) {
-        setErrorMessage(data.error || '동기화에 실패했습니다.')
-        showToast(data.error || '동기화에 실패했습니다.', 'error')
-        return
+      while (cursor !== null) {
+        const res = await fetch('/api/drive/sync', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ cursor }),
+        })
+
+        const data = await res.json()
+
+        if (!res.ok) {
+          setErrorMessage(data.error || '동기화에 실패했습니다.')
+          showToast(data.error || '동기화에 실패했습니다.', 'error')
+          return
+        }
+
+        totalSynced += data.synced ?? 0
+        totalSkipped += data.skipped ?? 0
+        if (data.errors) allErrors.push(...data.errors)
+        setProgress(data.progress ?? 100)
+
+        cursor = data.nextCursor ?? null
       }
 
-      setLastResult(data)
-      if (data.errors && data.errors.length > 0) {
-        showToast(`동기화 완료 (${data.synced}개 동기화, ${data.errors.length}개 오류)`, 'info')
+      const result = { synced: totalSynced, skipped: totalSkipped, errors: allErrors }
+      setLastResult(result)
+
+      if (allErrors.length > 0) {
+        showToast(`동기화 완료 (${totalSynced}개 동기화, ${allErrors.length}개 오류)`, 'info')
       } else {
-        showToast(`동기화 완료 (${data.synced}개 동기화, ${data.skipped}개 건너뜀)`, 'success')
+        showToast(`동기화 완료 (${totalSynced}개 동기화, ${totalSkipped}개 건너뜀)`, 'success')
       }
+
       await fetchStatus()
     } catch {
       setErrorMessage('네트워크 오류가 발생했습니다.')
       showToast('동기화 중 오류가 발생했습니다.', 'error')
     } finally {
       setSyncing(false)
+      setProgress(0)
     }
   }
 
@@ -132,6 +158,21 @@ export function DriveSyncPanel() {
               )}
             </div>
 
+            {syncing && progress > 0 && (
+              <div className="mt-2 w-48">
+                <div className="flex justify-between text-xs text-blue-600 mb-1">
+                  <span>동기화 중...</span>
+                  <span>{progress}%</span>
+                </div>
+                <div className="w-full bg-blue-200 rounded-full h-1.5">
+                  <div
+                    className="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             {lastResult && (
               <div className="flex items-center gap-2 mt-1">
                 <CheckCircle size={13} className="text-green-600" />
@@ -171,7 +212,7 @@ export function DriveSyncPanel() {
           disabled={syncing}
         >
           <RefreshCw size={14} className={`mr-1.5 ${syncing ? 'animate-spin' : ''}`} />
-          {syncing ? '동기화 중...' : '지금 동기화'}
+          {syncing ? `동기화 중... ${progress}%` : '지금 동기화'}
         </Button>
       </div>
     </Card>

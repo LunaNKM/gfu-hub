@@ -15,10 +15,12 @@ import {
 } from 'firebase/firestore'
 import { getFirestoreInstance } from '@/lib/firebase/firestore'
 
-export const maxDuration = 300
+export const maxDuration = 60
 
-// 50MB 초과 파일 건너뜀
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
+// Hobby 플랜: 한 번에 5개 파일씩 처리
+const BATCH_SIZE = 5
+// 10MB 초과 파일 건너뜀
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,6 +28,10 @@ export async function POST(req: NextRequest) {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 })
     }
+
+    // cursor: 이번 배치의 시작 인덱스
+    const body = await req.json().catch(() => ({}))
+    const cursor: number = typeof body.cursor === 'number' ? body.cursor : 0
 
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID
     if (!folderId) {
@@ -42,18 +48,21 @@ export async function POST(req: NextRequest) {
 
     const openai = getOpenAIClient()
 
-    // Drive 파일 목록 가져오기
-    const files = await listDriveFiles(folderId)
+    // 전체 파일 목록 (cursor=0일 때만 로그)
+    const allFiles = await listDriveFiles(folderId)
+    const totalFiles = allFiles.length
+    const batch = allFiles.slice(cursor, cursor + BATCH_SIZE)
+    const nextCursor = cursor + BATCH_SIZE < totalFiles ? cursor + BATCH_SIZE : null
 
     let synced = 0
     let skipped = 0
     const errors: string[] = []
 
-    for (const file of files) {
+    for (const file of batch) {
       try {
         // 파일 크기 초과 건너뜀
         if (file.size && parseInt(file.size) > MAX_FILE_SIZE_BYTES) {
-          console.log(`건너뜀 (크기 초과): ${file.name} (${Math.round(parseInt(file.size) / 1024 / 1024)}MB)`)
+          console.log(`건너뜀 (크기 초과): ${file.name}`)
           skipped++
           continue
         }
@@ -85,7 +94,7 @@ export async function POST(req: NextRequest) {
         // Firestore docs 컬렉션에 upsert
         const docData = {
           title: file.name,
-          content: text.slice(0, 100000), // 저장 크기 제한
+          content: text.slice(0, 50000),
           category: 'Google Drive',
           tags: ['drive'],
           isActive: true,
@@ -117,9 +126,8 @@ export async function POST(req: NextRequest) {
           docId = newDocRef.id
         }
 
-        // 청크 분할 (최대 20개로 제한해 메모리 절약)
-        const allChunks = chunkText(text)
-        const chunks = allChunks.slice(0, 20)
+        // 청크 분할 (최대 10개로 제한)
+        const chunks = chunkText(text).slice(0, 10)
 
         for (let i = 0; i < chunks.length; i++) {
           const chunk = chunks[i]
@@ -156,15 +164,25 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 마지막 동기화 시간 저장
-    await setDoc(doc(db, 'settings', 'driveSync'), {
-      lastSyncAt: Timestamp.now(),
+    // 마지막 배치일 때만 설정 저장
+    if (nextCursor === null) {
+      await setDoc(doc(db, 'settings', 'driveSync'), {
+        lastSyncAt: Timestamp.now(),
+        synced,
+        skipped,
+        errorCount: errors.length,
+      })
+    }
+
+    return NextResponse.json({
       synced,
       skipped,
-      errorCount: errors.length,
+      errors,
+      totalFiles,
+      cursor,
+      nextCursor,
+      progress: Math.min(100, Math.round(((cursor + batch.length) / totalFiles) * 100)),
     })
-
-    return NextResponse.json({ synced, skipped, errors })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error('Drive 동기화 오류:', error)
