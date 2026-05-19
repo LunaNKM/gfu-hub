@@ -91,7 +91,7 @@ export async function extractDriveFileText(
     // Google Workspace 파일
     if (mimeType === 'application/vnd.google-apps.document') {
       const res = await drive.files.export(
-        { fileId, mimeType: 'text/plain', supportsAllDrives: true },
+        { fileId, mimeType: 'text/plain' },
         { responseType: 'text' }
       )
       return (res.data as string) ?? null
@@ -99,7 +99,7 @@ export async function extractDriveFileText(
 
     if (mimeType === 'application/vnd.google-apps.spreadsheet') {
       const res = await drive.files.export(
-        { fileId, mimeType: 'text/csv', supportsAllDrives: true },
+        { fileId, mimeType: 'text/csv' },
         { responseType: 'text' }
       )
       return (res.data as string) ?? null
@@ -107,7 +107,7 @@ export async function extractDriveFileText(
 
     if (mimeType === 'application/vnd.google-apps.presentation') {
       const res = await drive.files.export(
-        { fileId, mimeType: 'text/plain', supportsAllDrives: true },
+        { fileId, mimeType: 'text/plain' },
         { responseType: 'text' }
       )
       return (res.data as string) ?? null
