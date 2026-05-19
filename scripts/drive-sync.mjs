@@ -56,6 +56,7 @@ const oAuth2 = new google.auth.OAuth2(
 )
 oAuth2.setCredentials({ refresh_token: process.env.GOOGLE_OAUTH_REFRESH_TOKEN })
 const drive = google.drive({ version: 'v3', auth: oAuth2 })
+const sheets = google.sheets({ version: 'v4', auth: oAuth2 })
 
 // ── OpenAI 클라이언트 (선택) ──────────────────────────────────
 const openai = process.env.OPENAI_API_KEY
@@ -77,7 +78,7 @@ function isSupportedFileType(mimeType, fileName) {
   return false
 }
 
-function chunkText(text, size = 1000, overlap = 100) {
+function chunkText(text, size = 2000, overlap = 200) {
   const chunks = []
   let start = 0
   while (start < text.length) {
@@ -128,6 +129,37 @@ async function extractText(fileId, mimeType, fileName) {
       return res.data ?? null
     }
     if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+      // Sheets API로 모든 탭을 읽는다 (Drive export는 첫 탭만 반환)
+      try {
+        const meta = await sheets.spreadsheets.get({
+          spreadsheetId: fileId,
+          fields: 'sheets.properties(title,sheetId)',
+        })
+        const sheetList = meta.data.sheets ?? []
+        const parts = []
+
+        for (const sheet of sheetList) {
+          const sheetTitle = sheet.properties.title
+          try {
+            const valRes = await sheets.spreadsheets.values.get({
+              spreadsheetId: fileId,
+              range: sheetTitle,
+              valueRenderOption: 'FORMATTED_VALUE',
+            })
+            const rows = valRes.data.values ?? []
+            if (rows.length === 0) continue
+            const text = rows.map((row) => row.join('\t')).join('\n')
+            parts.push(`=== 시트: ${sheetTitle} ===\n${text}`)
+          } catch (sheetErr) {
+            console.warn(`    탭 읽기 실패 [${sheetTitle}]:`, sheetErr.message)
+          }
+        }
+
+        if (parts.length > 0) return parts.join('\n\n')
+      } catch (sheetsErr) {
+        console.warn(`    Sheets API 실패, CSV 폴백:`, sheetsErr.message)
+      }
+      // Sheets API 실패 시 CSV 폴백 (첫 탭만)
       const res = await drive.files.export({ fileId, mimeType: 'text/csv' }, { responseType: 'text' })
       return res.data ?? null
     }
@@ -230,8 +262,8 @@ async function main() {
         docId = ref.id
       }
 
-      // 청크 + 임베딩 생성
-      const chunks = chunkText(text).slice(0, 20)
+      // 청크 + 임베딩 생성 (한도 없음 — 파일 전체를 청크로 저장)
+      const chunks = chunkText(text)
       for (let ci = 0; ci < chunks.length; ci++) {
         let embedding = undefined
         if (openai) {
