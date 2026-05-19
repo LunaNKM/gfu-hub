@@ -17,6 +17,7 @@ import {
   updateDoc,
   addDoc,
   deleteDoc,
+  writeBatch,
   Timestamp,
   terminate,
 } from 'firebase/firestore'
@@ -77,6 +78,8 @@ function isSupportedFileType(mimeType, fileName) {
   if (textExts.some((e) => fileName.toLowerCase().endsWith(e))) return true
   return false
 }
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function chunkText(text, size = 2000, overlap = 200) {
   const chunks = []
@@ -258,10 +261,15 @@ async function main() {
         docId = existingSnap.docs[0].id
         await updateDoc(doc(db, 'docs', docId), docData)
 
-        // 기존 청크 삭제
+        // 기존 청크 삭제 (배치)
         const chunksSnap = await getDocs(query(collection(db, 'docChunks'), where('docId', '==', docId)))
-        for (const c of chunksSnap.docs) {
-          await deleteDoc(doc(db, 'docChunks', c.id))
+        if (!chunksSnap.empty) {
+          for (let bi = 0; bi < chunksSnap.docs.length; bi += 400) {
+            const batch = writeBatch(db)
+            chunksSnap.docs.slice(bi, bi + 400).forEach((c) => batch.delete(doc(db, 'docChunks', c.id)))
+            await batch.commit()
+            await sleep(200)
+          }
         }
       } else {
         const ref = await addDoc(collection(db, 'docs'), {
@@ -273,8 +281,12 @@ async function main() {
         docId = ref.id
       }
 
-      // 청크 + 임베딩 생성 (한도 없음 — 파일 전체를 청크로 저장)
-      const chunks = chunkText(text)
+      // 청크 + 임베딩 생성 (파일당 최대 50청크 = ~100,000자)
+      const chunks = chunkText(text).slice(0, 50)
+
+      // 청크를 400개 단위 배치로 나눠서 Firestore에 쓰기
+      // (배치당 최대 500, 임베딩 포함 고려해 400으로 제한)
+      const chunkDocs = []
       for (let ci = 0; ci < chunks.length; ci++) {
         let embedding = undefined
         if (openai) {
@@ -288,7 +300,7 @@ async function main() {
             // 임베딩 실패 무시
           }
         }
-        await addDoc(collection(db, 'docChunks'), {
+        chunkDocs.push({
           docId,
           title: file.name,
           chunkIndex: ci,
@@ -300,8 +312,20 @@ async function main() {
         })
       }
 
+      // WriteBatch로 400개씩 커밋
+      for (let bi = 0; bi < chunkDocs.length; bi += 400) {
+        const batch = writeBatch(db)
+        chunkDocs.slice(bi, bi + 400).forEach((data) => {
+          batch.set(doc(collection(db, 'docChunks')), data)
+        })
+        await batch.commit()
+        if (bi + 400 < chunkDocs.length) await sleep(300)
+      }
+
       console.log(`  ✅ 완료 (청크 ${chunks.length}개)`)
       synced++
+      // 파일 간 딜레이 — Firestore 쓰기 스트림 과부하 방지
+      await sleep(150)
     } catch (err) {
       console.error(`  ❌ 오류:`, err.message)
       errors.push(`${file.name}: ${err.message}`)
