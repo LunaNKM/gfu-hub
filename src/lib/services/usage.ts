@@ -22,9 +22,11 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'text-embedding-3-large': { input: 0.13, output: 0.00 },
 }
 
-export function calcCostUsd(model: string, inputTokens: number, outputTokens: number): number {
+// cachedTokens: OpenAI 자동 캐싱 적용 시 입력 토큰의 50% 할인
+export function calcCostUsd(model: string, inputTokens: number, outputTokens: number, cachedTokens = 0): number {
   const pricing = MODEL_PRICING[model] ?? MODEL_PRICING['gpt-5.4']
-  return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000
+  const uncachedInput = inputTokens - cachedTokens
+  return (uncachedInput * pricing.input + cachedTokens * pricing.input * 0.5 + outputTokens * pricing.output) / 1_000_000
 }
 
 export function formatUsd(amount: number): string {
@@ -47,7 +49,7 @@ export async function logAiUsage(
   const db = getFirestoreInstance()
   if (!db) return
 
-  const costUsd = calcCostUsd(data.model, data.inputTokens, data.outputTokens)
+  const costUsd = calcCostUsd(data.model, data.inputTokens, data.outputTokens, data.cachedTokens)
 
   try {
     await addDoc(collection(db, 'aiUsageLogs'), {

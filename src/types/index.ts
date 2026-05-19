@@ -89,6 +89,7 @@ export interface AiUsageLog {
   inputTokens: number
   outputTokens: number
   totalTokens: number
+  cachedTokens?: number
   costUsd: number
   createdAt: Date
   feature: 'chat' | 'prompt_optimizer' | 'rag' | 'embedding'

@@ -92,15 +92,9 @@ function isListingQuery(message: string): boolean {
   return listingSignals.some((k) => msg.includes(k))
 }
 
-// ── 시스템 프롬프트 빌더 ───────────────────────────────────────
-function buildSystemPrompt(
-  ragSources: { title: string; content: string }[],
-  webResults: { title: string; url: string; content: string }[],
-  webAnswer: string | null
-): string {
-  const hasSources = ragSources.length > 0 || webResults.length > 0 || !!webAnswer
-
-  const base = `# 역할
+// ── 정적 시스템 프롬프트 (모듈 상수) ─────────────────────────
+// 매 요청에서 동일하게 유지 → OpenAI 자동 프롬프트 캐싱 활성화 (1024+ 토큰)
+const BASE_SYSTEM_PROMPT = `# 역할
 
 당신은 **GFutures AI**다. GFutures는 한국 기반 일본 디지털 마케팅 전문 에이전시이며, 당신은 이 회사의 전략 파트너 AI다.
 핵심 역량: 일본 SNS·인플루언서 마케팅, 일본 소비자 심리, K-뷰티 일본 진출, 한일 크로스보더 캠페인.
@@ -204,11 +198,17 @@ type: "csv" | "markdown" | "json"
 - 단순 텍스트로 충분하면 아티팩트 불필요
 - 아티팩트는 텍스트 설명 뒤에 추가. 텍스트 없이 아티팩트만 출력 금지`
 
-  let context = ''
+// ── 동적 컨텍스트 블록 빌더 ──────────────────────────────────
+// RAG/웹 결과를 유저 메시지에 첨부 → 시스템 메시지는 항상 동일하게 유지
+function buildContextBlock(
+  ragSources: { title: string; content: string }[],
+  webResults: { title: string; url: string; content: string }[],
+  webAnswer: string | null
+): string {
+  const hasSources = ragSources.length > 0 || webResults.length > 0 || !!webAnswer
+  if (!hasSources) return ''
 
-  if (hasSources) {
-    context += '\n\n---\n\n# 참고 자료\n\n> ⚠️ 아래 자료를 최우선으로 활용하여 답변하라. 자료에 있는 내용은 반드시 인용하고, 자료에 없는 내용은 없다고 밝혀라.\n'
-  }
+  let context = '# 참고 자료\n\n> ⚠️ 아래 자료를 최우선으로 활용하여 답변하라. 자료에 있는 내용은 반드시 인용하고, 자료에 없는 내용은 없다고 밝혀라.\n'
 
   if (ragSources.length > 0) {
     context += '\n## 📂 사내 문서\n'
@@ -228,7 +228,7 @@ type: "csv" | "markdown" | "json"
       .join('\n\n')
   }
 
-  return base + context
+  return context
 }
 
 // ── 메인 핸들러 (SSE 스트리밍) ────────────────────────────────
@@ -289,8 +289,12 @@ export async function POST(req: NextRequest) {
           controller.enqueue(send({ type: 'search_done', content: `✅ ${searchSummary.join(', ')} 확인 완료. 답변 생성 중...` }))
         }
 
-        // 3단계: 시스템 프롬프트 구성
-        const systemPrompt = buildSystemPrompt(ragSources, webResult.results, webResult.answer)
+        // 3단계: 동적 컨텍스트 블록 구성 (RAG/웹 결과 → 유저 메시지에 첨부)
+        // 시스템 메시지는 BASE_SYSTEM_PROMPT 고정 → 캐시 히트율 극대화
+        const contextBlock = buildContextBlock(ragSources, webResult.results, webResult.answer)
+        const userContent = contextBlock
+          ? `${contextBlock}\n\n---\n\n## 질문\n${message}`
+          : message
 
         // 4단계: 대화 히스토리 (최근 10개)
         const historyMessages = (history as { role: string; content: string }[])
@@ -298,15 +302,16 @@ export async function POST(req: NextRequest) {
           .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
         // 5단계: OpenAI 스트리밍 호출
-        // 리스트: 12000 / 전략·기획: 2000 / 일반: 1500
+        // 리스트: 12000 / 전략·기획: 2500 / 일반: 1500
+        // 시스템 메시지 고정(BASE_SYSTEM_PROMPT) → OpenAI 자동 캐싱 적용
         const maxTokens = isListing ? 12000 : routing.isStrategy ? 2500 : 1500
 
         const openaiStream = await client.chat.completions.create({
           model: OPENAI_MODEL,
           messages: [
-            { role: 'system', content: systemPrompt },
+            { role: 'system', content: BASE_SYSTEM_PROMPT },
             ...historyMessages,
-            { role: 'user', content: message },
+            { role: 'user', content: userContent },
           ],
           stream: true,
           stream_options: { include_usage: true },
@@ -315,6 +320,7 @@ export async function POST(req: NextRequest) {
 
         let inputTokens = 0
         let outputTokens = 0
+        let cachedTokens = 0
 
         for await (const chunk of openaiStream) {
           const content = chunk.choices[0]?.delta?.content
@@ -324,6 +330,8 @@ export async function POST(req: NextRequest) {
           if (chunk.usage) {
             inputTokens = chunk.usage.prompt_tokens ?? 0
             outputTokens = chunk.usage.completion_tokens ?? 0
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            cachedTokens = (chunk.usage as any).prompt_tokens_details?.cached_tokens ?? 0
           }
         }
 
@@ -350,6 +358,7 @@ export async function POST(req: NextRequest) {
                 inputTokens,
                 outputTokens,
                 totalTokens: tokenUsage.totalTokens,
+                cachedTokens,
                 feature: 'chat',
                 success: true,
               })
