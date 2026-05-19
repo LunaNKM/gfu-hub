@@ -148,8 +148,18 @@ async function extractText(fileId, mimeType, fileName) {
             })
             const rows = valRes.data.values ?? []
             if (rows.length === 0) continue
-            const text = rows.map((row) => row.join('\t')).join('\n')
-            parts.push(`=== 시트: ${sheetTitle} ===\n${text}`)
+
+            // 빈 행 제거 + 셀을 ' | '로 연결해 AI가 읽기 쉬운 텍스트로 변환
+            const lines = []
+            for (const row of rows) {
+              const cells = row.map((c) => (c ?? '').toString().trim())
+              const meaningful = cells.filter((c) => c.length > 0)
+              if (meaningful.length === 0) continue   // 빈 행 스킵
+              lines.push(meaningful.join(' | '))
+            }
+
+            if (lines.length === 0) continue
+            parts.push(`=== 시트: ${sheetTitle} ===\n${lines.join('\n')}`)
           } catch (sheetErr) {
             console.warn(`    탭 읽기 실패 [${sheetTitle}]:`, sheetErr.message)
           }
