@@ -48,7 +48,6 @@ export async function listDriveFilesPage(
     pageSize,
     supportsAllDrives: true,
     includeItemsFromAllDrives: true,
-    corpora: 'allDrives',
     ...(pageToken ? { pageToken } : {}),
   })
 
