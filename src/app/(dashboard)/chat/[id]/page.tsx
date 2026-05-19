@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { Message, Conversation } from '@/types'
@@ -13,7 +13,7 @@ import {
 } from '@/lib/services/chat'
 import { ChatSidebar } from '@/components/chat/ChatSidebar'
 import { ChatWindow } from '@/components/chat/ChatWindow'
-import { ChatInput } from '@/components/chat/ChatInput'
+import { ChatInput, AttachedFile } from '@/components/chat/ChatInput'
 import { useToast } from '@/components/ui/Toast'
 
 export default function ChatDetailPage() {
@@ -27,6 +27,13 @@ export default function ChatDetailPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [initialized, setInitialized] = useState(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  const handleStop = () => {
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = null
+    setIsLoading(false)
+  }
 
   const fetchConversations = useCallback(async () => {
     if (!user) return
@@ -53,7 +60,7 @@ export default function ChatDetailPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, messages.length, initialized])
 
-  const handleSend = async (content: string, ragEnabled: boolean) => {
+  const handleSend = async (content: string, ragEnabled: boolean, attachments?: AttachedFile[]) => {
     if (!user || !id) return
 
     // 사용자 메시지 저장 및 표시
@@ -61,6 +68,10 @@ export default function ChatDetailPage() {
     const tempUserId = `temp-user-${Date.now()}`
     setMessages((prev) => [...prev, { ...userMsg, id: tempUserId, createdAt: new Date() }])
     setIsLoading(true)
+
+    // AbortController 생성
+    const controller = new AbortController()
+    abortControllerRef.current = controller
 
     try {
       const msgId = await addMessage(id, userMsg)
@@ -75,13 +86,28 @@ export default function ChatDetailPage() {
         .slice(-10)
         .map((m) => ({ role: m.role, content: m.content }))
 
+      // 첨부 파일을 메시지에 포함
+      const attachmentContext = attachments && attachments.length > 0
+        ? attachments
+            .filter((a) => a.extractedText)
+            .map((a) => `\n\n[첨부 파일: ${a.fileName}]\n${a.extractedText}`)
+            .join('')
+        : ''
+      const messageWithAttachments = content + attachmentContext
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ conversationId: id, message: content, history, ragEnabled }),
+        body: JSON.stringify({
+          conversationId: id,
+          message: messageWithAttachments,
+          history,
+          ragEnabled,
+        }),
+        signal: controller.signal,
       })
 
       if (!response.ok || !response.body) {
@@ -166,10 +192,16 @@ export default function ChatDetailPage() {
         }
       }
     } catch (error) {
-      console.error('Chat 오류:', error)
-      showToast('AI 응답 중 오류가 발생했습니다.', 'error')
-      setMessages((prev) => prev.filter((m) => m.id.startsWith('temp-') || !m.id.startsWith('streaming-')))
+      if (error instanceof Error && error.name === 'AbortError') {
+        // 사용자가 중지 버튼을 눌렀을 때 — 오류 표시 없이 스트리밍 메시지 제거
+        setMessages((prev) => prev.filter((m) => !m.id.startsWith('streaming-')))
+      } else {
+        console.error('Chat 오류:', error)
+        showToast('AI 응답 중 오류가 발생했습니다.', 'error')
+        setMessages((prev) => prev.filter((m) => !m.id.startsWith('streaming-')))
+      }
     } finally {
+      abortControllerRef.current = null
       setIsLoading(false)
     }
   }
@@ -216,7 +248,9 @@ export default function ChatDetailPage() {
         <ChatInput
           onSend={handleSend}
           onOptimizePrompt={handleOptimizePrompt}
-          disabled={isLoading}
+          onStop={handleStop}
+          isLoading={isLoading}
+          disabled={false}
         />
       </div>
     </div>
