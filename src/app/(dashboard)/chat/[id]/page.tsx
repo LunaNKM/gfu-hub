@@ -44,7 +44,6 @@ export default function ChatDetailPage() {
     }
   }, [id])
 
-  // 초기 메시지 처리 (홈에서 넘어온 경우)
   useEffect(() => {
     const initMessage = searchParams.get('init')
     if (initMessage && messages.length === 0 && !initialized && id) {
@@ -57,70 +56,119 @@ export default function ChatDetailPage() {
   const handleSend = async (content: string, ragEnabled: boolean) => {
     if (!user || !id) return
 
-    const userMessage: Omit<Message, 'id' | 'createdAt'> = {
-      role: 'user',
-      content,
-    }
-
-    // 낙관적 UI 업데이트
-    const tempId = `temp-${Date.now()}`
-    const optimisticMsg: Message = {
-      ...userMessage,
-      id: tempId,
-      createdAt: new Date(),
-    }
-    setMessages((prev) => [...prev, optimisticMsg])
+    // 사용자 메시지 저장 및 표시
+    const userMsg: Omit<Message, 'id' | 'createdAt'> = { role: 'user', content }
+    const tempUserId = `temp-user-${Date.now()}`
+    setMessages((prev) => [...prev, { ...userMsg, id: tempUserId, createdAt: new Date() }])
     setIsLoading(true)
 
     try {
-      // 메시지 저장
-      const msgId = await addMessage(id, userMessage)
+      const msgId = await addMessage(id, userMsg)
+      setMessages((prev) => prev.map((m) => (m.id === tempUserId ? { ...m, id: msgId } : m)))
 
-      // API 호출
       const token = await user.getIdToken()
+
+      // 현재 메시지 목록에서 히스토리 추출 (방금 추가한 것 제외)
+      const currentMessages = await getMessages(id)
+      const history = currentMessages
+        .filter((m) => m.id !== msgId)
+        .slice(-10)
+        .map((m) => ({ role: m.role, content: m.content }))
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          conversationId: id,
-          message: content,
-          ragEnabled,
-        }),
+        body: JSON.stringify({ conversationId: id, message: content, history, ragEnabled }),
       })
 
-      if (!response.ok) {
-        throw new Error('AI 응답 오류')
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP ${response.status}`)
       }
 
-      const data = await response.json()
+      // SSE 스트리밍 처리
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
 
-      // 실제 메시지 ID로 교체
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === tempId ? { ...m, id: msgId } : m
-        )
-      )
+      const streamingId = `streaming-${Date.now()}`
+      let planContent = ''
+      let mainContent = ''
+      let searchStatus = ''
+      let tokenUsage: Message['tokenUsage'] | undefined
 
-      // AI 응답 저장 및 표시
-      const assistantMsg: Omit<Message, 'id' | 'createdAt'> = {
-        role: 'assistant',
-        content: data.reply,
-        tokenUsage: data.tokenUsage,
-      }
-      const assistantId = await addMessage(id, assistantMsg)
+      // 스트리밍 메시지 플레이스홀더 추가
       setMessages((prev) => [
         ...prev,
-        { ...assistantMsg, id: assistantId, createdAt: new Date() },
+        { id: streamingId, role: 'assistant', content: '', createdAt: new Date() },
       ])
 
-      await fetchConversations()
+      const updateStreamingMsg = (plan: string, status: string, main: string) => {
+        let content = ''
+        if (plan) content += `> ${plan}\n\n`
+        if (status) content += `*${status}*\n\n`
+        if (main) content += main
+        setMessages((prev) =>
+          prev.map((m) => (m.id === streamingId ? { ...m, content } : m))
+        )
+      }
+
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+
+            if (data.type === 'plan') {
+              planContent = data.content
+              updateStreamingMsg(planContent, '', '')
+            } else if (data.type === 'search_done') {
+              searchStatus = data.content
+              updateStreamingMsg(planContent, searchStatus, '')
+            } else if (data.type === 'chunk') {
+              mainContent += data.content
+              updateStreamingMsg(planContent, '', mainContent)
+            } else if (data.type === 'done') {
+              tokenUsage = data.tokenUsage
+              const finalContent =
+                (planContent ? `> ${planContent}\n\n` : '') + mainContent
+
+              const assistantMsg: Omit<Message, 'id' | 'createdAt'> = {
+                role: 'assistant',
+                content: finalContent,
+                tokenUsage,
+              }
+              const assistantId = await addMessage(id, assistantMsg)
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === streamingId
+                    ? { ...m, id: assistantId, content: finalContent, tokenUsage }
+                    : m
+                )
+              )
+              await fetchConversations()
+            } else if (data.type === 'error') {
+              showToast(data.content || 'AI 응답 중 오류가 발생했습니다.', 'error')
+              setMessages((prev) => prev.filter((m) => m.id !== streamingId))
+            }
+          } catch {
+            // JSON 파싱 실패 무시
+          }
+        }
+      }
     } catch (error) {
+      console.error('Chat 오류:', error)
       showToast('AI 응답 중 오류가 발생했습니다.', 'error')
-      setMessages((prev) => prev.filter((m) => m.id !== tempId))
-      console.error(error)
+      setMessages((prev) => prev.filter((m) => m.id.startsWith('temp-') || !m.id.startsWith('streaming-')))
     } finally {
       setIsLoading(false)
     }
@@ -131,10 +179,7 @@ export default function ChatDetailPage() {
       const token = await user?.getIdToken()
       const response = await fetch('/api/prompt-optimize', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ prompt }),
       })
       if (!response.ok) throw new Error('최적화 실패')
@@ -156,9 +201,7 @@ export default function ChatDetailPage() {
   const handleDeleteConversation = async (convId: string) => {
     await deleteConversation(convId)
     setConversations((prev) => prev.filter((c) => c.id !== convId))
-    if (convId === id) {
-      router.push('/chat')
-    }
+    if (convId === id) router.push('/chat')
   }
 
   return (
