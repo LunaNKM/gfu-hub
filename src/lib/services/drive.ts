@@ -68,34 +68,15 @@ export async function listDriveFilesPage(
 
 // 하위 호환성을 위해 유지 (status route에서 사용)
 export async function listDriveFiles(folderId: string): Promise<DriveFile[]> {
-  const drive = getDriveClient()
-  if (!drive) return []
-
   const results: DriveFile[] = []
-  let pageToken: string | undefined = undefined
+  let token: string | undefined = undefined
 
-  do {
-    const res: Awaited<ReturnType<typeof drive.files.list>> = await drive.files.list({
-      q: `'${folderId}' in ancestors and mimeType != 'application/vnd.google-apps.folder' and trashed = false`,
-      fields: 'nextPageToken, files(id,name,mimeType,modifiedTime,size)',
-      pageSize: 100,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-      corpora: 'allDrives',
-      ...(pageToken ? { pageToken } : {}),
-    })
-
-    for (const f of res.data.files ?? []) {
-      results.push({
-        id: f.id!,
-        name: f.name!,
-        mimeType: f.mimeType!,
-        modifiedTime: f.modifiedTime ?? '',
-        size: f.size ?? undefined,
-      })
-    }
-    pageToken = res.data.nextPageToken ?? undefined
-  } while (pageToken)
+  while (true) {
+    const page = await listDriveFilesPage(folderId, 100, token)
+    results.push(...page.files)
+    if (!page.nextPageToken) break
+    token = page.nextPageToken
+  }
 
   return results
 }
