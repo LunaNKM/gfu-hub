@@ -14,6 +14,7 @@ import {
   MessageSquare,
   TrendingUp,
   Calendar,
+  Users,
   ChevronDown,
   ChevronUp,
 } from 'lucide-react'
@@ -26,15 +27,26 @@ const FEATURE_LABELS: Record<string, string> = {
   embedding: '임베딩',
 }
 
+type Tab = 'my' | 'company'
+
+interface CompanyStats {
+  totalRequests: number
+  totalCostUsd: number
+  thisMonthCostUsd: number
+  activeUsers: number
+}
+
 function KpiCard({
   icon,
   label,
   value,
+  sub,
   color = 'blue',
 }: {
   icon: React.ReactNode
   label: string
   value: string
+  sub?: string
   color?: 'blue' | 'green' | 'purple' | 'orange'
 }) {
   const bg: Record<string, string> = {
@@ -52,6 +64,7 @@ function KpiCard({
         <div className="min-w-0">
           <p className="text-2xl font-bold text-gray-900 truncate">{value}</p>
           <p className="text-xs text-gray-500">{label}</p>
+          {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
         </div>
       </div>
     </Card>
@@ -80,7 +93,7 @@ function LogTable({ logs }: { logs: AiUsageLog[] }) {
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">모델</th>
               <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">입력</th>
               <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">출력</th>
-              <th className="text-right px-4 py-3 text-xs font-medium text-green-600 text-xs">비용</th>
+              <th className="text-right px-4 py-3 text-xs font-medium text-green-600">비용</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">상태</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">시간</th>
             </tr>
@@ -131,16 +144,36 @@ function LogTable({ logs }: { logs: AiUsageLog[] }) {
 
 export default function UsagePage() {
   const { user } = useAuth()
-  const [logs, setLogs] = useState<AiUsageLog[]>([])
+  const [tab, setTab] = useState<Tab>('my')
+  const [myLogs, setMyLogs] = useState<AiUsageLog[]>([])
+  const [companyStats, setCompanyStats] = useState<CompanyStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [companyLoading, setCompanyLoading] = useState(false)
 
+  // 내 사용량 로드
   useEffect(() => {
     if (!user) return
     getMyUsage(user.uid).then((data) => {
-      setLogs(data)
+      setMyLogs(data)
       setLoading(false)
     })
   }, [user])
+
+  // 회사 통계는 탭 클릭 시 로드
+  useEffect(() => {
+    if (tab !== 'company' || companyStats || !user) return
+    setCompanyLoading(true)
+    user.getIdToken().then((token) =>
+      fetch('/api/usage/company-stats', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).then((r) => r.json())
+      .then((data) => {
+        setCompanyStats(data)
+        setCompanyLoading(false)
+      })
+      .catch(() => setCompanyLoading(false))
+  }, [tab, companyStats, user])
 
   if (loading) {
     return (
@@ -150,48 +183,81 @@ export default function UsagePage() {
     )
   }
 
-  const stats = computeStats(logs)
+  const myStats = computeStats(myLogs)
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">내 AI 사용량</h1>
+        <h1 className="text-xl font-bold text-gray-900">AI 사용량</h1>
         <p className="text-sm text-gray-500 mt-0.5">
           GPT-5.4 &nbsp;·&nbsp; 입력 $2.50/1M · 출력 $15.00/1M 토큰
         </p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <KpiCard
-          icon={<DollarSign size={20} />}
-          label="누적 총 비용"
-          value={formatUsd(stats.totalCostUsd)}
-          color="green"
-        />
-        <KpiCard
-          icon={<Calendar size={20} />}
-          label="이번 달 비용"
-          value={formatUsd(stats.thisMonthCostUsd)}
-          color="blue"
-        />
-        <KpiCard
-          icon={<MessageSquare size={20} />}
-          label="전체 요청 수"
-          value={stats.totalRequests.toLocaleString()}
-          color="purple"
-        />
-        <KpiCard
-          icon={<TrendingUp size={20} />}
-          label="요청당 평균 비용"
-          value={stats.totalRequests > 0
-            ? formatUsd(stats.totalCostUsd / stats.totalRequests)
-            : '$0.00'}
-          color="orange"
-        />
+      {/* 탭 */}
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit mb-6">
+        {([['my', '내 사용량'], ['company', '회사 전체']] as [Tab, string][]).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={clsx(
+              'px-4 py-1.5 rounded-lg text-sm font-medium transition-all',
+              tab === key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            )}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      <h2 className="text-sm font-semibold text-gray-700 mb-3">요청 로그</h2>
-      <LogTable logs={logs} />
+      {/* ── 내 사용량 ── */}
+      {tab === 'my' && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+            <KpiCard icon={<DollarSign size={20} />} label="누적 총 비용" value={formatUsd(myStats.totalCostUsd)} color="green" />
+            <KpiCard icon={<Calendar size={20} />} label="이번 달 비용" value={formatUsd(myStats.thisMonthCostUsd)} color="blue" />
+            <KpiCard icon={<MessageSquare size={20} />} label="전체 요청 수" value={myStats.totalRequests.toLocaleString()} color="purple" />
+            <KpiCard
+              icon={<TrendingUp size={20} />}
+              label="요청당 평균 비용"
+              value={myStats.totalRequests > 0 ? formatUsd(myStats.totalCostUsd / myStats.totalRequests) : '$0.00'}
+              color="orange"
+            />
+          </div>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">요청 로그</h2>
+          <LogTable logs={myLogs} />
+        </>
+      )}
+
+      {/* ── 회사 전체 (집계 숫자만) ── */}
+      {tab === 'company' && (
+        <>
+          {companyLoading ? (
+            <div className="flex justify-center py-16">
+              <LoadingSpinner size="lg" />
+            </div>
+          ) : companyStats ? (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                <KpiCard icon={<DollarSign size={20} />} label="전체 누적 비용" value={formatUsd(companyStats.totalCostUsd)} color="green" />
+                <KpiCard icon={<Calendar size={20} />} label="이번 달 비용" value={formatUsd(companyStats.thisMonthCostUsd)} color="blue" />
+                <KpiCard icon={<MessageSquare size={20} />} label="전체 요청 수" value={companyStats.totalRequests.toLocaleString()} color="purple" />
+                <KpiCard icon={<Users size={20} />} label="활성 사용자" value={companyStats.activeUsers.toString()} color="orange" />
+              </div>
+
+              <Card className="p-4 bg-gray-50 border-gray-200">
+                <p className="text-xs text-gray-500 text-center">
+                  개인별 상세 사용 내역은 본인만 확인할 수 있습니다.
+                </p>
+              </Card>
+            </>
+          ) : (
+            <Card className="p-8 text-center">
+              <p className="text-gray-400 text-sm">통계를 불러올 수 없습니다.</p>
+            </Card>
+          )}
+        </>
+      )}
     </div>
   )
 }
