@@ -66,7 +66,7 @@ export function DriveSyncPanel() {
       const token = await user.getIdToken()
 
       while (cursor !== null) {
-        const res = await fetch('/api/drive/sync', {
+        const res: Response = await fetch('/api/drive/sync', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
