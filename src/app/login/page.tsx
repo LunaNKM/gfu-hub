@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 
 export default function LoginPage() {
-  const { user, loading, signIn } = useAuth()
+  const { user, loading, signIn, authError } = useAuth()
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [signingIn, setSigningIn] = useState(false)
@@ -17,6 +17,11 @@ export default function LoginPage() {
     }
   }, [user, loading, router])
 
+  // redirect 방식 로그인 후 에러 표시
+  useEffect(() => {
+    if (authError) setError(authError)
+  }, [authError])
+
   const handleSignIn = async () => {
     setError(null)
     setSigningIn(true)
@@ -24,10 +29,10 @@ export default function LoginPage() {
       const result = await signIn()
       if (result.error) {
         setError(result.error)
-      } else {
-        router.replace('/')
+        setSigningIn(false)
       }
-    } finally {
+      // redirect 방식이면 페이지가 이동하므로 setSigningIn(false) 불필요
+    } catch {
       setSigningIn(false)
     }
   }
