@@ -6,6 +6,15 @@ on:
     - cron: '0 22 * * *'
   # 수동 실행 (GitHub Actions 탭에서 버튼 클릭)
   workflow_dispatch:
+    inputs:
+      force_resync:
+        description: '전체 강제 재동기화 (변경 여부 무시하고 모든 파일 재처리)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   sync:
@@ -28,6 +37,7 @@ jobs:
       - name: Drive 동기화 실행
         run: node scripts/drive-sync.mjs
         env:
+          FORCE_RESYNC: ${{ github.event.inputs.force_resync || 'false' }}
           NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
           NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
           NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}

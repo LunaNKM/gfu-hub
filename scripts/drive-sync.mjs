@@ -196,7 +196,8 @@ async function extractText(fileId, mimeType, fileName) {
 
 // ── 메인 ─────────────────────────────────────────────────────
 async function main() {
-  console.log('🚀 Drive 동기화 시작')
+  const forceResync = process.env.FORCE_RESYNC === 'true'
+  console.log(`🚀 Drive 동기화 시작 ${forceResync ? '(강제 전체 재동기화)' : ''}`)
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID
 
   // 1. 파일 목록 수집
@@ -218,11 +219,11 @@ async function main() {
     console.log(`[${i + 1}/${supported.length}] ${file.name}`)
 
     try {
-      // 변경 여부 확인
+      // 변경 여부 확인 (강제 재동기화 시 스킵)
       const existingQ = query(collection(db, 'docs'), where('driveFileId', '==', file.id))
       const existingSnap = await getDocs(existingQ)
 
-      if (!existingSnap.empty) {
+      if (!forceResync && !existingSnap.empty) {
         const existingModified = existingSnap.docs[0].data().driveModifiedTime
         if (existingModified === file.modifiedTime) {
           console.log('  → 변경 없음, 건너뜀')
