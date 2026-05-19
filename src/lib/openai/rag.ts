@@ -37,7 +37,8 @@ function keywordScore(content: string, query: string): number {
 
 export async function searchRelevantDocs(
   searchQuery: string,
-  limit = 5
+  limit = 15,
+  minScore = 0.05
 ): Promise<{ docId: string; title: string; content: string; score: number }[]> {
   const db = getFirestoreInstance()
   if (!db) return []
@@ -52,13 +53,11 @@ export async function searchRelevantDocs(
 
     if (chunks.length === 0) return []
 
-    // 임베딩 시도
     const queryEmbedding = await getEmbedding(searchQuery)
 
     let scored: { docId: string; title: string; content: string; score: number }[]
 
     if (queryEmbedding.length > 0) {
-      // 임베딩 기반 유사도 검색
       scored = chunks
         .filter((chunk) => chunk.embedding && chunk.embedding.length > 0)
         .map((chunk) => ({
@@ -68,7 +67,6 @@ export async function searchRelevantDocs(
           score: cosineSimilarity(queryEmbedding, chunk.embedding!),
         }))
 
-      // 임베딩 없는 청크는 키워드로 폴백
       const noEmbedding = chunks
         .filter((chunk) => !chunk.embedding || chunk.embedding.length === 0)
         .map((chunk) => ({
@@ -80,7 +78,6 @@ export async function searchRelevantDocs(
 
       scored = [...scored, ...noEmbedding]
     } else {
-      // 키워드 기반 폴백
       scored = chunks.map((chunk) => ({
         docId: chunk.docId,
         title: chunk.title,
@@ -90,11 +87,84 @@ export async function searchRelevantDocs(
     }
 
     return scored
-      .filter((item) => item.score > 0.05)
+      .filter((item) => item.score > minScore)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
   } catch (error) {
     console.error('RAG 검색 오류:', error)
+    return []
+  }
+}
+
+/**
+ * 리스트·열거 질문 전용: 관련 문서의 모든 청크를 가져온다.
+ * 상위 K개 문서를 먼저 식별한 뒤, 해당 문서의 청크를 전량 수집한다.
+ */
+export async function searchAllChunksFromTopDocs(
+  searchQuery: string,
+  topDocCount = 5,
+  maxTotalChunks = 80
+): Promise<{ docId: string; title: string; content: string; score: number }[]> {
+  const db = getFirestoreInstance()
+  if (!db) return []
+
+  try {
+    const q = query(collection(db, 'docChunks'), orderBy('updatedAt', 'desc'))
+    const snapshot = await getDocs(q)
+    const chunks: DocChunk[] = snapshot.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    })) as DocChunk[]
+
+    if (chunks.length === 0) return []
+
+    const queryEmbedding = await getEmbedding(searchQuery)
+
+    // 1단계: 각 청크에 점수 부여
+    const scored = chunks.map((chunk) => {
+      let score = 0
+      if (queryEmbedding.length > 0 && chunk.embedding && chunk.embedding.length > 0) {
+        score = cosineSimilarity(queryEmbedding, chunk.embedding)
+      } else {
+        score = keywordScore(chunk.content, searchQuery)
+      }
+      return { docId: chunk.docId, title: chunk.title, content: chunk.content, score }
+    })
+
+    // 2단계: 문서별 최고 점수 집계 → 상위 N개 docId 선정
+    const docMaxScore: Record<string, number> = {}
+    for (const item of scored) {
+      if (!docMaxScore[item.docId] || item.score > docMaxScore[item.docId]) {
+        docMaxScore[item.docId] = item.score
+      }
+    }
+    const topDocIds = Object.entries(docMaxScore)
+      .filter(([, s]) => s > 0.05)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, topDocCount)
+      .map(([docId]) => docId)
+
+    if (topDocIds.length === 0) {
+      // 관련 문서를 못 찾으면 일반 검색으로 폴백
+      return scored
+        .filter((i) => i.score > 0.05)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 30)
+    }
+
+    // 3단계: 선정된 문서의 모든 청크 수집 (점수 순 정렬)
+    return scored
+      .filter((item) => topDocIds.includes(item.docId))
+      .sort((a, b) => {
+        // 같은 문서 내에서는 원본 순서 유지를 위해 score 차이가 작으면 동등 처리
+        const docOrderA = topDocIds.indexOf(a.docId)
+        const docOrderB = topDocIds.indexOf(b.docId)
+        if (docOrderA !== docOrderB) return docOrderA - docOrderB
+        return b.score - a.score
+      })
+      .slice(0, maxTotalChunks)
+  } catch (error) {
+    console.error('RAG 전체 청크 검색 오류:', error)
     return []
   }
 }

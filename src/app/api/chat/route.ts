@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { getOpenAIClient, OPENAI_MODEL } from '@/lib/openai/client'
-import { searchRelevantDocs } from '@/lib/openai/rag'
+import { searchRelevantDocs, searchAllChunksFromTopDocs } from '@/lib/openai/rag'
 import { webSearch } from '@/lib/openai/websearch'
 import { logAiUsage } from '@/lib/services/usage'
 
@@ -73,6 +73,18 @@ function routeQuery(message: string): {
     needsWebSearch: isWeb || isStrategy,
     planText: '📂🔍 사내 자료와 최신 외부 데이터를 함께 조합하여 전략을 구성합니다.',
   }
+}
+
+// ── 리스트·열거 질문 감지 ──────────────────────────────────────
+function isListingQuery(message: string): boolean {
+  const msg = message.toLowerCase()
+  const listingSignals = [
+    '정리해', '정리 해', '목록', '리스트', '전부', '전체', '모두', '모든',
+    '다 알려', '다 보여', '나열', '열거', '몇 명', '몇명', '몇 개', '몇개',
+    '있어?', '있나?', '있나요', '있었나', '있었어', '어떤 것들',
+    '어떤 인플루언서', '누가 있', '누구누구', '어디어디',
+  ]
+  return listingSignals.some((k) => msg.includes(k))
 }
 
 // ── 시스템 프롬프트 빌더 ───────────────────────────────────────
@@ -206,11 +218,23 @@ export async function POST(req: NextRequest) {
           ? routeQuery(message)
           : { needsRag: false, needsWebSearch: false, planText: '💬 질문을 분석합니다.' }
 
-        controller.enqueue(send({ type: 'plan', content: routing.planText }))
+        const isListing = ragEnabled && isListingQuery(message)
+
+        controller.enqueue(send({
+          type: 'plan',
+          content: isListing
+            ? '📂 관련 문서 전체 범위를 탐색하여 목록을 수집합니다.'
+            : routing.planText,
+        }))
 
         // 2단계: 병렬 검색
+        // 리스트 질문이면 상위 문서의 청크를 전량 수집, 일반 질문은 유사도 상위 N개
         const [ragSources, webResult] = await Promise.all([
-          routing.needsRag ? searchRelevantDocs(message, 15) : Promise.resolve([]),
+          isListing
+            ? searchAllChunksFromTopDocs(message, 8, 80)
+            : routing.needsRag
+              ? searchRelevantDocs(message, 20, 0.03)
+              : Promise.resolve([]),
           routing.needsWebSearch ? webSearch(message) : Promise.resolve({ answer: null, results: [] }),
         ])
 
@@ -231,6 +255,9 @@ export async function POST(req: NextRequest) {
           .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
         // 5단계: OpenAI 스트리밍 호출
+        // 리스트 질문은 출력이 길어지므로 토큰 한도를 늘린다
+        const maxTokens = isListing ? 12000 : 4000
+
         const openaiStream = await client.chat.completions.create({
           model: OPENAI_MODEL,
           messages: [
@@ -240,7 +267,7 @@ export async function POST(req: NextRequest) {
           ],
           stream: true,
           stream_options: { include_usage: true },
-          max_completion_tokens: 4000,
+          max_completion_tokens: maxTokens,
         })
 
         let inputTokens = 0
