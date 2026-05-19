@@ -299,7 +299,7 @@ export async function POST(req: NextRequest) {
 
         // 5단계: OpenAI 스트리밍 호출
         // 리스트: 12000 / 전략·기획: 2000 / 일반: 1500
-        const maxTokens = isListing ? 12000 : routing.isStrategy ? 2000 : 1500
+        const maxTokens = isListing ? 12000 : routing.isStrategy ? 2500 : 1500
 
         const openaiStream = await client.chat.completions.create({
           model: OPENAI_MODEL,
