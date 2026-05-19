@@ -18,12 +18,6 @@ function getAuthInstance(): Auth | null {
   return getAuth(app)
 }
 
-// Electron 환경 여부 감지
-function isElectron(): boolean {
-  return typeof window !== 'undefined' &&
-    typeof (window as Window & { electronAPI?: unknown }).electronAPI !== 'undefined'
-}
-
 // 도메인 & 비활성화 체크 공통 함수
 async function validateUser(user: User): Promise<string | null> {
   if (!user.email?.endsWith('@gfutures.co')) {

@@ -94,17 +94,14 @@ export async function getAllUsage(): Promise<AiUsageLog[]> {
   if (!db) return []
 
   try {
-    const q = query(
-      collection(db, 'aiUsageLogs'),
-      orderBy('createdAt', 'desc')
-    )
-    const snapshot = await getDocs(q)
-    return snapshot.docs.map((d) => ({
+    const snapshot = await getDocs(collection(db, 'aiUsageLogs'))
+    const logs = snapshot.docs.map((d) => ({
       id: d.id,
       ...d.data(),
-      costUsd: d.data().costUsd ?? calcCostUsd(d.data().model, d.data().inputTokens, d.data().outputTokens),
+      costUsd: d.data().costUsd ?? calcCostUsd(d.data().model, d.data().inputTokens ?? 0, d.data().outputTokens ?? 0),
       createdAt: convertTimestamp(d.data().createdAt),
     })) as AiUsageLog[]
+    return logs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
   } catch (error) {
     console.error('전체 사용량 조회 오류:', error)
     return []
