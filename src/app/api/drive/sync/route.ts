@@ -152,9 +152,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ synced, skipped, errors })
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
     console.error('Drive 동기화 오류:', error)
     return NextResponse.json(
-      { error: '동기화 중 오류가 발생했습니다.' },
+      { error: `동기화 오류: ${message}` },
       { status: 500 }
     )
   }
