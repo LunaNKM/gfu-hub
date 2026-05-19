@@ -1,9 +1,9 @@
 name: Google Drive 동기화
 
 on:
-  # 매일 오전 9시 (한국시간 KST = UTC+9)
+  # 매일 오전 7시 (한국시간 KST = UTC+9, GitHub Actions는 UTC 기준)
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 22 * * *'
   # 수동 실행 (GitHub Actions 탭에서 버튼 클릭)
   workflow_dispatch:
 
