@@ -10,16 +10,15 @@ export interface DriveFile {
 }
 
 export function getDriveClient() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
-  const key = process.env.GOOGLE_PRIVATE_KEY
-  if (!email || !key) return null
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
+  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN
+
+  if (!clientId || !clientSecret || !refreshToken) return null
 
   try {
-    const auth = new google.auth.JWT({
-      email,
-      key: key.replace(/\\n/g, '\n'),
-      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
-    })
+    const auth = new google.auth.OAuth2(clientId, clientSecret)
+    auth.setCredentials({ refresh_token: refreshToken })
     return google.drive({ version: 'v3', auth })
   } catch {
     return null
