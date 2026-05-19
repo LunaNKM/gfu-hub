@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useCallback } from 'react'
 import { Message } from '@/types'
 import { MessageBubble } from './MessageBubble'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -13,8 +13,21 @@ interface ChatWindowProps {
 
 export function ChatWindow({ messages, isLoading }: ChatWindowProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  // 사용자가 위로 스크롤했는지 추적
+  const userScrolledUp = useRef(false)
+
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return
+    // 하단에서 100px 이상 위면 "사용자가 스크롤 올림"으로 판단
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    userScrolledUp.current = distanceFromBottom > 100
+  }, [])
 
   useEffect(() => {
+    // 사용자가 스크롤을 올렸으면 자동 스크롤하지 않음
+    if (userScrolledUp.current) return
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isLoading])
 
@@ -28,7 +41,11 @@ export function ChatWindow({ messages, isLoading }: ChatWindowProps) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+    <div
+      ref={containerRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto p-6 space-y-6"
+    >
       {messages.map((message) => (
         <MessageBubble key={message.id} message={message} />
       ))}
