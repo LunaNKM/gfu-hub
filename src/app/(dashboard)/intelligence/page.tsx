@@ -6,74 +6,84 @@ import { getRecentBriefs } from '@/lib/services/marketBriefs'
 import { MarketBrief } from '@/types'
 import {
   Globe, RefreshCw, Loader2, ExternalLink, ChevronDown, ChevronUp,
-  Sparkles, Calendar, Search, ShoppingBag,
+  Sparkles, Calendar, Search,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
 
-// ── 경쟁사 PR 섹션 ───────────────────────────────────────────
+// ── 경쟁사 언급/활동 섹션 ────────────────────────────────────
 function CompetitorPRSection({ brief }: { brief: MarketBrief }) {
   if (!brief.competitorPR || brief.competitorPR.length === 0) return null
 
   return (
     <div className="border-t border-gray-100 pt-4">
       <div className="flex items-center gap-1.5 mb-3">
-        <ShoppingBag size={13} className="text-rose-400" />
-        <span className="text-sm font-semibold text-gray-800">경쟁사 인스타그램 PR 현황</span>
+        <Search size={13} className="text-violet-400" />
+        <span className="text-sm font-semibold text-gray-800">경쟁사 언급/활동 현황</span>
         {brief.searchDate && (
           <span className="ml-1 text-xs text-gray-400">({brief.searchDate} 기준)</span>
         )}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="space-y-3">
         {brief.competitorPR.map((comp) => (
           <div
             key={comp.brand}
             className={clsx(
               'rounded-xl border p-3',
-              comp.found ? 'border-rose-100 bg-rose-50/40' : 'border-gray-100 bg-gray-50/40'
+              comp.found ? 'border-violet-100 bg-violet-50/30' : 'border-gray-100 bg-gray-50/30'
             )}
           >
-            {/* 브랜드 헤더 */}
-            <div className="flex items-center justify-between mb-2">
+            {/* 헤더 */}
+            <div className="flex items-center gap-2 mb-1.5">
               <span className="text-xs font-semibold text-gray-800">{comp.brand}</span>
               <span
                 className={clsx(
                   'px-1.5 py-0.5 rounded-full text-xs font-medium',
                   comp.found
-                    ? 'bg-rose-100 text-rose-600'
+                    ? 'bg-violet-100 text-violet-600'
                     : 'bg-gray-100 text-gray-400'
                 )}
               >
-                {comp.found ? '활동 확인' : '미확인'}
+                {comp.found ? '언급 확인' : '미확인'}
               </span>
             </div>
             {/* 요약 */}
             <p className="text-xs text-gray-500 leading-snug mb-2">{comp.summary}</p>
-            {/* 제품 목록 */}
-            {comp.products.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {comp.products.map((p) => (
-                  <div
-                    key={p.name}
-                    className="flex items-center gap-1 bg-white border border-rose-100 rounded-lg px-2 py-1"
-                    title={p.note}
+            {/* 링크 버튼 목록 */}
+            {comp.links && comp.links.length > 0 ? (
+              <div className="flex flex-col gap-1.5">
+                {comp.links.map((link, i) => (
+                  <a
+                    key={i}
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-2 group bg-white border border-violet-100 hover:border-violet-300 hover:bg-violet-50 rounded-lg px-3 py-2 transition-colors"
                   >
-                    <span className="text-xs text-gray-700">{p.name}</span>
-                    <span className="text-xs font-bold text-rose-500 ml-0.5">{p.count}건</span>
-                  </div>
+                    <ExternalLink
+                      size={12}
+                      className="text-violet-300 group-hover:text-violet-500 shrink-0 mt-0.5"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-gray-700 group-hover:text-violet-700 leading-snug truncate">
+                        {link.title}
+                      </p>
+                      {link.snippet && (
+                        <p className="text-xs text-gray-400 leading-snug mt-0.5 line-clamp-2">
+                          {link.snippet}
+                        </p>
+                      )}
+                    </div>
+                  </a>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-gray-300 italic">제품 정보 없음</p>
+              <p className="text-xs text-gray-300 italic">관련 링크 없음</p>
             )}
           </div>
         ))}
       </div>
-      <p className="text-xs text-gray-300 mt-2 flex items-center gap-1">
-        <Search size={10} />
-        웹 검색 기반 집계 · 실제 게시물 수와 다를 수 있음
-      </p>
     </div>
   )
 }

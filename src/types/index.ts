@@ -183,17 +183,17 @@ export interface MarketBriefTopic {
   source?: string
 }
 
-export interface CompetitorProduct {
-  name: string    // 제품명
-  count: number   // 검색 결과 내 언급 건수
-  note?: string   // 부가 정보
+export interface CompetitorLink {
+  title: string    // 페이지 제목
+  url: string      // 링크
+  snippet?: string // 발췌 내용
 }
 
 export interface CompetitorPR {
-  brand: string                  // 브랜드명
-  found: boolean                 // 검색 결과 발견 여부
-  summary: string                // 한줄 요약
-  products: CompetitorProduct[]  // 제품별 언급 현황
+  brand: string              // 회사명
+  found: boolean             // 검색 결과 발견 여부
+  summary: string            // 한줄 요약
+  links: CompetitorLink[]   // 발견된 링크 목록
 }
 
 export interface MarketBrief {

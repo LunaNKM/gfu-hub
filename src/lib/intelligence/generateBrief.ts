@@ -6,20 +6,22 @@
 import OpenAI from 'openai'
 import { MarketBriefTopic, CompetitorPR } from '@/types'
 
-// ── 추적할 경쟁사 목록 (필요 시 추가) ────────────────────────
+// ── 추적할 경쟁사 목록 (필요 시 추가/수정) ───────────────────
 const TRACKED_COMPETITORS = [
   {
-    brand: 'Numberzin (넘버즈인)',
+    brand: '제리와 콩나무',
     queries: (dateJP: string) => [
-      `numberzin instagram 日本語 リール ${dateJP}`,
-      `ナンバーズイン インスタグラム 新製品 PR ${dateJP}`,
+      `"제리와 콩나무" 일본 마케팅 ${dateJP}`,
+      `"제리와 콩나무" インフルエンサー マーケティング`,
+      `Jerry beanstalk Japan marketing agency Korean`,
     ],
   },
   {
-    brand: '마녀공장 (Witch Factory)',
+    brand: '챌린저스',
     queries: (dateJP: string) => [
-      `마녀공장 witch factory instagram 日本語 リール ${dateJP}`,
-      `ウィッチファクトリー インスタグラム PR 製品 ${dateJP}`,
+      `"챌린저스" 일본 마케팅 에이전시 ${dateJP}`,
+      `"챌린저스" インフルエンサー 日本`,
+      `Challengers Korea Japan marketing agency`,
     ],
   },
 ]
@@ -77,10 +79,10 @@ export async function generateDailyBrief(): Promise<{
   yesterdayDate.setDate(yesterdayDate.getDate() - 1)
   const searchDate = yesterdayDate.toISOString().slice(0, 10)
   const [syYear, syMonth, syDay] = searchDate.split('-').map(Number)
-  const dateJP = `${syYear}年${syMonth}月${syDay}日`   // 예: 2025年5月19日
-  const dateKR = `${syMonth}월 ${syDay}일`             // 예: 5월 19일
+  const dateJP = `${syYear}年${syMonth}月${syDay}日`
+  const dateKR = `${syMonth}월 ${syDay}일`
 
-  // ── 1. 시장 트렌드 검색 (날짜 기준 명시) ─────────────────────
+  // ── 1. 시장 트렌드 검색 (어제 날짜 기준) ─────────────────────
   const trendQueries = [
     `${dateJP} 日本 SNS インフルエンサー マーケティング トレンド`,
     `${dateJP} 日本 Instagram TikTok バイラル 話題`,
@@ -96,17 +98,18 @@ export async function generateDailyBrief(): Promise<{
     .sort((a, b) => b.score - a.score)
     .slice(0, 15)
 
-  // ── 2. 경쟁사 검색 ───────────────────────────────────────────
+  // ── 2. 경쟁사 언급/활동 검색 ─────────────────────────────────
   const competitorRawMap: Record<string, TavilyResult[]> = {}
 
   await Promise.all(
     TRACKED_COMPETITORS.map(async (comp) => {
       const results = await Promise.all(comp.queries(dateJP).map(tavilySearch))
+      // URL 중복 제거 후 score 순 정렬, 최대 6개
       competitorRawMap[comp.brand] = results
         .flat()
         .filter((r, i, arr) => arr.findIndex((x) => x.url === r.url) === i)
         .sort((a, b) => b.score - a.score)
-        .slice(0, 8)
+        .slice(0, 6)
     })
   )
 
@@ -116,19 +119,33 @@ export async function generateDailyBrief(): Promise<{
       searchDate,
       summary: '검색 결과를 가져올 수 없습니다. Tavily API 키를 확인하세요.',
       topics: [],
-      competitorPR: [],
+      competitorPR: TRACKED_COMPETITORS.map((c) => ({
+        brand: c.brand,
+        found: false,
+        summary: '검색 결과 없음',
+        links: [],
+      })),
       sources: [],
     }
   }
 
   const openaiKey = process.env.OPENAI_API_KEY
   if (!openaiKey) {
+    // OpenAI 없어도 링크는 반환
     return {
       date: today,
       searchDate,
       summary: 'OpenAI API 키가 설정되지 않았습니다.',
       topics: [],
-      competitorPR: [],
+      competitorPR: TRACKED_COMPETITORS.map((c) => {
+        const raw = competitorRawMap[c.brand] ?? []
+        return {
+          brand: c.brand,
+          found: raw.length > 0,
+          summary: raw.length > 0 ? '검색 결과 발견' : '검색 결과 없음',
+          links: raw.map((r) => ({ title: r.title, url: r.url, snippet: r.content.slice(0, 150) })),
+        }
+      }),
       sources: trendResults.slice(0, 5).map((r) => ({ title: r.title, url: r.url })),
     }
   }
@@ -140,18 +157,19 @@ export async function generateDailyBrief(): Promise<{
     .map((r, i) => `[트렌드 ${i + 1}] ${r.title}\n${r.content}`)
     .join('\n\n')
 
+  // 경쟁사 컨텍스트 — 요약 판단용 (링크 자체는 Tavily 결과에서 직접 사용)
   const competitorContext = TRACKED_COMPETITORS.map((comp) => {
     const results = competitorRawMap[comp.brand] ?? []
-    if (results.length === 0) return `[경쟁사: ${comp.brand}]\n검색 결과 없음`
+    if (results.length === 0) return `[${comp.brand}]\n검색 결과 없음`
     return (
-      `[경쟁사: ${comp.brand}]\n` +
+      `[${comp.brand}]\n` +
       results.map((r, i) => `  (${i + 1}) ${r.title}\n  ${r.content}`).join('\n\n')
     )
   }).join('\n\n---\n\n')
 
   const response = await openai.chat.completions.create({
     model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
-    max_completion_tokens: 1800,
+    max_completion_tokens: 1600,
     messages: [
       {
         role: 'system',
@@ -159,10 +177,10 @@ export async function generateDailyBrief(): Promise<{
 
 두 가지 분석을 수행하세요:
 ① 일본 SNS 트렌드 요약 (트렌드 검색 결과 기반)
-② 경쟁사 인스타그램 PR 현황 (경쟁사 검색 결과 기반)
-   - 검색 결과에서 일본어 인스타그램 릴스/피드로 홍보 중인 제품명을 추출
-   - 각 제품이 검색 결과에서 몇 건 언급되었는지 집계
-   - 검색 결과에서 확인되지 않으면 found: false
+② 경쟁사 언급/활동 현황 (경쟁사 검색 결과 기반)
+   - 해당 회사가 실제로 검색 결과에서 확인되면 found: true
+   - 회사와 무관한 검색 결과만 있으면 found: false
+   - summary: 발견된 내용을 1-2문장으로 요약 (미발견이면 "검색 결과에서 확인되지 않았습니다.")
 
 반드시 아래 JSON 형식으로만 응답하세요:
 {
@@ -172,58 +190,58 @@ export async function generateDailyBrief(): Promise<{
   ],
   "competitorPR": [
     {
-      "brand": "브랜드명",
+      "brand": "회사명",
       "found": true,
-      "summary": "해당 브랜드 활동 한줄 요약",
-      "products": [
-        { "name": "제품명", "count": 2, "note": "부가 설명(선택)" }
-      ]
+      "summary": "발견된 활동/언급 1-2문장 요약"
     }
   ]
 }
 
-topics는 3-5개, 실제 검색 결과에서 확인된 내용만 포함하세요.
-competitorPR은 검색 대상 브랜드 전체를 포함하되, 발견 안 되면 found: false, products: []로 표기하세요.`,
+topics는 3-5개. competitorPR은 검색 대상 회사 전체를 포함하세요.`,
       },
       {
         role: 'user',
-        content: `=== ${dateKR} 일본 SNS 트렌드 검색 결과 ===\n\n${trendContext}\n\n=== 경쟁사 인스타그램 PR 검색 결과 ===\n\n${competitorContext}`,
+        content: `=== ${dateKR} 일본 SNS 트렌드 검색 결과 ===\n\n${trendContext}\n\n=== 경쟁사 언급/활동 검색 결과 ===\n\n${competitorContext}`,
       },
     ],
     response_format: { type: 'json_object' },
   })
 
-  let parsed: { summary: string; topics: MarketBriefTopic[]; competitorPR: CompetitorPR[] } = {
-    summary: '',
-    topics: [],
-    competitorPR: [],
-  }
+  let parsed: {
+    summary: string
+    topics: MarketBriefTopic[]
+    competitorPR: Array<{ brand: string; found: boolean; summary: string }>
+  } = { summary: '', topics: [], competitorPR: [] }
+
   try {
     parsed = JSON.parse(response.choices[0].message.content ?? '{}')
   } catch {
     parsed.summary = response.choices[0].message.content ?? ''
   }
 
-  // 경쟁사 목록에 있는 브랜드가 응답에서 누락됐을 경우 기본값 보정
-  const returnedBrands = new Set((parsed.competitorPR ?? []).map((c) => c.brand))
-  for (const comp of TRACKED_COMPETITORS) {
-    if (!returnedBrands.has(comp.brand)) {
-      parsed.competitorPR = parsed.competitorPR ?? []
-      parsed.competitorPR.push({
-        brand: comp.brand,
-        found: false,
-        summary: '검색 결과에서 확인되지 않음',
-        products: [],
-      })
+  // OpenAI 결과 + Tavily 링크를 합쳐서 최종 competitorPR 구성
+  const competitorPR: CompetitorPR[] = TRACKED_COMPETITORS.map((comp) => {
+    const aiResult = (parsed.competitorPR ?? []).find((c) => c.brand === comp.brand)
+    const raw = competitorRawMap[comp.brand] ?? []
+    const found = aiResult?.found ?? raw.length > 0
+    return {
+      brand: comp.brand,
+      found,
+      summary: aiResult?.summary ?? (found ? '검색 결과 발견' : '검색 결과에서 확인되지 않았습니다.'),
+      links: raw.map((r) => ({
+        title: r.title,
+        url: r.url,
+        snippet: r.content.slice(0, 180),
+      })),
     }
-  }
+  })
 
   return {
     date: today,
     searchDate,
     summary: parsed.summary || '요약 생성 실패',
     topics: parsed.topics || [],
-    competitorPR: parsed.competitorPR || [],
+    competitorPR,
     sources: trendResults.slice(0, 8).map((r) => ({ title: r.title, url: r.url })),
   }
 }
