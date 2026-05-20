@@ -11,7 +11,7 @@ import {
 import {
   DollarSign, MousePointer, Eye, TrendingUp, Target,
   ChevronDown, AlertCircle, RefreshCw, Users, Layout,
-  Play, Activity, Clock,
+  Play, Activity, Clock, Filter, X,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { format, parseISO } from 'date-fns'
@@ -203,6 +203,8 @@ export default function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState<TabId>('overview')
   const [ageMetric, setAgeMetric] = useState<'ctr' | 'cpc' | 'spend'>('ctr')
   const [placementMetric, setPlacementMetric] = useState<'cpm' | 'ctr' | 'cpc'>('cpm')
+  const [showCampaignModal, setShowCampaignModal] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (!user) return
@@ -243,16 +245,23 @@ export default function AnalyticsPage() {
 
   useEffect(() => { fetchInsights() }, [fetchInsights])
 
+  // 데이터 로드 시 전체 캠페인 선택
+  useEffect(() => {
+    const all = insights?.campaigns ?? []
+    if (all.length > 0) setSelectedIds(new Set(all.map(c => c.campaign_id)))
+  }, [insights])
+
   // ── 공통 계산 ─────────────────────────────────────────────
   const currency = accounts.find(a => a.id === selectedAccount)?.currency ?? 'JPY'
   const campaigns = insights?.campaigns ?? []
-  const totalSpend = campaigns.reduce((s, c) => s + parseFloat(c.spend || '0'), 0)
-  const totalImpressions = campaigns.reduce((s, c) => s + parseInt(c.impressions || '0'), 0)
-  const totalClicks = campaigns.reduce((s, c) => s + parseInt(c.clicks || '0'), 0)
+  const filteredCampaigns = campaigns.filter(c => selectedIds.has(c.campaign_id))
+  const totalSpend = filteredCampaigns.reduce((s, c) => s + parseFloat(c.spend || '0'), 0)
+  const totalImpressions = filteredCampaigns.reduce((s, c) => s + parseInt(c.impressions || '0'), 0)
+  const totalClicks = filteredCampaigns.reduce((s, c) => s + parseInt(c.clicks || '0'), 0)
   const avgCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
   const avgCpc = totalClicks > 0 ? totalSpend / totalClicks : 0
-  const avgFreq = campaigns.length > 0
-    ? campaigns.reduce((s, c) => s + parseFloat(c.frequency || '0'), 0) / campaigns.length : 0
+  const avgFreq = filteredCampaigns.length > 0
+    ? filteredCampaigns.reduce((s, c) => s + parseFloat(c.frequency || '0'), 0) / filteredCampaigns.length : 0
 
   const yTickFmt = (v: number) =>
     currency === 'JPY' || currency === 'KRW'
@@ -267,7 +276,7 @@ export default function AnalyticsPage() {
     ctr: parseFloat(d.ctr || '0'),
   }))
 
-  const campaignChartData = [...campaigns]
+  const campaignChartData = [...filteredCampaigns]
     .sort((a, b) => parseFloat(b.spend) - parseFloat(a.spend))
     .slice(0, 10)
     .map(c => ({
@@ -308,6 +317,7 @@ export default function AnalyticsPage() {
 
   // ── 영상 퍼널 데이터 ───────────────────────────────────────
   const videoRows = (insights?.video ?? [])
+    .filter(v => selectedIds.size === 0 || selectedIds.has(v.campaign_id))
     .map(v => {
       const imp = parseInt(v.impressions || '0')
       const s3 = extractVideoVal(v.video_3s_watched_actions)
@@ -405,6 +415,25 @@ export default function AnalyticsPage() {
               >{p.label}</button>
             ))}
           </div>
+          {/* 캠페인 필터 버튼 */}
+          {campaigns.length > 0 && (
+            <button
+              onClick={() => setShowCampaignModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+            >
+              <Filter size={13} />
+              캠페인
+              <span className={clsx(
+                'px-1.5 py-0.5 rounded-full text-xs font-semibold',
+                selectedIds.size === campaigns.length
+                  ? 'bg-gray-100 text-gray-500'
+                  : 'bg-indigo-500 text-white'
+              )}>
+                {selectedIds.size}/{campaigns.length}
+              </span>
+            </button>
+          )}
+
           <button
             onClick={fetchInsights}
             disabled={insightsLoading}
@@ -414,6 +443,101 @@ export default function AnalyticsPage() {
           </button>
         </div>
       </div>
+
+      {/* ── 캠페인 필터 모달 ─────────────────────────────────── */}
+      {showCampaignModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowCampaignModal(false) }}
+        >
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setShowCampaignModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col z-10">
+            {/* 모달 헤더 */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <h2 className="text-sm font-bold text-gray-900">캠페인 선택</h2>
+                <p className="text-xs text-gray-400 mt-0.5">{selectedIds.size}개 선택됨 / 전체 {campaigns.length}개</p>
+              </div>
+              <button
+                onClick={() => setShowCampaignModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* 전체 선택/해제 */}
+            <div className="flex gap-2 px-5 py-3 border-b border-gray-100">
+              <button
+                onClick={() => setSelectedIds(new Set(campaigns.map(c => c.campaign_id)))}
+                className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+              >
+                전체 선택
+              </button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-gray-50 text-gray-500 hover:bg-gray-100 transition-colors"
+              >
+                전체 해제
+              </button>
+            </div>
+
+            {/* 캠페인 목록 */}
+            <div className="overflow-y-auto flex-1 px-3 py-2">
+              {[...campaigns].sort((a, b) => parseFloat(b.spend) - parseFloat(a.spend)).map(c => {
+                const checked = selectedIds.has(c.campaign_id)
+                return (
+                  <label
+                    key={c.campaign_id}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <div className={clsx(
+                      'w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors',
+                      checked
+                        ? 'bg-indigo-500 border-indigo-500'
+                        : 'border-gray-300 bg-white'
+                    )}>
+                      {checked && (
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={checked}
+                      onChange={() => {
+                        setSelectedIds(prev => {
+                          const next = new Set(prev)
+                          if (next.has(c.campaign_id)) next.delete(c.campaign_id)
+                          else next.add(c.campaign_id)
+                          return next
+                        })
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800 truncate">{c.campaign_name}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{formatCurrency(parseFloat(c.spend || '0'), currency)}</p>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+
+            {/* 확인 버튼 */}
+            <div className="px-5 py-4 border-t border-gray-100">
+              <button
+                onClick={() => setShowCampaignModal(false)}
+                className="w-full py-2.5 rounded-xl bg-indigo-500 text-white text-sm font-semibold hover:bg-indigo-600 transition-colors disabled:opacity-40"
+                disabled={selectedIds.size === 0}
+              >
+                {selectedIds.size === 0 ? '캠페인을 선택하세요' : `${selectedIds.size}개 캠페인 적용`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <Card className="p-4 mb-6 border-red-200 bg-red-50">
@@ -493,7 +617,7 @@ export default function AnalyticsPage() {
                 </div>
               )}
 
-              {campaigns.length > 0 ? (
+              {filteredCampaigns.length > 0 ? (
                 <>
                   <h2 className="text-sm font-semibold text-gray-700 mb-3">캠페인별 상세 성과</h2>
                   <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
@@ -510,7 +634,7 @@ export default function AnalyticsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {[...campaigns].sort((a, b) => parseFloat(b.spend) - parseFloat(a.spend)).map(c => (
+                        {[...filteredCampaigns].sort((a, b) => parseFloat(b.spend) - parseFloat(a.spend)).map(c => (
                           <tr key={c.campaign_id} className="hover:bg-gray-50 transition-colors">
                             <td className="px-4 py-3 text-xs text-gray-800 max-w-xs">
                               <span className="line-clamp-1">{c.campaign_name}</span>
