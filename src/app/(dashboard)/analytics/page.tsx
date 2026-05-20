@@ -117,29 +117,22 @@ function extractVideoVal(actions: VideoAction[] | undefined): number {
   return parseInt(actions.find(a => a.action_type === 'video_view')?.value ?? '0')
 }
 
-// 3색 신호등 스케일: 빨강(나쁨) → 노랑(중간) → 초록(좋음)
-// t=0: RED #ef4444, t=0.5: YELLOW #eab308, t=1: GREEN #16a34a
+// 0~1 정규화 후 heatmap 색상 — #f8fafc(거의흰색) → #0f2d6e(진한네이비) 직접 보간
 function heatColor(value: number, min: number, max: number, invert = false): string {
-  if (max === min) return '#fef9c3'
+  if (max === min) return '#f8fafc'
   let t = (value - min) / (max - min)
   if (invert) t = 1 - t
-  let r: number, g: number, b: number
-  if (t <= 0.5) {
-    const s = t * 2                          // RED → YELLOW
-    r = Math.round(239 + (234 - 239) * s)   // 239 → 234
-    g = Math.round(68  + (179 - 68)  * s)   //  68 → 179
-    b = Math.round(68  + (8   - 68)  * s)   //  68 →   8
-  } else {
-    const s = (t - 0.5) * 2                  // YELLOW → GREEN
-    r = Math.round(234 + (22  - 234) * s)   // 234 →  22
-    g = Math.round(179 + (163 - 179) * s)   // 179 → 163
-    b = Math.round(8   + (74  - 8)   * s)   //   8 →  74
-  }
+  // #f8fafc(248,250,252) → #0f2d6e(15,45,110)
+  const r = Math.round(248 - 233 * t)
+  const g = Math.round(250 - 205 * t)
+  const b = Math.round(252 - 142 * t)
   return `rgb(${r},${g},${b})`
 }
-function heatText(_value: number, _min: number, _max: number, _invert = false): string {
-  // 노랑·빨강·초록 모두 진한 어두운 텍스트가 가독성 최고
-  return '#1c1917'
+function heatText(value: number, min: number, max: number, invert = false): string {
+  if (max === min) return '#0f2d6e'
+  let t = (value - min) / (max - min)
+  if (invert) t = 1 - t
+  return t > 0.35 ? '#fff' : '#0f2d6e'
 }
 
 // ── Sub-components ─────────────────────────────────────────────
@@ -554,7 +547,7 @@ export default function AnalyticsPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-sm font-semibold text-gray-700">연령 × 성별 효율 매트릭스</h2>
-                  <p className="text-xs text-gray-400 mt-0.5">초록 = 성과 좋음 · 빨강 = 성과 나쁨 (CPC는 낮을수록 초록)</p>
+                  <p className="text-xs text-gray-400 mt-0.5">진할수록 해당 지표의 성과가 높음 (CPC는 낮을수록 진함)</p>
                 </div>
                 <div className="flex gap-1 p-1 bg-gray-100 rounded-xl">
                   {(['ctr', 'cpc', 'spend'] as const).map(m => (
