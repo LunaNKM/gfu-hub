@@ -158,6 +158,217 @@ function erBg(er: number): string {
   return 'bg-red-50 text-red-600'
 }
 
+// ── 카테고리 분석 헬퍼 ───────────────────────────────────────────
+// 카테고리형 컬럼으로 볼 수 없는 헤더 키워드
+const SKIP_CAT_PATTERNS = [
+  'url', '링크', '날짜', '일자', '일정', '주소', '연락처', '전화',
+  '생년', '번호', '코드', '초안', '캡션', '피드백', '비고', '메모',
+  '가이드', '구성안', '시술명', '이름', '성명', '소개', '방문',
+  'note', '참고', '스케줄', '운송', '송장', 'no.', '제공',
+]
+
+function findCategoricalCols(sheet: ParsedSheet, cols: ColMap): string[] {
+  const skipCols = new Set(Object.values(cols).filter(Boolean) as string[])
+  return sheet.rawHeaders.filter(h => {
+    if (!h) return false
+    if (skipCols.has(h)) return false
+    const hl = h.toLowerCase()
+    if (SKIP_CAT_PATTERNS.some(p => hl.includes(p))) return false
+
+    const values = sheet.rows
+      .map(r => r[h])
+      .filter(v => v !== null && v !== undefined && v !== '' && typeof v === 'string') as string[]
+
+    if (values.length < 3) return false
+    const unique = new Set(values)
+    // 고유값 2~15개, 값이 반복되어야 함 (80% 이상 고유하면 제외)
+    if (unique.size < 2 || unique.size > 15) return false
+    if (unique.size >= values.length * 0.8) return false
+    if ([...unique].some(v => v.startsWith('http') || v.startsWith('www'))) return false
+    return true
+  })
+}
+
+interface CategoryGroup {
+  name: string; count: number
+  totalImp: number; avgImp: number
+  totalEng: number; avgER: number
+}
+
+function groupByCategory(sheetRows: SheetRow[], col: string, cols: ColMap): CategoryGroup[] {
+  const groups: Record<string, { imp: number; eng: number; count: number }> = {}
+  sheetRows.forEach(row => {
+    const val = String(row[col] ?? '').trim()
+    if (!val || val === 'null') return
+    const imp      = numVal(row, cols.imp)
+    const likes    = numVal(row, cols.likes)
+    const comments = numVal(row, cols.comments)
+    const saves    = numVal(row, cols.saves)
+    const shares   = numVal(row, cols.shares)
+    const reposts  = numVal(row, cols.reposts)
+    const eng = likes + comments + saves + shares + reposts
+    if (!groups[val]) groups[val] = { imp: 0, eng: 0, count: 0 }
+    groups[val].imp   += imp
+    groups[val].eng   += eng
+    groups[val].count += 1
+  })
+  return Object.entries(groups)
+    .map(([name, g]) => ({
+      name, count: g.count,
+      totalImp: g.imp,
+      avgImp: g.count > 0 ? Math.round(g.imp / g.count) : 0,
+      totalEng: g.eng,
+      avgER: g.imp > 0 ? (g.eng / g.imp) * 100 : 0,
+    }))
+    .sort((a, b) => b.avgER - a.avgER || b.totalImp - a.totalImp)
+}
+
+// ── 카테고리별 분석 컴포넌트 ─────────────────────────────────────
+function CategoryAnalysis({ sheet, cols }: { sheet: ParsedSheet; cols: ColMap }) {
+  const catCols = useMemo(() => findCategoricalCols(sheet, cols), [sheet, cols])
+  const [activeCol, setActiveCol] = useState<string>(() => catCols[0] ?? '')
+  const [metric, setMetric] = useState<'er' | 'avgImp'>('er')
+
+  // catCols가 바뀌면 activeCol 초기화
+  useEffect(() => {
+    if (catCols.length > 0 && !catCols.includes(activeCol)) setActiveCol(catCols[0])
+  }, [catCols, activeCol])
+
+  const groups = useMemo(
+    () => activeCol ? groupByCategory(sheet.rows, activeCol, cols) : [],
+    [sheet.rows, activeCol, cols]
+  )
+
+  if (catCols.length === 0) return null
+
+  const hasPerf = groups.some(g => g.avgER > 0 || g.totalImp > 0)
+  const chartData = groups.map(g => ({
+    name: g.name.length > 14 ? g.name.slice(0, 13) + '…' : g.name,
+    fullName: g.name,
+    value: metric === 'er' ? parseFloat(g.avgER.toFixed(2)) : g.avgImp,
+    avgER: g.avgER,
+  }))
+
+  const fmtVal = (v: number) => metric === 'er' ? `${v.toFixed(2)}%` : fmtNum(v)
+  const barColor = (avgER: number) =>
+    metric === 'er'
+      ? (avgER >= 5 ? '#10b981' : avgER >= 3 ? '#6366f1' : avgER >= 1 ? '#f59e0b' : '#f87171')
+      : '#6366f1'
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+      {/* 헤더 */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-wrap gap-2">
+        <span className="text-sm font-semibold text-gray-800">카테고리별 분석</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 컬럼 선택 탭 */}
+          <div className="flex gap-1">
+            {catCols.map(col => (
+              <button key={col} onClick={() => setActiveCol(col)}
+                className={clsx(
+                  'px-2.5 py-1 text-xs rounded-full border transition-colors',
+                  activeCol === col
+                    ? 'bg-indigo-500 text-white border-indigo-500'
+                    : 'border-gray-200 text-gray-500 hover:border-indigo-300'
+                )}>
+                {col}
+              </button>
+            ))}
+          </div>
+          {/* 지표 토글 */}
+          {hasPerf && (
+            <div className="flex gap-1 pl-2 border-l border-gray-100">
+              {([['er', 'avg ER'], ['avgImp', '평균 조회수']] as const).map(([k, l]) => (
+                <button key={k} onClick={() => setMetric(k)}
+                  className={clsx(
+                    'px-2 py-1 text-xs rounded-full border transition-colors',
+                    metric === k ? 'bg-gray-800 text-white border-gray-800' : 'border-gray-200 text-gray-400'
+                  )}>{l}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="p-5">
+        {chartData.length === 0 ? (
+          <p className="text-sm text-gray-300 text-center py-6">데이터 없음</p>
+        ) : (
+          <div className="flex gap-6">
+            {/* 가로 바 차트 */}
+            <div className="flex-1 min-w-0">
+              <ResponsiveContainer width="100%" height={Math.max(chartData.length * 38, 140)}>
+                <BarChart data={chartData} layout="vertical"
+                  margin={{ top: 0, right: 48, bottom: 0, left: 4 }}>
+                  <XAxis type="number" tickFormatter={v => metric === 'er' ? `${v}%` : fmtNum(Number(v))}
+                    tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={104}
+                    axisLine={false} tickLine={false} />
+                  <Tooltip
+                    formatter={(v: unknown) => [fmtVal(Number(v)), metric === 'er' ? 'avg ER' : '평균 조회수']}
+                    labelFormatter={(label: unknown) => {
+                      const labelStr = String(label ?? '')
+                      const g = groups.find(g => g.name.startsWith(labelStr.replace('…', '')))
+                      return g ? `${g.name} (${g.count}명)` : labelStr
+                    }}
+                  />
+                  <Bar dataKey="value" radius={[0, 5, 5, 0]} maxBarSize={22}
+                    label={{ position: 'right', fontSize: 10, formatter: (v: unknown) => fmtVal(Number(v)) }}>
+                    {chartData.map((entry, i) => (
+                      <Cell key={i} fill={barColor(entry.avgER)} fillOpacity={0.85} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* 오른쪽 요약 카드 */}
+            <div className="shrink-0 w-44 space-y-2">
+              {groups.map(g => (
+                <div key={g.name}
+                  className="border border-gray-100 rounded-xl p-2.5 hover:border-indigo-200 transition-colors">
+                  <p className="text-xs font-medium text-gray-800 leading-snug mb-1.5" title={g.name}>
+                    {g.name.length > 12 ? g.name.slice(0, 11) + '…' : g.name}
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-400">{g.count}명</span>
+                    <div className="flex flex-col items-end gap-0.5">
+                      {g.avgER > 0 && (
+                        <span className={clsx('text-xs font-bold px-1.5 py-0.5 rounded-full', erBg(g.avgER))}>
+                          {g.avgER.toFixed(2)}%
+                        </span>
+                      )}
+                      {g.totalImp > 0 && (
+                        <span className="text-xs text-gray-400">{fmtNum(g.totalImp)}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {/* ER 범례 */}
+              {metric === 'er' && (
+                <div className="pt-2 border-t border-gray-50 space-y-1">
+                  {[
+                    { color: '#10b981', label: '5%↑ 매우 높음' },
+                    { color: '#6366f1', label: '3~5% 양호' },
+                    { color: '#f59e0b', label: '1~3% 보통' },
+                    { color: '#f87171', label: '1%↓ 낮음' },
+                  ].map(({ color, label }) => (
+                    <div key={label} className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                      <span className="text-xs text-gray-400">{label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── 플랫폼 배지 ──────────────────────────────────────────────────
 function PlatformBadge({ p }: { p: string }) {
   const map: Record<string, string> = {
@@ -395,6 +606,9 @@ function PerformanceDashboard({
           </div>
         </div>
       )}
+
+      {/* ── 카테고리별 분석 ── */}
+      <CategoryAnalysis sheet={sheet} cols={cols} />
 
       {/* ── 리더보드 ── */}
       {leaderboard.length > 0 && (
