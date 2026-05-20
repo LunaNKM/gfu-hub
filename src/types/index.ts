@@ -155,6 +155,44 @@ export interface SheetIndexItem {
   rowCount: number
 }
 
+// ── 인플루언서 CRM ────────────────────────────────────────────
+export interface InfluencerAppearance {
+  campaignId: string
+  campaignName: string
+  clientName: string
+  tabType: string   // 'timeline' | 'candidates' | 'engagement' | ...
+  syncedAt: string  // ISO date string
+}
+
+export interface Influencer {
+  id: string          // Firestore doc ID = "{platform}_{handle}" normalized
+  handle: string
+  platform: string    // 'Instagram' | 'TikTok' | 'YouTube' | 'X' | ''
+  profileUrl: string
+  followers: number
+  appearances: InfluencerAppearance[]
+  firstSeenAt: Date
+  lastSeenAt: Date
+  updatedAt: Date
+}
+
+// ── 일본 시장 인텔리전스 ────────────────────────────────────────
+export interface MarketBriefTopic {
+  title: string
+  description: string
+  source?: string
+}
+
+export interface MarketBrief {
+  id: string
+  date: string   // YYYY-MM-DD
+  summary: string
+  topics: MarketBriefTopic[]
+  sources: { title: string; url: string }[]
+  createdAt: Date
+  expiresAt: Date
+}
+
 export interface Campaign {
   id: string
   clientName: string

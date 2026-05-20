@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { google } from 'googleapis'
-import { updateCampaign } from '@/lib/services/campaigns'
-import { SheetTabType, ParsedSheet, SheetRow, SheetIndexItem } from '@/types'
+import { updateCampaign, getCampaign } from '@/lib/services/campaigns'
+import { upsertInfluencer, normalizeInfluencerId } from '@/lib/services/influencers'
+import { SheetTabType, ParsedSheet, SheetRow, SheetIndexItem, InfluencerAppearance } from '@/types'
 
 function auth(req: NextRequest) {
   const h = req.headers.get('Authorization')
@@ -185,6 +186,66 @@ function parseSheetTab(
   }
 }
 
+// ── 인플루언서 CRM 추출 + 저장 ───────────────────────────────
+const ACCOUNT_KEYWORDS = ['계정 아이디', '계정명', '계정', 'ID', '아이디', '이름', '名前', '진행 확정']
+const FOLLOWER_KEYWORDS = ['팔로워', 'fw', 'followers', '팔로워 수']
+const URL_KEYWORDS = ['url']
+
+function findHeader(headers: string[], keywords: string[]): string | undefined {
+  for (const kw of keywords) {
+    const exact = headers.find((h) => h.toLowerCase() === kw.toLowerCase())
+    if (exact) return exact
+  }
+  for (const kw of keywords) {
+    const partial = headers.find((h) => h.toLowerCase().includes(kw.toLowerCase()))
+    if (partial) return partial
+  }
+}
+
+async function syncInfluencersToCRM(
+  campaignId: string,
+  campaignName: string,
+  clientName: string,
+  sheets: Record<string, ParsedSheet>
+): Promise<void> {
+  const CRM_TABS: SheetTabType[] = ['timeline', 'engagement', 'candidates']
+  const appearance: InfluencerAppearance = {
+    campaignId,
+    campaignName,
+    clientName,
+    tabType: '',
+    syncedAt: new Date().toISOString(),
+  }
+
+  for (const sheet of Object.values(sheets)) {
+    if (!CRM_TABS.includes(sheet.type)) continue
+
+    const accountCol = findHeader(sheet.rawHeaders, ACCOUNT_KEYWORDS)
+    const urlCol = findHeader(sheet.rawHeaders, URL_KEYWORDS)
+    const followerCol = findHeader(sheet.rawHeaders, FOLLOWER_KEYWORDS)
+
+    if (!accountCol) continue
+
+    for (const row of sheet.rows as SheetRow[]) {
+      const handle = String(row[accountCol] ?? '').trim()
+      if (!handle || handle === '?') continue
+
+      const url = urlCol ? String(row[urlCol] ?? '').trim() : ''
+      const platform = String(row._platform ?? '').trim()
+      const followers =
+        followerCol && typeof row[followerCol] === 'number' ? (row[followerCol] as number) : 0
+
+      const docId = normalizeInfluencerId(url, platform, handle)
+
+      await upsertInfluencer(
+        docId,
+        { handle, platform, profileUrl: url, followers },
+        { ...appearance, tabType: sheet.type }
+      )
+    }
+  }
+}
+
 // ── 스프레드시트 ID 추출 ──────────────────────────────────────
 function extractSheetId(url: string): string | null {
   const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)
@@ -274,6 +335,14 @@ export async function POST(
       sheets,
       sheetsLastSyncAt: new Date(),
     })
+
+    // ── 인플루언서 CRM 동기화 (비동기, 응답 블로킹 안 함) ──────
+    const campaign = await getCampaign(id)
+    if (campaign) {
+      syncInfluencersToCRM(id, campaign.campaignName, campaign.clientName, sheets).catch((err) =>
+        console.error('CRM 동기화 오류:', err)
+      )
+    }
 
     return NextResponse.json({
       ok: true,

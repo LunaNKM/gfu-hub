@@ -13,6 +13,8 @@ import {
   ChevronRight,
   Zap,
   Briefcase,
+  Users,
+  Globe,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -21,7 +23,9 @@ const navItems = [
   { href: '/chat', label: 'AI 채팅', icon: MessageSquare },
   { href: '/apps', label: '앱 런처', icon: AppWindow },
   { href: '/campaigns', label: '캠페인', icon: Briefcase },
+  { href: '/influencers', label: '인플루언서 CRM', icon: Users },
   { href: '/analytics', label: '애널리틱스', icon: BarChart2 },
+  { href: '/intelligence', label: '시장 인텔리전스', icon: Globe },
   { href: '/usage', label: 'AI 사용량', icon: Zap },
   { href: '/settings', label: '설정', icon: Settings },
 ]
