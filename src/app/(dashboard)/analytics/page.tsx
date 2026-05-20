@@ -155,10 +155,27 @@ function KpiCard({ icon, label, value, color = 'blue' }: {
 }
 
 function QualityBadge({ rank }: { rank?: string }) {
-  if (!rank || rank === 'UNKNOWN') return null
+  if (!rank || rank === 'UNKNOWN') return <span className="text-xs text-gray-300">—</span>
   const q = QUALITY_MAP[rank]
-  if (!q?.label) return null
+  if (!q?.label) return <span className="text-xs text-gray-300">—</span>
   return <span className={clsx('px-1.5 py-0.5 rounded text-xs font-medium', q.color)}>{q.label}</span>
+}
+
+function QualityCell({ quality, engagement, conversion }: {
+  quality?: string; engagement?: string; conversion?: string
+}) {
+  const labels: Record<string, string> = { 품질: quality ?? '', 참여: engagement ?? '', 전환: conversion ?? '' }
+  return (
+    <div className="flex flex-col gap-0.5 items-center">
+      {Object.entries(labels).map(([key, rank]) => {
+        const q = QUALITY_MAP[rank]
+        if (!q) return <span key={key} className="text-xs text-gray-300">—</span>
+        return q.label
+          ? <span key={key} className={clsx('px-1.5 py-0.5 rounded text-xs font-medium leading-tight', q.color)}>{key} {q.label}</span>
+          : <span key={key} className="text-xs text-gray-300">—</span>
+      })}
+    </div>
+  )
 }
 
 function EmptyCard({ message = '데이터가 없습니다.' }: { message?: string }) {
@@ -486,7 +503,7 @@ export default function AnalyticsPage() {
                           <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">CTR</th>
                           <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">CPC</th>
                           <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">빈도</th>
-                          <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">품질</th>
+                          <th className="text-center px-4 py-3 text-xs font-medium text-gray-500">품질점수</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -503,7 +520,11 @@ export default function AnalyticsPage() {
                             <td className="px-4 py-3 text-right text-xs text-gray-600">{formatCurrency(parseFloat(c.cpc || '0'), currency)}</td>
                             <td className="px-4 py-3 text-right text-xs text-gray-600">{parseFloat(c.frequency || '0').toFixed(1)}</td>
                             <td className="px-4 py-3 text-center">
-                              <QualityBadge rank={c.quality_ranking} />
+                              <QualityCell
+                                quality={c.quality_ranking}
+                                engagement={c.engagement_rate_ranking}
+                                conversion={c.conversion_rate_ranking}
+                              />
                             </td>
                           </tr>
                         ))}
