@@ -34,7 +34,9 @@ interface TavilyResult {
   score: number
 }
 
-async function tavilySearch(query: string): Promise<TavilyResult[]> {
+// days: Tavily에 "최근 N일 이내" 결과만 반환하도록 지시
+// 트렌드 검색 → days=2 (어제 전체를 커버), 경쟁사 검색 → 제한 없음
+async function tavilySearch(query: string, days?: number): Promise<TavilyResult[]> {
   const apiKey = process.env.TAVILY_API_KEY
   if (!apiKey) return []
   try {
@@ -48,6 +50,7 @@ async function tavilySearch(query: string): Promise<TavilyResult[]> {
         include_answer: false,
         include_raw_content: false,
         max_results: 5,
+        ...(days !== undefined ? { days } : {}),
       }),
     })
     if (!res.ok) return []
@@ -82,16 +85,19 @@ export async function generateDailyBrief(): Promise<{
   const dateJP = `${syYear}年${syMonth}月${syDay}日`
   const dateKR = `${syMonth}월 ${syDay}일`
 
-  // ── 1. 시장 트렌드 검색 (어제 날짜 기준) ─────────────────────
+  // ── 1. 시장 트렌드 검색 (days=2: 어제 하루를 완전히 커버) ─────
+  // days=2 → Tavily가 "최근 48시간" 이내 결과만 반환
+  // 날짜를 따옴표로 감싸서 해당 날짜 명시 콘텐츠 우선 탐색
+  const TREND_DAYS = 2
   const trendQueries = [
-    `${dateJP} 日本 SNS インフルエンサー マーケティング トレンド`,
-    `${dateJP} 日本 Instagram TikTok バイラル 話題`,
-    `Japan social media influencer trend ${searchDate}`,
-    `${dateJP} 日本 美容 コスメ SNS バズ`,
-    `${dateJP} 日本市場 韓国 コスメ インスタグラム`,
+    `"${dateJP}" 日本 SNS インフルエンサー マーケティング`,
+    `"${dateJP}" 日本 Instagram TikTok バイラル 話題`,
+    `"${searchDate}" Japan social media influencer trend`,
+    `"${dateJP}" 日本 美容 コスメ SNS バズ`,
+    `"${dateJP}" 日本市場 韓国 コスメ インスタグラム`,
   ]
 
-  const trendResultsRaw = await Promise.all(trendQueries.map(tavilySearch))
+  const trendResultsRaw = await Promise.all(trendQueries.map((q) => tavilySearch(q, TREND_DAYS)))
   const trendResults = trendResultsRaw
     .flat()
     .filter((r, i, arr) => arr.findIndex((x) => x.url === r.url) === i)
@@ -103,7 +109,8 @@ export async function generateDailyBrief(): Promise<{
 
   await Promise.all(
     TRACKED_COMPETITORS.map(async (comp) => {
-      const results = await Promise.all(comp.queries(dateJP).map(tavilySearch))
+      // 경쟁사는 날짜 제한 없이 검색 (최근 언급/활동 발견이 목적)
+      const results = await Promise.all(comp.queries(dateJP).map((q) => tavilySearch(q)))
       // URL 중복 제거 후 score 순 정렬, 최대 6개
       competitorRawMap[comp.brand] = results
         .flat()
@@ -173,18 +180,22 @@ export async function generateDailyBrief(): Promise<{
     messages: [
       {
         role: 'system',
-        content: `당신은 일본 디지털 마케팅 전문가입니다. ${dateKR}(${dateJP}) 기준 검색 결과를 분석하여 한국어로 브리핑을 작성하세요.
+        content: `당신은 일본 디지털 마케팅 전문가입니다. 한국어로 브리핑을 작성하세요.
 
-두 가지 분석을 수행하세요:
-① 일본 SNS 트렌드 요약 (트렌드 검색 결과 기반)
-② 경쟁사 언급/활동 현황 (경쟁사 검색 결과 기반)
-   - 해당 회사가 실제로 검색 결과에서 확인되면 found: true
-   - 회사와 무관한 검색 결과만 있으면 found: false
-   - summary: 발견된 내용을 1-2문장으로 요약 (미발견이면 "검색 결과에서 확인되지 않았습니다.")
+【트렌드 분석 규칙 — 반드시 준수】
+- 오직 ${dateKR}(${dateJP})에 게시/발행된 내용만 topics에 포함하세요.
+- 검색 결과의 제목·본문에 "${dateJP}" 또는 "${searchDate}"가 명시된 경우에만 사용하세요.
+- 날짜가 불분명하거나 ${dateKR} 이전/이후 날짜의 내용은 절대 포함하지 마세요.
+- 해당 날짜 내용이 없으면 topics를 빈 배열([])로 반환하세요.
+
+【경쟁사 분석 규칙】
+- 해당 회사가 검색 결과에서 확인되면 found: true
+- 회사와 무관한 결과만 있으면 found: false
+- summary: 발견된 내용 1-2문장 요약 (미발견이면 "검색 결과에서 확인되지 않았습니다.")
 
 반드시 아래 JSON 형식으로만 응답하세요:
 {
-  "summary": "전체 트렌드 2-3문장 요약",
+  "summary": "${dateKR} 트렌드 2-3문장 요약 (해당 날짜 내용이 없으면 '${dateKR} 기준 새로운 트렌드 정보가 없습니다.')",
   "topics": [
     { "title": "주제명", "description": "2-3문장 설명", "source": "출처 제목(선택)" }
   ],
@@ -197,7 +208,7 @@ export async function generateDailyBrief(): Promise<{
   ]
 }
 
-topics는 3-5개. competitorPR은 검색 대상 회사 전체를 포함하세요.`,
+topics는 최대 5개. competitorPR은 검색 대상 회사 전체를 포함하세요.`,
       },
       {
         role: 'user',
