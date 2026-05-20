@@ -244,9 +244,11 @@ async function main() {
       }
 
       // Firestore upsert
+      // content는 UI 프리뷰용 3,000자만 저장. 전체 내용은 docChunks에서 관리
+      // (50,000자 저장 시 Korean UTF-8 기준 ~150KB → gRPC Write 스트림 한도 초과 원인)
       const docData = {
         title: file.name,
-        content: text.slice(0, 50000),
+        content: text.slice(0, 3000),
         category: 'Google Drive',
         tags: ['drive'],
         isActive: true,
@@ -333,8 +335,8 @@ async function main() {
         // setDoc으로 upsert (ID가 고정이므로 중복 없음)
         await setDoc(doc(db, 'docChunks', `${docId}_${ci}`), chunkData)
 
-        // OpenAI 임베딩 API 레이트 리밋 방지
-        if (openai) await sleep(50)
+        // Firestore Write 스트림 + OpenAI 레이트 리밋 방지
+        await sleep(150)
       }
 
       console.log(`  ✅ 완료 (청크 ${chunkCount}개)`)
