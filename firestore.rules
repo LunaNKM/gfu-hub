@@ -90,5 +90,17 @@ service cloud.firestore {
     match /campaigns/{campaignId} {
       allow read, write: if isGfutures() || request.auth == null;
     }
+
+    // ── 인플루언서 CRM ─────────────────────────────────────────
+    // Sheets 동기화 시 서버(API 라우트)에서 upsert → request.auth == null 허용
+    match /influencers/{influencerId} {
+      allow read, write: if isGfutures() || request.auth == null;
+    }
+
+    // ── 일본 시장 인텔리전스 브리핑 ───────────────────────────
+    // Cron / 수동 생성 모두 서버에서 addDoc → request.auth == null 허용
+    match /marketBriefs/{briefId} {
+      allow read, write: if isGfutures() || request.auth == null;
+    }
   }
 }
