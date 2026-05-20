@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const META_API_BASE = 'https://graph.facebook.com/v20.0'
 
+async function safeFetch(url: string) {
+  try {
+    const res = await fetch(url)
+    const data = await res.json()
+    if (data.error) return []
+    return data.data ?? []
+  } catch {
+    return []
+  }
+}
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {
@@ -24,31 +35,46 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'accountId가 필요합니다.' }, { status: 400 })
   }
 
+  const base = `${META_API_BASE}/${accountId}/insights`
+  const tk = `access_token=${accessToken}`
+  const dp = `date_preset=${datePreset}`
+
   try {
-    const campaignFields = 'campaign_name,campaign_id,impressions,clicks,spend,ctr,cpc,reach,frequency'
-    const trendFields = 'spend,impressions,clicks'
+    const campaignFields = [
+      'campaign_name', 'campaign_id', 'impressions', 'clicks', 'spend',
+      'ctr', 'cpc', 'reach', 'frequency',
+      'quality_ranking', 'engagement_rate_ranking', 'conversion_rate_ranking',
+    ].join(',')
 
-    const [campaignRes, trendRes] = await Promise.all([
-      fetch(
-        `${META_API_BASE}/${accountId}/insights?fields=${campaignFields}&date_preset=${datePreset}&level=campaign&limit=50&access_token=${accessToken}`
-      ),
-      fetch(
-        `${META_API_BASE}/${accountId}/insights?fields=${trendFields}&date_preset=${datePreset}&time_increment=1&limit=100&access_token=${accessToken}`
-      ),
+    const trendFields = 'spend,impressions,clicks,frequency,ctr'
+
+    const videoFields = [
+      'campaign_name', 'campaign_id', 'impressions',
+      'video_3s_watched_actions', 'video_p25_watched_actions',
+      'video_p50_watched_actions', 'video_p75_watched_actions',
+      'video_p100_watched_actions',
+    ].join(',')
+
+    const [campaignRes, trendRes, ageGender, placement, video, hourly] = await Promise.all([
+      fetch(`${base}?fields=${campaignFields}&${dp}&level=campaign&limit=50&${tk}`).then(r => r.json()),
+      fetch(`${base}?fields=${trendFields}&${dp}&time_increment=1&limit=100&${tk}`).then(r => r.json()),
+      safeFetch(`${base}?fields=impressions,clicks,spend,ctr,cpc&breakdowns=age,gender&${dp}&level=account&${tk}`),
+      safeFetch(`${base}?fields=impressions,clicks,spend,ctr,cpc,cpm&breakdowns=publisher_platform,platform_position&${dp}&level=account&${tk}`),
+      safeFetch(`${base}?fields=${videoFields}&${dp}&level=campaign&limit=50&${tk}`),
+      safeFetch(`${base}?fields=impressions,clicks,ctr,spend&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&${dp}&level=account&${tk}`),
     ])
 
-    const [campaignData, trendData] = await Promise.all([
-      campaignRes.json(),
-      trendRes.json(),
-    ])
-
-    if (campaignData.error) {
-      return NextResponse.json({ error: campaignData.error.message }, { status: 400 })
+    if (campaignRes.error) {
+      return NextResponse.json({ error: campaignRes.error.message }, { status: 400 })
     }
 
     return NextResponse.json({
-      campaigns: campaignData.data ?? [],
-      trend: trendData.data ?? [],
+      campaigns: campaignRes.data ?? [],
+      trend: trendRes.data ?? [],
+      ageGender,
+      placement,
+      video,
+      hourly,
     })
   } catch (err) {
     console.error('Meta insights API 오류:', err)
