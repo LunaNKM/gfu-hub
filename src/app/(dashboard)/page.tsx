@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { MessageSquare, AppWindow, FileText, ArrowRight, Send } from 'lucide-react'
+import { MessageSquare, AppWindow, ArrowRight, Send } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { getConversations, createConversation } from '@/lib/services/chat'
 import { Conversation } from '@/types'
@@ -78,7 +78,7 @@ export default function HomePage() {
         </form>
 
         {/* 바로가기 카드 */}
-        <div className="grid grid-cols-3 gap-4 mb-10">
+        <div className="grid grid-cols-2 gap-4 mb-10">
           <Link
             href="/chat"
             className="flex flex-col items-center gap-2 p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-300 hover:shadow-sm transition-all text-center"
@@ -99,17 +99,6 @@ export default function HomePage() {
             </div>
             <span className="text-sm font-medium text-gray-800">앱 런처</span>
             <span className="text-xs text-gray-400">업무 앱 바로가기</span>
-          </Link>
-
-          <Link
-            href="/docs"
-            className="flex flex-col items-center gap-2 p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-300 hover:shadow-sm transition-all text-center"
-          >
-            <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center">
-              <FileText size={20} className="text-green-500" />
-            </div>
-            <span className="text-sm font-medium text-gray-800">문서 허브</span>
-            <span className="text-xs text-gray-400">사내 문서 검색</span>
           </Link>
         </div>
 
