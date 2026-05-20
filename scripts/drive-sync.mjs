@@ -200,7 +200,11 @@ async function extractText(fileId, mimeType, fileName) {
 // ── 메인 ─────────────────────────────────────────────────────
 async function main() {
   const forceResync = process.env.FORCE_RESYNC === 'true'
-  console.log(`🚀 Drive 동기화 시작 ${forceResync ? '(강제 전체 재동기화)' : ''}`)
+  // START_FROM_INDEX: 해당 인덱스(0-based) 이전 파일은 Firestore 조회 없이 즉시 건너뜀
+  // 예: 388번까지 완료하고 중단됐으면 START_FROM_INDEX=388 로 재실행
+  const startFromIndex = parseInt(process.env.START_FROM_INDEX ?? '0', 10)
+  const logPrefix = startFromIndex > 0 ? ` | ⏩ ${startFromIndex}번 인덱스부터 재개` : ''
+  console.log(`🚀 Drive 동기화 시작 ${forceResync ? '(강제 전체 재동기화)' : ''}${logPrefix}`)
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID
 
   // 1. 파일 목록 수집
@@ -219,6 +223,16 @@ async function main() {
   // 2. 파일별 처리
   for (let i = 0; i < supported.length; i++) {
     const file = supported[i]
+
+    // START_FROM_INDEX: 이전 파일은 API 호출 없이 즉시 건너뜀 (재개 모드)
+    if (i < startFromIndex) {
+      if (i === 0 || i === startFromIndex - 1) {
+        console.log(`⏩ [1~${startFromIndex}/${supported.length}] 이전 완료분 건너뜀...`)
+      }
+      skipped++
+      continue
+    }
+
     console.log(`[${i + 1}/${supported.length}] ${file.name}`)
 
     try {

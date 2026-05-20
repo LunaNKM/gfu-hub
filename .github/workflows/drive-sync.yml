@@ -15,11 +15,16 @@ on:
         options:
           - 'false'
           - 'true'
+      start_from_index:
+        description: '재개할 파일 인덱스 (0-based). 예: 388번까지 완료 후 중단됐으면 388 입력'
+        required: false
+        default: '0'
+        type: string
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 360   # 650개 파일 × ~10s = ~108분, 여유있게 6시간으로 상향
 
     steps:
       - name: 코드 체크아웃
@@ -38,6 +43,7 @@ jobs:
         run: node scripts/drive-sync.mjs
         env:
           FORCE_RESYNC: ${{ github.event.inputs.force_resync || 'false' }}
+          START_FROM_INDEX: ${{ github.event.inputs.start_from_index || '0' }}
           NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
           NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
           NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
