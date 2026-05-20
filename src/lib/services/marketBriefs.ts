@@ -24,11 +24,6 @@ function docToBrief(d: { id: string; data: () => Record<string, unknown> }): Mar
     searchDate: (data.searchDate as string) ?? (data.date as string) ?? '', // 구버전 호환
     summary: (data.summary as string) ?? '',
     topics: (data.topics as MarketBrief['topics']) ?? [],
-    competitorPR: ((data.competitorPR as MarketBrief['competitorPR']) ?? []).map((c) => ({
-      ...c,
-      links: (c as unknown as { links?: MarketBrief['competitorPR'][number]['links'] }).links
-        ?? [], // 구버전(products 필드) 호환
-    })),
     sources: (data.sources as MarketBrief['sources']) ?? [],
     createdAt: convertTimestamp(data.createdAt),
     expiresAt: convertTimestamp(data.expiresAt),
