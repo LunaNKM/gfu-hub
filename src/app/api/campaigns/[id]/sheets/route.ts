@@ -202,48 +202,78 @@ function findHeader(headers: string[], keywords: string[]): string | undefined {
   }
 }
 
+// 반환값: 성공한 upsert 수
 async function syncInfluencersToCRM(
   campaignId: string,
   campaignName: string,
   clientName: string,
   sheets: Record<string, ParsedSheet>
-): Promise<void> {
+): Promise<number> {
   const CRM_TABS: SheetTabType[] = ['timeline', 'engagement', 'candidates']
-  const appearance: InfluencerAppearance = {
-    campaignId,
-    campaignName,
-    clientName,
-    tabType: '',
-    syncedAt: new Date().toISOString(),
-  }
+  const syncedAt = new Date().toISOString()
+
+  // ── docId → upsert 인자를 Map으로 수집 (같은 인플루언서 중복 제거) ──
+  // 여러 탭에 같은 계정이 있을 경우 팔로워가 가장 높은 데이터를 우선
+  const taskMap = new Map<string, {
+    data: { handle: string; platform: string; profileUrl: string; followers: number }
+    appearance: InfluencerAppearance
+  }>()
 
   for (const sheet of Object.values(sheets)) {
     if (!CRM_TABS.includes(sheet.type)) continue
 
     const accountCol = findHeader(sheet.rawHeaders, ACCOUNT_KEYWORDS)
-    const urlCol = findHeader(sheet.rawHeaders, URL_KEYWORDS)
+    const urlCol     = findHeader(sheet.rawHeaders, URL_KEYWORDS)
     const followerCol = findHeader(sheet.rawHeaders, FOLLOWER_KEYWORDS)
 
     if (!accountCol) continue
+
+    const appearance: InfluencerAppearance = {
+      campaignId,
+      campaignName,
+      clientName,
+      tabType: sheet.type,
+      syncedAt,
+    }
 
     for (const row of sheet.rows as SheetRow[]) {
       const handle = String(row[accountCol] ?? '').trim()
       if (!handle || handle === '?') continue
 
-      const url = urlCol ? String(row[urlCol] ?? '').trim() : ''
-      const platform = String(row._platform ?? '').trim()
-      const followers =
-        followerCol && typeof row[followerCol] === 'number' ? (row[followerCol] as number) : 0
-
+      const url       = urlCol ? String(row[urlCol] ?? '').trim() : ''
+      const platform  = String(row._platform ?? '').trim()
+      const followers = followerCol && typeof row[followerCol] === 'number'
+        ? (row[followerCol] as number)
+        : 0
       const docId = normalizeInfluencerId(url, platform, handle)
 
-      await upsertInfluencer(
-        docId,
-        { handle, platform, profileUrl: url, followers },
-        { ...appearance, tabType: sheet.type }
-      )
+      const existing = taskMap.get(docId)
+      // 같은 인플루언서가 이미 있으면 팔로워가 더 많은 데이터로 갱신
+      if (!existing || followers > existing.data.followers) {
+        taskMap.set(docId, {
+          data: { handle, platform, profileUrl: url, followers },
+          appearance,
+        })
+      }
     }
   }
+
+  if (taskMap.size === 0) return 0
+
+  // ── 전원 병렬 upsert ─────────────────────────────────────────
+  const results = await Promise.allSettled(
+    [...taskMap.entries()].map(([docId, { data, appearance }]) =>
+      upsertInfluencer(docId, data, appearance)
+    )
+  )
+
+  const failed = results.filter((r) => r.status === 'rejected')
+  if (failed.length > 0) {
+    console.error(`CRM 동기화 오류 ${failed.length}건:`,
+      (failed[0] as PromiseRejectedResult).reason)
+  }
+
+  return results.filter((r) => r.status === 'fulfilled').length
 }
 
 // ── 스프레드시트 ID 추출 ──────────────────────────────────────
@@ -336,12 +366,17 @@ export async function POST(
       sheetsLastSyncAt: new Date(),
     })
 
-    // ── 인플루언서 CRM 동기화 (비동기, 응답 블로킹 안 함) ──────
-    const campaign = await getCampaign(id)
-    if (campaign) {
-      syncInfluencersToCRM(id, campaign.campaignName, campaign.clientName, sheets).catch((err) =>
-        console.error('CRM 동기화 오류:', err)
-      )
+    // ── 인플루언서 CRM 동기화 (await — 응답 전에 완료 보장) ──────
+    let crmSynced = 0
+    try {
+      const campaign = await getCampaign(id)
+      if (campaign) {
+        crmSynced = await syncInfluencersToCRM(
+          id, campaign.campaignName, campaign.clientName, sheets
+        )
+      }
+    } catch (err) {
+      console.error('CRM 동기화 오류:', err)
     }
 
     return NextResponse.json({
@@ -349,6 +384,7 @@ export async function POST(
       totalTabs: tabNames.length,
       parsedTabs: totalParsed,
       sheetsIndex,
+      crmSynced,
     })
   } catch (err) {
     console.error('Sheets 동기화 오류:', err)
