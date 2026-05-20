@@ -91,7 +91,7 @@ export async function generateDailyBrief(): Promise<{
 
   const response = await openai.chat.completions.create({
     model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
-    max_tokens: 1200,
+    max_completion_tokens: 1200,
     messages: [
       {
         role: 'system',
