@@ -84,5 +84,11 @@ service cloud.firestore {
     match /userSettings/{userId} {
       allow read, write: if isGfutures() && isOwner(userId);
     }
+
+    // ── 캠페인 허브 ───────────────────────────────────────────
+    // 서버(API 라우트)에서도 접근 가능하도록 request.auth == null 허용
+    match /campaigns/{campaignId} {
+      allow read, write: if isGfutures() || request.auth == null;
+    }
   }
 }
