@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { getInfluencers, searchInfluencers } from '@/lib/services/influencers'
+import { getInfluencers } from '@/lib/services/influencers'
 import { Influencer } from '@/types'
 import {
   Users, Search, ExternalLink, ChevronDown, ChevronUp,
-  Instagram, RefreshCw, Loader2,
+  RefreshCw, Loader2,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
@@ -49,9 +49,23 @@ function fmtNum(n: number) {
   return n.toLocaleString()
 }
 
-// ── 인플루언서 카드 ──────────────────────────────────────────
+// ── 평균 IMP / 평균 ER 계산 헬퍼 ─────────────────────────────
+function calcAvgImp(inf: Influencer): number {
+  const vals = inf.appearances.filter((a) => a.imp !== undefined).map((a) => a.imp!)
+  return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0
+}
+
+function calcAvgEr(inf: Influencer): number {
+  const vals = inf.appearances.filter((a) => a.er !== undefined).map((a) => a.er!)
+  return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0
+}
+
+// ── 인플루언서 행 ─────────────────────────────────────────────
 function InfluencerRow({ influencer }: { influencer: Influencer }) {
   const [expanded, setExpanded] = useState(false)
+
+  const avgImp = calcAvgImp(influencer)
+  const avgEr  = calcAvgEr(influencer)
 
   return (
     <div className="border-t border-gray-50 hover:bg-gray-50/40 transition-colors">
@@ -80,6 +94,26 @@ function InfluencerRow({ influencer }: { influencer: Influencer }) {
             <p className="text-xs text-gray-300">—</p>
           )}
           <p className="text-xs text-gray-400">팔로워</p>
+        </div>
+
+        {/* 평균 IMP */}
+        <div className="text-right shrink-0 w-20">
+          {avgImp > 0 ? (
+            <p className="text-sm font-semibold text-sky-600">{fmtNum(Math.round(avgImp))}</p>
+          ) : (
+            <p className="text-xs text-gray-300">—</p>
+          )}
+          <p className="text-xs text-gray-400">평균 IMP</p>
+        </div>
+
+        {/* 평균 ER */}
+        <div className="text-right shrink-0 w-16">
+          {avgEr > 0 ? (
+            <p className="text-sm font-semibold text-emerald-600">{avgEr.toFixed(2)}%</p>
+          ) : (
+            <p className="text-xs text-gray-300">—</p>
+          )}
+          <p className="text-xs text-gray-400">평균 ER</p>
         </div>
 
         {/* 캠페인 수 */}
@@ -121,12 +155,25 @@ function InfluencerRow({ influencer }: { influencer: Influencer }) {
               .map((ap, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-indigo-300 mt-1.5 shrink-0" />
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-gray-700">{ap.campaignName}</p>
                     <p className="text-xs text-gray-400">
                       {ap.clientName} · {ap.tabType} ·{' '}
                       {format(new Date(ap.syncedAt), 'yyyy.MM.dd', { locale: ko })}
                     </p>
+                    {(ap.imp !== undefined || ap.er !== undefined) && (
+                      <div className="flex gap-3 mt-0.5">
+                        {ap.imp !== undefined && (
+                          <span className="text-xs text-sky-600">IMP {fmtNum(ap.imp)}</span>
+                        )}
+                        {ap.engSum !== undefined && (
+                          <span className="text-xs text-purple-500">ENG {fmtNum(ap.engSum)}</span>
+                        )}
+                        {ap.er !== undefined && (
+                          <span className="text-xs text-emerald-600">ER {ap.er.toFixed(2)}%</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -137,6 +184,16 @@ function InfluencerRow({ influencer }: { influencer: Influencer }) {
   )
 }
 
+// ── 정렬 옵션 ─────────────────────────────────────────────────
+type SortKey = 'lastSeen' | 'followers' | 'appearances' | 'avgImp' | 'avgEr'
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'lastSeen',    label: '최근 캠페인순' },
+  { value: 'followers',   label: '팔로워 많은순' },
+  { value: 'appearances', label: '캠페인 수 많은순' },
+  { value: 'avgImp',      label: '평균 IMP 높은순' },
+  { value: 'avgEr',       label: '평균 ER 높은순' },
+]
+
 // ── 메인 페이지 ──────────────────────────────────────────────
 export default function InfluencersPage() {
   const { user } = useAuth()
@@ -144,14 +201,13 @@ export default function InfluencersPage() {
   const [loading, setLoading] = useState(true)
   const [searchQ, setSearchQ] = useState('')
   const [platform, setPlatform] = useState('')
-  const [sortBy, setSortBy] = useState<'lastSeen' | 'followers' | 'appearances'>('lastSeen')
+  const [sortBy, setSortBy] = useState<SortKey>('lastSeen')
 
   const load = async () => {
     setLoading(true)
     try {
-      const data = platform
-        ? await searchInfluencers(platform)
-        : await getInfluencers()
+      // 항상 전체 로드 후 클라이언트에서 필터 (Firestore 복합 인덱스 불필요)
+      const data = await getInfluencers(500)
       setInfluencers(data)
     } finally {
       setLoading(false)
@@ -161,10 +217,16 @@ export default function InfluencersPage() {
   useEffect(() => {
     if (user) load()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, platform])
+  }, [user])
 
   const filtered = useMemo(() => {
     let list = influencers
+
+    // 클라이언트 사이드 플랫폼 필터
+    if (platform) {
+      list = list.filter((inf) => inf.platform === platform)
+    }
+
     if (searchQ.trim()) {
       const q = searchQ.toLowerCase()
       list = list.filter(
@@ -173,12 +235,15 @@ export default function InfluencersPage() {
           inf.appearances.some((a) => a.campaignName.toLowerCase().includes(q))
       )
     }
+
     return [...list].sort((a, b) => {
-      if (sortBy === 'followers') return b.followers - a.followers
+      if (sortBy === 'followers')   return b.followers - a.followers
       if (sortBy === 'appearances') return b.appearances.length - a.appearances.length
+      if (sortBy === 'avgImp')      return calcAvgImp(b) - calcAvgImp(a)
+      if (sortBy === 'avgEr')       return calcAvgEr(b) - calcAvgEr(a)
       return b.lastSeenAt.getTime() - a.lastSeenAt.getTime()
     })
-  }, [influencers, searchQ, sortBy])
+  }, [influencers, searchQ, sortBy, platform])
 
   // 통계
   const stats = useMemo(() => {
@@ -252,7 +317,7 @@ export default function InfluencersPage() {
             />
           </div>
 
-          {/* 플랫폼 탭 */}
+          {/* 플랫폼 탭 + 정렬 드롭다운 */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-gray-400 shrink-0">플랫폼</span>
             <div className="flex gap-1.5 flex-wrap">
@@ -272,28 +337,18 @@ export default function InfluencersPage() {
               ))}
             </div>
 
+            {/* 정렬 드롭다운 */}
             <div className="ml-auto flex items-center gap-1.5">
-              <span className="text-xs text-gray-400">정렬</span>
-              {(
-                [
-                  ['lastSeen', '최근 캠페인'],
-                  ['followers', '팔로워'],
-                  ['appearances', '캠페인 수'],
-                ] as const
-              ).map(([k, l]) => (
-                <button
-                  key={k}
-                  onClick={() => setSortBy(k)}
-                  className={clsx(
-                    'px-2.5 py-1 text-xs rounded-full border transition-colors',
-                    sortBy === k
-                      ? 'bg-gray-800 text-white border-gray-800'
-                      : 'border-gray-200 text-gray-400'
-                  )}
-                >
-                  {l}
-                </button>
-              ))}
+              <span className="text-xs text-gray-400 shrink-0">정렬</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as SortKey)}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 bg-white focus:outline-none focus:border-indigo-300 transition-colors"
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
@@ -305,6 +360,8 @@ export default function InfluencersPage() {
             <div className="w-10 text-xs text-gray-400 font-medium">플랫폼</div>
             <div className="flex-1 text-xs text-gray-400 font-medium">계정</div>
             <div className="w-20 text-right text-xs text-gray-400 font-medium">팔로워</div>
+            <div className="w-20 text-right text-xs text-sky-400 font-medium">평균 IMP</div>
+            <div className="w-16 text-right text-xs text-emerald-400 font-medium">평균 ER</div>
             <div className="w-16 text-right text-xs text-gray-400 font-medium">캠페인</div>
             <div className="w-8" />
             <div className="w-5" />

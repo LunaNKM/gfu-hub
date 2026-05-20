@@ -190,6 +190,12 @@ function parseSheetTab(
 const ACCOUNT_KEYWORDS = ['계정 아이디', '계정명', '계정', 'ID', '아이디', '이름', '名前', '진행 확정']
 const FOLLOWER_KEYWORDS = ['팔로워', 'fw', 'followers', '팔로워 수']
 const URL_KEYWORDS = ['url']
+const IMP_KEYWORDS      = ['imp', '조회수', 'impressions', 'reach', '도달', 'views']
+const LIKES_KEYWORDS    = ['좋아요', 'likes']
+const COMMENTS_KEYWORDS = ['댓글', 'comments']
+const SAVES_KEYWORDS    = ['저장', 'saves']
+const SHARES_KEYWORDS   = ['공유', 'shares', '리포스트', 'repost']
+const ER_KEYWORDS       = ['er%', '인게이지먼트율', 'engagement rate', 'er율']
 
 function findHeader(headers: string[], keywords: string[]): string | undefined {
   for (const kw of keywords) {
@@ -222,19 +228,17 @@ async function syncInfluencersToCRM(
   for (const sheet of Object.values(sheets)) {
     if (!CRM_TABS.includes(sheet.type)) continue
 
-    const accountCol = findHeader(sheet.rawHeaders, ACCOUNT_KEYWORDS)
-    const urlCol     = findHeader(sheet.rawHeaders, URL_KEYWORDS)
+    const accountCol  = findHeader(sheet.rawHeaders, ACCOUNT_KEYWORDS)
+    const urlCol      = findHeader(sheet.rawHeaders, URL_KEYWORDS)
     const followerCol = findHeader(sheet.rawHeaders, FOLLOWER_KEYWORDS)
+    const impCol      = findHeader(sheet.rawHeaders, IMP_KEYWORDS)
+    const likesCol    = findHeader(sheet.rawHeaders, LIKES_KEYWORDS)
+    const commentsCol = findHeader(sheet.rawHeaders, COMMENTS_KEYWORDS)
+    const savesCol    = findHeader(sheet.rawHeaders, SAVES_KEYWORDS)
+    const sharesCol   = findHeader(sheet.rawHeaders, SHARES_KEYWORDS)
+    const erCol       = findHeader(sheet.rawHeaders, ER_KEYWORDS)
 
     if (!accountCol) continue
-
-    const appearance: InfluencerAppearance = {
-      campaignId,
-      campaignName,
-      clientName,
-      tabType: sheet.type,
-      syncedAt,
-    }
 
     for (const row of sheet.rows as SheetRow[]) {
       const handle = String(row[accountCol] ?? '').trim()
@@ -245,8 +249,40 @@ async function syncInfluencersToCRM(
       const followers = followerCol && typeof row[followerCol] === 'number'
         ? (row[followerCol] as number)
         : 0
-      const docId = normalizeInfluencerId(url, platform, handle)
 
+      // ── 성과 지표 추출 ────────────────────────────────────────
+      const getNum = (col: string | undefined): number | undefined => {
+        if (!col) return undefined
+        const v = row[col]
+        return typeof v === 'number' ? v : undefined
+      }
+      const imp      = getNum(impCol)
+      const likes    = getNum(likesCol)
+      const comments = getNum(commentsCol)
+      const saves    = getNum(savesCol)
+      const shares   = getNum(sharesCol)
+
+      const engParts = [likes, comments, saves, shares].filter((v): v is number => v !== undefined)
+      const engSum   = engParts.length > 0 ? engParts.reduce((a, b) => a + b, 0) : undefined
+
+      // ER: 시트 컬럼 우선, 없으면 engSum/imp로 계산
+      let er = getNum(erCol)
+      if (er === undefined && engSum !== undefined && imp !== undefined && imp > 0) {
+        er = parseFloat(((engSum / imp) * 100).toFixed(2))
+      }
+
+      const appearance: InfluencerAppearance = {
+        campaignId,
+        campaignName,
+        clientName,
+        tabType: sheet.type,
+        syncedAt,
+        ...(imp     !== undefined ? { imp }     : {}),
+        ...(engSum  !== undefined ? { engSum }  : {}),
+        ...(er      !== undefined ? { er }      : {}),
+      }
+
+      const docId = normalizeInfluencerId(url, platform, handle)
       const existing = taskMap.get(docId)
       // 같은 인플루언서가 이미 있으면 팔로워가 더 많은 데이터로 갱신
       if (!existing || followers > existing.data.followers) {

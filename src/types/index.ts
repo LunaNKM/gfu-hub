@@ -162,6 +162,9 @@ export interface InfluencerAppearance {
   clientName: string
   tabType: string   // 'timeline' | 'candidates' | 'engagement' | ...
   syncedAt: string  // ISO date string
+  imp?: number      // 조회수 (있는 경우)
+  engSum?: number   // 총 ENG (좋아요+댓글+저장+공유+리포스트)
+  er?: number       // ER % (소수점 2자리)
 }
 
 export interface Influencer {
