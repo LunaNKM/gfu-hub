@@ -21,8 +21,10 @@ function docToBrief(d: { id: string; data: () => Record<string, unknown> }): Mar
   return {
     id: d.id,
     date: (data.date as string) ?? '',
+    searchDate: (data.searchDate as string) ?? (data.date as string) ?? '', // 구버전 호환
     summary: (data.summary as string) ?? '',
     topics: (data.topics as MarketBrief['topics']) ?? [],
+    competitorPR: (data.competitorPR as MarketBrief['competitorPR']) ?? [],
     sources: (data.sources as MarketBrief['sources']) ?? [],
     createdAt: convertTimestamp(data.createdAt),
     expiresAt: convertTimestamp(data.expiresAt),

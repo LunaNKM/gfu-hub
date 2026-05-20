@@ -6,11 +6,77 @@ import { getRecentBriefs } from '@/lib/services/marketBriefs'
 import { MarketBrief } from '@/types'
 import {
   Globe, RefreshCw, Loader2, ExternalLink, ChevronDown, ChevronUp,
-  Sparkles, Calendar,
+  Sparkles, Calendar, Search, ShoppingBag,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
+
+// ── 경쟁사 PR 섹션 ───────────────────────────────────────────
+function CompetitorPRSection({ brief }: { brief: MarketBrief }) {
+  if (!brief.competitorPR || brief.competitorPR.length === 0) return null
+
+  return (
+    <div className="border-t border-gray-100 pt-4">
+      <div className="flex items-center gap-1.5 mb-3">
+        <ShoppingBag size={13} className="text-rose-400" />
+        <span className="text-sm font-semibold text-gray-800">경쟁사 인스타그램 PR 현황</span>
+        {brief.searchDate && (
+          <span className="ml-1 text-xs text-gray-400">({brief.searchDate} 기준)</span>
+        )}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {brief.competitorPR.map((comp) => (
+          <div
+            key={comp.brand}
+            className={clsx(
+              'rounded-xl border p-3',
+              comp.found ? 'border-rose-100 bg-rose-50/40' : 'border-gray-100 bg-gray-50/40'
+            )}
+          >
+            {/* 브랜드 헤더 */}
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-gray-800">{comp.brand}</span>
+              <span
+                className={clsx(
+                  'px-1.5 py-0.5 rounded-full text-xs font-medium',
+                  comp.found
+                    ? 'bg-rose-100 text-rose-600'
+                    : 'bg-gray-100 text-gray-400'
+                )}
+              >
+                {comp.found ? '활동 확인' : '미확인'}
+              </span>
+            </div>
+            {/* 요약 */}
+            <p className="text-xs text-gray-500 leading-snug mb-2">{comp.summary}</p>
+            {/* 제품 목록 */}
+            {comp.products.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {comp.products.map((p) => (
+                  <div
+                    key={p.name}
+                    className="flex items-center gap-1 bg-white border border-rose-100 rounded-lg px-2 py-1"
+                    title={p.note}
+                  >
+                    <span className="text-xs text-gray-700">{p.name}</span>
+                    <span className="text-xs font-bold text-rose-500 ml-0.5">{p.count}건</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-300 italic">제품 정보 없음</p>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-gray-300 mt-2 flex items-center gap-1">
+        <Search size={10} />
+        웹 검색 기반 집계 · 실제 게시물 수와 다를 수 있음
+      </p>
+    </div>
+  )
+}
 
 // ── 브리프 카드 ───────────────────────────────────────────────
 function BriefCard({ brief, isLatest }: { brief: MarketBrief; isLatest: boolean }) {
@@ -41,6 +107,11 @@ function BriefCard({ brief, isLatest }: { brief: MarketBrief; isLatest: boolean 
         >
           {brief.date}
         </span>
+        {brief.searchDate && brief.searchDate !== brief.date && (
+          <span className="text-xs text-gray-400">
+            ({brief.searchDate} 기준)
+          </span>
+        )}
         {isLatest && (
           <span className="ml-1 px-2 py-0.5 text-xs bg-indigo-500 text-white rounded-full font-medium">
             최신
@@ -81,6 +152,9 @@ function BriefCard({ brief, isLatest }: { brief: MarketBrief; isLatest: boolean 
             ))}
           </div>
         )}
+
+        {/* 경쟁사 PR 현황 */}
+        <CompetitorPRSection brief={brief} />
 
         {/* 출처 (접기/펼치기) */}
         {brief.sources.length > 0 && (

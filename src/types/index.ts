@@ -183,11 +183,26 @@ export interface MarketBriefTopic {
   source?: string
 }
 
+export interface CompetitorProduct {
+  name: string    // 제품명
+  count: number   // 검색 결과 내 언급 건수
+  note?: string   // 부가 정보
+}
+
+export interface CompetitorPR {
+  brand: string                  // 브랜드명
+  found: boolean                 // 검색 결과 발견 여부
+  summary: string                // 한줄 요약
+  products: CompetitorProduct[]  // 제품별 언급 현황
+}
+
 export interface MarketBrief {
   id: string
-  date: string   // YYYY-MM-DD
+  date: string        // YYYY-MM-DD (생성 날짜 = 오늘)
+  searchDate: string  // YYYY-MM-DD (검색 기준 날짜 = 어제)
   summary: string
   topics: MarketBriefTopic[]
+  competitorPR: CompetitorPR[]
   sources: { title: string; url: string }[]
   createdAt: Date
   expiresAt: Date
