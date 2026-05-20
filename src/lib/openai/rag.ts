@@ -58,8 +58,8 @@ function keywordScore(content: string, query: string): number {
 
 export async function searchRelevantDocs(
   searchQuery: string,
-  limit = 15,
-  minScore = 0.05
+  limit = 10,
+  minScore = 0.15
 ): Promise<{ docId: string; title: string; content: string; score: number }[]> {
   try {
     const chunks = await getAllChunks()
@@ -116,7 +116,7 @@ export async function searchRelevantDocs(
 export async function searchAllChunksFromTopDocs(
   searchQuery: string,
   topDocCount = 5,
-  maxTotalChunks = 80
+  maxTotalChunks = 40
 ): Promise<{ docId: string; title: string; content: string; score: number }[]> {
   try {
     const chunks = await getAllChunks()

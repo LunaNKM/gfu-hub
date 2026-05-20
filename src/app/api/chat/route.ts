@@ -274,9 +274,9 @@ export async function POST(req: NextRequest) {
         // 리스트 질문이면 상위 문서의 청크를 전량 수집, 일반 질문은 유사도 상위 N개
         const [ragSources, webResult] = await Promise.all([
           isListing
-            ? searchAllChunksFromTopDocs(message, 8, 80)
+            ? searchAllChunksFromTopDocs(message, 5, 40)
             : routing.needsRag
-              ? searchRelevantDocs(message, 20, 0.03)
+              ? searchRelevantDocs(message, 10, 0.15)
               : Promise.resolve([]),
           routing.needsWebSearch ? webSearch(message) : Promise.resolve({ answer: null, results: [] }),
         ])
@@ -298,13 +298,13 @@ export async function POST(req: NextRequest) {
 
         // 4단계: 대화 히스토리 (최근 10개)
         const historyMessages = (history as { role: string; content: string }[])
-          .slice(-10)
+          .slice(-6)
           .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
         // 5단계: OpenAI 스트리밍 호출
         // 리스트: 12000 / 전략·기획: 2500 / 일반: 1500
         // 시스템 메시지 고정(BASE_SYSTEM_PROMPT) → OpenAI 자동 캐싱 적용
-        const maxTokens = isListing ? 12000 : routing.isStrategy ? 2500 : 1500
+        const maxTokens = isListing ? 5000 : routing.isStrategy ? 1500 : 800
 
         const openaiStream = await client.chat.completions.create({
           model: OPENAI_MODEL,

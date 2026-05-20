@@ -31,7 +31,7 @@ export async function webSearch(query: string): Promise<WebSearchResponse> {
         search_depth: 'advanced',
         include_answer: true,
         include_raw_content: false,
-        max_results: 10,
+        max_results: 7,
       }),
     })
 
@@ -46,7 +46,7 @@ export async function webSearch(query: string): Promise<WebSearchResponse> {
       results: (data.results ?? []).map((r: WebSearchResult) => ({
         title: r.title,
         url: r.url,
-        content: r.content?.slice(0, 1500) ?? '',
+        content: r.content?.slice(0, 1000) ?? '',
         score: r.score ?? 0,
       })),
     }
