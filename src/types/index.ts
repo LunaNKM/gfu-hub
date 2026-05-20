@@ -116,3 +116,28 @@ export interface FileRecord {
   extractedText?: string
   createdAt: Date
 }
+
+export type CampaignStatus = 'proposal' | 'active' | 'completed'
+
+export interface Campaign {
+  id: string
+  clientName: string
+  campaignName: string
+  status: CampaignStatus
+  startDate: string        // YYYY-MM-DD
+  endDate: string          // YYYY-MM-DD
+  budget: number           // 원
+  sheetsUrl?: string
+  sheetsHeaders?: string[]
+  influencers?: InfluencerRow[]
+  sheetsLastSyncAt?: Date
+  memo?: string
+  createdAt: Date
+  updatedAt: Date
+  createdBy: string
+}
+
+// 시트에서 파싱된 인플루언서 행 (컬럼이 시트마다 달라서 유연하게 처리)
+export interface InfluencerRow {
+  [key: string]: string | number | null
+}
