@@ -109,8 +109,8 @@ export async function generateDailyBrief(): Promise<{
 
   await Promise.all(
     TRACKED_COMPETITORS.map(async (comp) => {
-      // 경쟁사는 날짜 제한 없이 검색 (최근 언급/활동 발견이 목적)
-      const results = await Promise.all(comp.queries(dateJP).map((q) => tavilySearch(q)))
+      // 경쟁사도 동일하게 days=2 적용 (어제 날짜 언급/활동만 수집)
+      const results = await Promise.all(comp.queries(dateJP).map((q) => tavilySearch(q, TREND_DAYS)))
       // URL 중복 제거 후 score 순 정렬, 최대 6개
       competitorRawMap[comp.brand] = results
         .flat()
