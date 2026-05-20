@@ -30,8 +30,8 @@ function docToCampaign(d: { id: string; data: () => Record<string, unknown> }): 
     endDate: (data.endDate as string) ?? '',
     budget: (data.budget as number) ?? 0,
     sheetsUrl: data.sheetsUrl as string | undefined,
-    sheetsHeaders: data.sheetsHeaders as string[] | undefined,
-    influencers: data.influencers as Campaign['influencers'],
+    sheetsIndex: data.sheetsIndex as Campaign['sheetsIndex'],
+    sheets: data.sheets as Campaign['sheets'],
     sheetsLastSyncAt: data.sheetsLastSyncAt
       ? convertTimestamp(data.sheetsLastSyncAt)
       : undefined,

@@ -1,60 +1,197 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { google } from 'googleapis'
 import { updateCampaign } from '@/lib/services/campaigns'
+import { SheetTabType, ParsedSheet, SheetRow, SheetIndexItem } from '@/types'
 
 function auth(req: NextRequest) {
   const h = req.headers.get('Authorization')
   return h?.startsWith('Bearer ') ? h.slice(7) : null
 }
 
-/** Google Sheets URL에서 spreadsheetId 추출 */
+// ── 탭 이름 → 유형 분류 ───────────────────────────────────────
+function classifyTab(name: string): SheetTabType | 'SKIP' {
+  // 개별 구성안 탭 — 가장 먼저 체크
+  if (/^(확인\s?완료|완료|초안|영상초안)\s/.test(name)) return 'SKIP'
+  // 제외 키워드
+  const skip = ['제공 시술', '설치 매장', '추가 youtube', '추가 tiktok', 'raw data',
+                '한화재팬', '협력 ad', '광고 집행', '예산안', '집행 내역', '개요',
+                'ad report', 'pa report', '가챠 pr 구성안']
+  if (skip.some(k => name.toLowerCase().includes(k.toLowerCase()))) return 'SKIP'
+
+  const n = name.toLowerCase()
+  if (n.includes('인게이지')) return 'engagement'
+  if (n.includes('타임라인') || n.includes('확정 if') || n.includes('확정if') ||
+      n.includes('기자단') || n.includes('체험단')) return 'timeline'
+  if (n.includes('후보') || n.includes('추천') || n.includes('시딩')) return 'candidates'
+  if (n.includes('콘텐츠') || n.includes('컨텐츠') || n.includes('초안 확인')) return 'content'
+  if (n.includes('방문 일정') || n.includes('if 예약') || n.includes('if예약') ||
+      n.includes('예약')) return 'schedule'
+  if (n.includes('배송')) return 'shipping'
+  return 'other'
+}
+
+// 탭 이름 앞의 "1. ", "Q2 " 같은 접두사 정리
+function cleanDisplayName(name: string): string {
+  return name.replace(/^\d+\.\s*/, '').trim()
+}
+
+// 탭 이름 → Firestore 키
+function slugify(name: string): string {
+  return name.replace(/[^a-zA-Z0-9가-힣]/g, '_').replace(/_+/g, '_').slice(0, 60)
+}
+
+// ── 헤더 행 자동 탐지 ─────────────────────────────────────────
+const HEADER_KEYWORDS = ['계정', 'no.', 'no ', '이름', 'url', '팔로워', '아이디', 'fw', '플랫폼', 'kpi', '名前']
+function findHeaderRow(rows: unknown[][]): number {
+  for (let i = 0; i < Math.min(rows.length, 14); i++) {
+    const text = rows[i].map(v => String(v ?? '').toLowerCase()).join('|')
+    const hits = HEADER_KEYWORDS.filter(k => text.includes(k)).length
+    if (hits >= 2) return i
+  }
+  return -1
+}
+
+// ── 섹션 행 판별 (지점명 단독 행) ────────────────────────────
+function detectSectionRow(row: unknown[], headerCount: number): string | null {
+  const filled = row.filter(v => v !== '' && v !== null && v !== undefined)
+  // 전체 컬럼 대비 채워진 셀이 매우 적어야 함
+  if (filled.length < 1 || filled.length > Math.max(3, Math.floor(headerCount * 0.3))) return null
+  const val = String(filled[0] ?? '').trim()
+  if (!val || val.startsWith('http') || /^\d+$/.test(val)) return null
+  // "Total", "합계" 등 집계 행 제외
+  if (/total|합계|소계|업로드/i.test(val)) return null
+  if (val.length > 30) return null
+  return val
+}
+
+// ── 플랫폼 자동 판별 ──────────────────────────────────────────
+function detectPlatform(url: string): string {
+  if (!url) return ''
+  const u = url.toLowerCase()
+  if (u.includes('instagram.com') || u.includes('instagr.am')) return 'Instagram'
+  if (u.includes('tiktok.com')) return 'TikTok'
+  if (u.includes('youtube.com') || u.includes('youtu.be')) return 'YouTube'
+  if (u.includes('x.com') || u.includes('twitter.com')) return 'X'
+  return ''
+}
+
+// ── 숫자 파싱 ─────────────────────────────────────────────────
+function parseNum(v: string): number | null {
+  if (!v) return null
+  const cleaned = v.replace(/[,\s]/g, '').replace(/[^0-9.-]/g, '')
+  const n = parseFloat(cleaned)
+  return isNaN(n) ? null : n
+}
+
+// 성과 수치 컬럼 키워드
+const NUMERIC_KEYWORDS = [
+  'imp', '노출', '좋아요', '댓글', '저장', '공유', '리포스트', '조회수',
+  'eng', 'reach', '도달', '팔로워', 'fw', '비용', '금액', '예산',
+  '조회', 'views', 'likes', 'comments', 'saves', 'shares', 'followers',
+]
+function isNumericHeader(header: string): boolean {
+  const lower = header.toLowerCase()
+  return NUMERIC_KEYWORDS.some(k => lower.includes(k))
+}
+
+// ── 탭 파싱 메인 ─────────────────────────────────────────────
+function parseSheetTab(
+  rows: unknown[][],
+  tabName: string,
+  type: SheetTabType
+): ParsedSheet | null {
+  const headerIdx = findHeaderRow(rows)
+  if (headerIdx < 0) return null
+
+  const rawHeaders = rows[headerIdx].map(v =>
+    String(v ?? '').trim().replace(/\n+/g, ' ')
+  )
+  if (rawHeaders.filter(h => h).length < 2) return null
+
+  // 첫 번째 컬럼이 헤더 없이 비어있으면 섹션 컬럼 (패턴 A)
+  const hasSectionCol = rawHeaders[0] === '' && rawHeaders.length > 2
+
+  let currentSection = ''
+  const parsedRows: SheetRow[] = []
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i] as unknown[]
+
+    // 완전히 빈 행 스킵
+    const filled = row.filter(v => v !== '' && v !== null && v !== undefined)
+    if (filled.length === 0) continue
+
+    // 패턴 B: 섹션 단독 행 감지
+    if (!hasSectionCol) {
+      const sec = detectSectionRow(row, rawHeaders.length)
+      if (sec) { currentSection = sec; continue }
+    }
+
+    // 패턴 A: 첫 컬럼이 섹션 컬럼
+    if (hasSectionCol && row[0] !== '' && row[0] !== null && row[0] !== undefined) {
+      currentSection = String(row[0]).trim()
+    }
+
+    // 행 객체 빌드
+    const obj: SheetRow = {}
+    if (currentSection) obj._section = currentSection
+
+    const startCol = hasSectionCol ? 1 : 0
+    for (let c = startCol; c < rawHeaders.length; c++) {
+      const key = rawHeaders[c]
+      if (!key) continue
+      const cellRaw = row[c]
+      if (cellRaw === '' || cellRaw === null || cellRaw === undefined) {
+        obj[key] = null
+        continue
+      }
+      const cellStr = String(cellRaw).trim()
+      if (isNumericHeader(key)) {
+        obj[key] = parseNum(cellStr) ?? cellStr
+      } else {
+        // Boolean 처리 (Google Sheets TRUE/FALSE)
+        if (cellStr === 'TRUE' || cellStr === 'true') { obj[key] = true; continue }
+        if (cellStr === 'FALSE' || cellStr === 'false') { obj[key] = false; continue }
+        obj[key] = cellStr
+      }
+    }
+
+    // 플랫폼 자동 판별 — URL 컬럼 탐색
+    const urlKey = rawHeaders.find(h => h.toLowerCase() === 'url')
+    const urlVal = urlKey ? String(obj[urlKey] ?? '') : ''
+    if (urlVal) obj._platform = detectPlatform(urlVal)
+
+    // 의미있는 행인지 확인 (계정명 또는 URL 중 하나는 있어야 함)
+    const hasIdent = rawHeaders.some(h => {
+      const hl = h.toLowerCase()
+      return (hl.includes('계정') || hl.includes('이름') || hl === 'url' ||
+              hl === 'fw' || hl === 'id' || hl.includes('아이디') || hl === '名前')
+        && obj[h] !== null && obj[h] !== ''
+    })
+    if (!hasIdent) continue
+
+    parsedRows.push(obj)
+  }
+
+  if (parsedRows.length === 0) return null
+
+  return {
+    name: tabName,
+    displayName: cleanDisplayName(tabName),
+    type,
+    rawHeaders: rawHeaders.filter(h => h),
+    rows: parsedRows,
+    rowCount: parsedRows.length,
+  }
+}
+
+// ── 스프레드시트 ID 추출 ──────────────────────────────────────
 function extractSheetId(url: string): string | null {
   const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)
   return m ? m[1] : null
 }
 
-/** 헤더 → 정規화된 필드명 매핑 */
-function normalizeHeader(raw: string): string {
-  const lower = raw.trim().toLowerCase()
-  const map: Record<string, string> = {
-    // 이름 / 계정
-    '인플루언서': 'name', '인플루언서명': 'name', '이름': 'name', 'name': 'name',
-    '계정': 'handle', '계정명': 'handle', '핸들': 'handle', 'handle': 'handle', '@': 'handle',
-    // 플랫폼 / 상태
-    '플랫폼': 'platform', 'platform': 'platform', 'sns': 'platform',
-    '상태': 'status', 'status': 'status', '진행상태': 'status', '진행상황': 'status',
-    // 팔로워
-    '팔로워': 'followers', '팔로워수': 'followers', 'followers': 'followers',
-    // 성과지표
-    '조회수': 'views', 'views': 'views', '재생수': 'views',
-    '좋아요': 'likes', '좋아요수': 'likes', 'likes': 'likes',
-    '댓글': 'comments', '댓글수': 'comments', 'comments': 'comments',
-    '공유': 'shares', '공유수': 'shares', 'shares': 'shares',
-    '저장': 'saves', '저장수': 'saves', 'saves': 'saves',
-    '도달': 'reach', '도달수': 'reach', 'reach': 'reach',
-    '노출': 'impressions', '노출수': 'impressions', 'impressions': 'impressions',
-    // 계약 / 링크
-    '계약금': 'fee', '단가': 'fee', '금액': 'fee', 'fee': 'fee', '비용': 'fee',
-    '링크': 'postUrl', '게시글': 'postUrl', 'url': 'postUrl', '게시글링크': 'postUrl',
-    // 메모
-    '메모': 'memo', 'memo': 'memo', '비고': 'memo', '참고': 'memo',
-  }
-  return map[lower] ?? raw.trim()
-}
-
-/** 숫자 문자열 → number 변환 (콤마, 단위 제거) */
-function parseNum(v: string): number | null {
-  if (!v) return null
-  const cleaned = v.replace(/[,\s만천백]/g, '').replace(/[^0-9.-]/g, '')
-  const n = parseFloat(cleaned)
-  return isNaN(n) ? null : n
-}
-
-const NUMERIC_FIELDS = new Set([
-  'followers', 'views', 'likes', 'comments', 'shares', 'saves',
-  'reach', 'impressions', 'fee',
-])
-
+// ── 라우트 핸들러 ─────────────────────────────────────────────
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -70,7 +207,6 @@ export async function POST(
     return NextResponse.json({ error: '올바른 Google Sheets URL이 아닙니다.' }, { status: 400 })
   }
 
-  // OAuth 자격증명 확인
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
   const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN
@@ -81,56 +217,69 @@ export async function POST(
   try {
     const oAuth2 = new google.auth.OAuth2(clientId, clientSecret)
     oAuth2.setCredentials({ refresh_token: refreshToken })
-    const sheets = google.sheets({ version: 'v4', auth: oAuth2 })
+    const sheetsApi = google.sheets({ version: 'v4', auth: oAuth2 })
 
-    // 첫 번째 시트 데이터 읽기
-    const meta = await sheets.spreadsheets.get({
+    // 전체 탭 목록
+    const meta = await sheetsApi.spreadsheets.get({
       spreadsheetId,
       fields: 'sheets.properties(title)',
     })
-    const firstSheet = meta.data.sheets?.[0]?.properties?.title ?? 'Sheet1'
+    const tabNames = meta.data.sheets?.map(s => s.properties?.title ?? '') ?? []
 
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: firstSheet,
-      valueRenderOption: 'FORMATTED_VALUE',
-    })
+    const sheets: Record<string, ParsedSheet> = {}
+    const sheetsIndex: SheetIndexItem[] = []
+    let totalParsed = 0
 
-    const rows = res.data.values ?? []
-    if (rows.length < 2) {
-      return NextResponse.json({ error: '시트에 데이터가 없습니다.' }, { status: 400 })
+    for (const tabName of tabNames) {
+      const type = classifyTab(tabName)
+      if (type === 'SKIP') continue
+
+      // 탭 데이터 읽기
+      let values: unknown[][] = []
+      try {
+        const res = await sheetsApi.spreadsheets.values.get({
+          spreadsheetId,
+          range: tabName,
+          valueRenderOption: 'FORMATTED_VALUE',
+        })
+        values = (res.data.values ?? []) as unknown[][]
+      } catch {
+        continue // 읽기 실패한 탭은 건너뜀
+      }
+
+      if (values.length < 2) continue
+
+      const parsed = parseSheetTab(values, tabName, type)
+      if (!parsed) continue
+
+      const key = slugify(tabName)
+      sheets[key] = parsed
+      sheetsIndex.push({
+        key,
+        name: tabName,
+        displayName: parsed.displayName,
+        type,
+        rowCount: parsed.rowCount,
+      })
+      totalParsed++
     }
 
-    const rawHeaders = rows[0].map((h: unknown) => String(h ?? ''))
-    const normalizedKeys = rawHeaders.map(normalizeHeader)
+    if (totalParsed === 0) {
+      return NextResponse.json({ error: '파싱 가능한 탭이 없습니다. URL을 확인하거나 탭 이름을 확인하세요.' }, { status: 400 })
+    }
 
-    const influencers = rows.slice(1).map((row: unknown[]) => {
-      const obj: Record<string, string | number | null> = {}
-      normalizedKeys.forEach((key, i) => {
-        const raw = String(row[i] ?? '').trim()
-        if (NUMERIC_FIELDS.has(key)) {
-          obj[key] = raw ? parseNum(raw) : null
-        } else {
-          obj[key] = raw || null
-        }
-      })
-      return obj
-    }).filter((row) => Object.values(row).some((v) => v !== null && v !== ''))
-
-    // Firestore에 저장
     await updateCampaign(id, {
       sheetsUrl,
-      sheetsHeaders: normalizedKeys,
-      influencers,
+      sheetsIndex,
+      sheets,
       sheetsLastSyncAt: new Date(),
     })
 
     return NextResponse.json({
       ok: true,
-      headers: normalizedKeys,
-      rawHeaders,
-      count: influencers.length,
-      influencers,
+      totalTabs: tabNames.length,
+      parsedTabs: totalParsed,
+      sheetsIndex,
     })
   } catch (err) {
     console.error('Sheets 동기화 오류:', err)
