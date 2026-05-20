@@ -1,22 +1,24 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { Campaign, CampaignStatus, ParsedSheet, SheetRow, SheetTabType, SheetIndexItem } from '@/types'
 import {
   ArrowLeft, RefreshCw, Calendar, CircleDollarSign, Users, Loader2,
   Pencil, Check, X, ExternalLink, Activity, Clock, Package,
-  FileText, ListChecks, TrendingUp, Instagram, Youtube,
+  FileText, ListChecks, TrendingUp, ChevronDown, ChevronUp,
+  Heart, MessageCircle, Bookmark, Share2, Eye, Zap,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  Cell, PieChart, Pie, Legend,
 } from 'recharts'
 
-// ── 상수 ────────────────────────────────────────────────────────
+// ── 상태/탭 메타 ─────────────────────────────────────────────────
 const STATUS_COLS: Record<CampaignStatus, string> = {
   proposal:  'bg-amber-100 text-amber-700 border-amber-200',
   active:    'bg-blue-100 text-blue-700 border-blue-200',
@@ -25,21 +27,23 @@ const STATUS_COLS: Record<CampaignStatus, string> = {
 const STATUS_LABELS: Record<CampaignStatus, string> = {
   proposal: '제안', active: '진행 중', completed: '완료',
 }
-const TAB_TYPE_META: Record<SheetTabType, { label: string; icon: React.ReactNode; color: string }> = {
-  timeline:    { label: '전체 현황',     icon: <ListChecks size={13} />,  color: 'text-blue-600'   },
-  engagement:  { label: '인게이지먼트', icon: <TrendingUp size={13} />,  color: 'text-indigo-600' },
-  candidates:  { label: '후보 리스트',  icon: <Users size={13} />,       color: 'text-amber-600'  },
-  content:     { label: '콘텐츠 검토',  icon: <FileText size={13} />,    color: 'text-purple-600' },
-  schedule:    { label: '방문/예약',    icon: <Clock size={13} />,       color: 'text-teal-600'   },
-  shipping:    { label: '배송',         icon: <Package size={13} />,     color: 'text-orange-600' },
-  other:       { label: '기타',         icon: <Activity size={13} />,    color: 'text-gray-500'   },
+const TAB_TYPE_META: Record<SheetTabType, { label: string; icon: React.ReactNode }> = {
+  timeline:    { label: '전체 현황',     icon: <ListChecks size={13} />   },
+  engagement:  { label: '인게이지먼트', icon: <TrendingUp size={13} />   },
+  candidates:  { label: '후보 리스트',  icon: <Users size={13} />        },
+  content:     { label: '콘텐츠 검토',  icon: <FileText size={13} />     },
+  schedule:    { label: '방문/예약',    icon: <Clock size={13} />        },
+  shipping:    { label: '배송',         icon: <Package size={13} />      },
+  other:       { label: '기타',         icon: <Activity size={13} />     },
 }
 
-// 성과 지표 컬럼 감지 — 헤더에 이 키워드가 포함되면 집계 대상
-const METRIC_KEYWORDS = ['imp', '조회수', '좋아요', '댓글', '저장', '공유', '리포스트', 'eng', 'reach', '도달']
-const CHART_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#ddd6fe']
+// ── 플랫폼 색상 ──────────────────────────────────────────────────
+const PLATFORM_COLOR: Record<string, string> = {
+  Instagram: '#e1306c', TikTok: '#010101', YouTube: '#ff0000', X: '#1d9bf0',
+}
+const CHART_COLORS = ['#6366f1', '#8b5cf6', '#06b6d4', '#f59e0b', '#10b981', '#f43f5e']
 
-// ── 유틸 ────────────────────────────────────────────────────────
+// ── 유틸 ─────────────────────────────────────────────────────────
 function fmtNum(n: number) {
   if (n >= 100_000_000) return `${(n / 100_000_000).toFixed(1)}억`
   if (n >= 10_000)      return `${(n / 10_000).toFixed(1)}만`
@@ -51,167 +55,516 @@ function fmtBudget(n: number) {
   return `${n.toLocaleString()}원`
 }
 function dateRange(s: string, e: string) {
-  const fmt = (d: string) => d ? format(new Date(d), 'yyyy.MM.dd', { locale: ko }) : ''
-  const sf = fmt(s), ef = fmt(e)
-  if (!sf && !ef) return '기간 미정'
-  return sf && ef ? `${sf} ~ ${ef}` : sf || ef
+  const f = (d: string) => d ? format(new Date(d), 'yyyy.MM.dd', { locale: ko }) : ''
+  const sf = f(s), ef = f(e)
+  return sf && ef ? `${sf} ~ ${ef}` : sf || ef || '기간 미정'
 }
 
-// 플랫폼 아이콘
-function PlatformBadge({ platform }: { platform?: string }) {
-  if (!platform) return null
-  const map: Record<string, { label: string; cls: string }> = {
-    Instagram: { label: 'IG',  cls: 'bg-pink-50 text-pink-600 border-pink-200' },
-    TikTok:    { label: 'TK',  cls: 'bg-gray-900 text-white border-gray-700' },
-    YouTube:   { label: 'YT',  cls: 'bg-red-50 text-red-600 border-red-200' },
-    X:         { label: 'X',   cls: 'bg-gray-50 text-gray-700 border-gray-300' },
+// ── 컬럼 탐지 헬퍼 ───────────────────────────────────────────────
+function findCol(headers: string[], ...keywords: string[]): string | undefined {
+  // 정확히 일치
+  for (const kw of keywords) {
+    const h = headers.find(h => h === kw); if (h) return h
   }
-  const s = map[platform]
-  if (!s) return null
+  // 부분 일치
+  for (const kw of keywords) {
+    const kl = kw.toLowerCase()
+    const h = headers.find(h => h.toLowerCase().includes(kl)); if (h) return h
+  }
+}
+
+// ── 시트 분석 — 컬럼 감지 + 행별 지표 계산 ──────────────────────
+interface ColMap {
+  account?: string; followers?: string; url?: string; status?: string
+  imp?: string; likes?: string; comments?: string; saves?: string
+  shares?: string; reposts?: string; engTotal?: string; platform?: string
+}
+
+function detectCols(headers: string[]): ColMap {
+  return {
+    account:  findCol(headers, '계정 아이디', '계정명', '계정', 'ID', '아이디', '이름', '名前', '진행 확정'),
+    followers:findCol(headers, '팔로워', 'Fw', 'FW', '팔로워 수'),
+    url:      findCol(headers, 'URL', 'url'),
+    status:   findCol(headers, '상태', '진행 상황', '진행 여부'),
+    imp:      findCol(headers, '총 IMP', 'IMP', '조회수', '노출', '총 조회수'),
+    likes:    findCol(headers, '좋아요'),
+    comments: findCol(headers, '댓글'),
+    saves:    findCol(headers, '저장 수', '저장'),
+    shares:   findCol(headers, '공유'),
+    reposts:  findCol(headers, '리포스트'),
+    engTotal: findCol(headers, '총 ENG 수', 'ENG 합'),
+  }
+}
+
+function numVal(row: SheetRow, col?: string): number {
+  if (!col) return 0
+  const v = row[col]
+  return typeof v === 'number' && !isNaN(v) ? v : 0
+}
+
+interface RowMetrics {
+  account: string
+  followers: number
+  imp: number
+  likes: number
+  comments: number
+  saves: number
+  shares: number
+  reposts: number
+  engSum: number   // 좋아요+댓글+저장+공유+리포스트
+  er: number       // engSum / imp * 100
+  status: string
+  platform: string
+  url: string
+  _section: string
+}
+
+function computeRows(sheet: ParsedSheet, cols: ColMap): RowMetrics[] {
+  return sheet.rows.map(r => {
+    const imp      = numVal(r, cols.imp)
+    const likes    = numVal(r, cols.likes)
+    const comments = numVal(r, cols.comments)
+    const saves    = numVal(r, cols.saves)
+    const shares   = numVal(r, cols.shares)
+    const reposts  = numVal(r, cols.reposts)
+    const engSum   = likes + comments + saves + shares + reposts
+    const er       = imp > 0 ? (engSum / imp) * 100 : 0
+    const followers= numVal(r, cols.followers)
+    return {
+      account:  String(r[cols.account ?? ''] ?? '').trim() || '?',
+      followers,
+      imp, likes, comments, saves, shares, reposts, engSum, er,
+      status:   String(r[cols.status ?? ''] ?? ''),
+      platform: String(r._platform ?? ''),
+      url:      String(r[cols.url ?? ''] ?? ''),
+      _section: String(r._section ?? ''),
+    }
+  }).filter(r => r.account !== '?' || r.imp > 0)
+}
+
+// ER 색상 — 일반 인스타 기준
+function erColor(er: number): string {
+  if (er <= 0)  return 'text-gray-400'
+  if (er >= 5)  return 'text-emerald-600'
+  if (er >= 3)  return 'text-blue-600'
+  if (er >= 1)  return 'text-amber-600'
+  return 'text-red-500'
+}
+function erBg(er: number): string {
+  if (er <= 0)  return 'bg-gray-50 text-gray-400'
+  if (er >= 5)  return 'bg-emerald-50 text-emerald-700'
+  if (er >= 3)  return 'bg-blue-50 text-blue-700'
+  if (er >= 1)  return 'bg-amber-50 text-amber-700'
+  return 'bg-red-50 text-red-600'
+}
+
+// ── 플랫폼 배지 ──────────────────────────────────────────────────
+function PlatformBadge({ p }: { p: string }) {
+  const map: Record<string, string> = {
+    Instagram: 'bg-pink-50 text-pink-600 border-pink-200',
+    TikTok:    'bg-gray-900 text-white border-gray-700',
+    YouTube:   'bg-red-50 text-red-600 border-red-200',
+    X:         'bg-gray-50 text-gray-700 border-gray-300',
+  }
+  if (!p || !map[p]) return null
   return (
-    <span className={clsx('px-1.5 py-0.5 rounded text-xs font-bold border', s.cls)}>
-      {s.label}
+    <span className={clsx('px-1.5 py-0.5 rounded text-xs font-bold border shrink-0', map[p])}>
+      {p === 'Instagram' ? 'IG' : p === 'TikTok' ? 'TK' : p === 'YouTube' ? 'YT' : 'X'}
     </span>
   )
 }
 
-// ── 성과 집계 ────────────────────────────────────────────────────
-function getMetricCols(sheet: ParsedSheet) {
-  return sheet.rawHeaders.filter(h =>
-    METRIC_KEYWORDS.some(k => h.toLowerCase().includes(k))
+// ── 대시보드 (성과 데이터 있는 탭용) ─────────────────────────────
+function PerformanceDashboard({
+  sheet, rows, cols, campaignBudget,
+}: {
+  sheet: ParsedSheet; rows: RowMetrics[]; cols: ColMap; campaignBudget: number
+}) {
+  const [sortBy, setSortBy] = useState<'imp' | 'er'>('imp')
+  const [showTable, setShowTable] = useState(false)
+
+  const withImp = rows.filter(r => r.imp > 0)
+  const withEr  = rows.filter(r => r.er > 0)
+
+  // 집계
+  const totalImp      = withImp.reduce((s, r) => s + r.imp, 0)
+  const totalLikes    = rows.reduce((s, r) => s + r.likes, 0)
+  const totalComments = rows.reduce((s, r) => s + r.comments, 0)
+  const totalSaves    = rows.reduce((s, r) => s + r.saves, 0)
+  const totalShares   = rows.reduce((s, r) => s + r.shares + r.reposts, 0)
+  const totalEng      = totalLikes + totalComments + totalSaves + totalShares
+  const avgER         = totalImp > 0 ? (totalEng / totalImp) * 100 : 0
+  const cpv           = totalImp > 0 && campaignBudget > 0 ? campaignBudget / totalImp : 0
+
+  // 상태 분포
+  const statusMap: Record<string, number> = {}
+  rows.forEach(r => { if (r.status) statusMap[r.status] = (statusMap[r.status] ?? 0) + 1 })
+  const postedCount = Object.entries(statusMap)
+    .filter(([k]) => k.includes('투고 완료') || k.includes('완료'))
+    .reduce((s, [, v]) => s + v, 0)
+
+  // 플랫폼 분포
+  const platformMap: Record<string, number> = {}
+  rows.forEach(r => { if (r.platform) platformMap[r.platform] = (platformMap[r.platform] ?? 0) + 1 })
+  const platformData = Object.entries(platformMap).map(([name, value]) => ({ name, value }))
+
+  // 상위 10명 차트
+  const topByImp = [...withImp].sort((a, b) => b.imp - a.imp).slice(0, 10)
+  const topByEr  = [...withEr].sort((a, b) => b.er - a.er).slice(0, 10)
+
+  const chartData = sortBy === 'imp' ? topByImp : topByEr
+  const chartKey  = sortBy === 'imp' ? 'imp' : 'er'
+  const chartFmt  = sortBy === 'imp'
+    ? (v: number) => fmtNum(v)
+    : (v: number) => `${v.toFixed(2)}%`
+
+  // 리더보드 (정렬 가능)
+  const [lbSort, setLbSort] = useState<'imp' | 'er' | 'followers'>('imp')
+  const leaderboard = useMemo(() =>
+    [...rows]
+      .filter(r => r.imp > 0 || r.followers > 0)
+      .sort((a, b) => b[lbSort] - a[lbSort])
+      .slice(0, 20),
+    [rows, lbSort]
   )
-}
-function sumMetric(rows: SheetRow[], col: string) {
-  return rows.reduce((s, r) => {
-    const v = r[col]
-    return s + (typeof v === 'number' && !isNaN(v) ? v : 0)
-  }, 0)
-}
 
-// ── 계정명 컬럼 탐지 ─────────────────────────────────────────────
-function findAccountCol(headers: string[]): string | undefined {
-  const priority = ['계정 아이디', '계정명', '계정', 'ID', '아이디', '이름', '名前', '진행 확정']
-  for (const p of priority) {
-    if (headers.find(h => h === p)) return p
-  }
-  return headers.find(h => h.toLowerCase().includes('계정') || h.toLowerCase().includes('이름') || h === 'ID')
-}
-function findUrlCol(headers: string[]): string | undefined {
-  return headers.find(h => h.toLowerCase() === 'url')
-}
-function findFollowerCol(headers: string[]): string | undefined {
-  return headers.find(h => /팔로워|fw/i.test(h))
-}
-
-// ── 테이블 컴포넌트 ───────────────────────────────────────────────
-function SheetTable({ sheet }: { sheet: ParsedSheet }) {
-  const headers = sheet.rawHeaders
-  const hasSection = sheet.rows.some(r => r._section)
-  const urlCol = findUrlCol(headers)
-  const [sortCol, setSortCol] = useState<string | null>(null)
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-
-  const handleSort = (col: string) => {
-    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortCol(col); setSortDir('desc') }
-  }
-
-  const rows = sortCol
-    ? [...sheet.rows].sort((a, b) => {
-        const av = a[sortCol], bv = b[sortCol]
-        const an = typeof av === 'number' ? av : 0
-        const bn = typeof bv === 'number' ? bv : 0
-        return sortDir === 'desc' ? bn - an : an - bn
-      })
-    : sheet.rows
+  const hasEng = totalEng > 0
+  const hasImp = totalImp > 0
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr className="border-b border-gray-100 bg-gray-50/80">
-            {hasSection && (
-              <th className="text-left text-xs font-medium text-gray-400 px-3 py-2 whitespace-nowrap">지점</th>
+    <div className="space-y-5">
+      {/* ── Hero KPI 카드 ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* 총 조회수 */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-5 col-span-1">
+          <div className="flex items-center gap-1.5 text-gray-400 mb-2">
+            <Eye size={14} /><span className="text-xs">총 조회수</span>
+          </div>
+          <p className="text-3xl font-bold text-gray-900">{hasImp ? fmtNum(totalImp) : '—'}</p>
+          {cpv > 0 && (
+            <p className="text-xs text-gray-400 mt-1.5">CPV ≈ {Math.round(cpv).toLocaleString()}원</p>
+          )}
+        </div>
+        {/* 평균 ER */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-5">
+          <div className="flex items-center gap-1.5 text-gray-400 mb-2">
+            <Zap size={14} /><span className="text-xs">평균 ER</span>
+          </div>
+          <p className={clsx('text-3xl font-bold', erColor(avgER))}>
+            {hasEng ? `${avgER.toFixed(2)}%` : '—'}
+          </p>
+          <p className="text-xs text-gray-400 mt-1.5">
+            {avgER >= 5 ? '🔥 매우 높음' : avgER >= 3 ? '✅ 양호' : avgER >= 1 ? '⚠️ 보통' : avgER > 0 ? '🔻 낮음' : '데이터 없음'}
+          </p>
+        </div>
+        {/* 투고 완료 */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-5">
+          <div className="flex items-center gap-1.5 text-gray-400 mb-2">
+            <Check size={14} /><span className="text-xs">투고 완료</span>
+          </div>
+          <p className="text-3xl font-bold text-gray-900">
+            {postedCount > 0 ? postedCount : withImp.length}
+            <span className="text-base font-normal text-gray-400"> / {rows.length}</span>
+          </p>
+          <div className="mt-2 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-indigo-500 transition-all"
+              style={{ width: `${rows.length > 0 ? ((postedCount || withImp.length) / rows.length) * 100 : 0}%` }}
+            />
+          </div>
+        </div>
+        {/* 총 인플루언서 */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-5">
+          <div className="flex items-center gap-1.5 text-gray-400 mb-2">
+            <Users size={14} /><span className="text-xs">인플루언서</span>
+          </div>
+          <p className="text-3xl font-bold text-gray-900">{rows.length}</p>
+          {platformData.length > 0 && (
+            <div className="flex gap-1 mt-2 flex-wrap">
+              {platformData.map(({ name, value }) => (
+                <span key={name} className="text-xs text-gray-500">
+                  {name === 'Instagram' ? 'IG' : name === 'TikTok' ? 'TK' : name === 'YouTube' ? 'YT' : name} {value}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── 인게이지먼트 세부 ── */}
+      {hasEng && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { icon: <Heart size={13} />, label: '좋아요', val: totalLikes,    color: 'text-pink-500' },
+            { icon: <MessageCircle size={13} />, label: '댓글', val: totalComments, color: 'text-amber-500' },
+            { icon: <Bookmark size={13} />, label: '저장',  val: totalSaves,    color: 'text-teal-500' },
+            { icon: <Share2 size={13} />, label: '공유+리포스트', val: totalShares, color: 'text-blue-500' },
+          ].filter(m => m.val > 0).map(m => (
+            <div key={m.label} className="bg-white border border-gray-100 rounded-xl p-4">
+              <div className={clsx('flex items-center gap-1.5 mb-1', m.color)}>
+                {m.icon}<span className="text-xs text-gray-400">{m.label}</span>
+              </div>
+              <p className="text-xl font-bold text-gray-900">{fmtNum(m.val)}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── 차트 2개 ── */}
+      {chartData.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* 왼쪽: 인플루언서 랭킹 */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-semibold text-gray-800">인플루언서 순위</span>
+              <div className="flex gap-1">
+                {['imp', 'er'].map(k => (
+                  <button key={k} onClick={() => setSortBy(k as 'imp' | 'er')}
+                    className={clsx('px-2.5 py-1 text-xs rounded-full border transition-colors',
+                      sortBy === k ? 'bg-indigo-500 text-white border-indigo-500' : 'border-gray-200 text-gray-500'
+                    )}>
+                    {k === 'imp' ? '조회수' : 'ER'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={chartData.map(r => ({ name: r.account.slice(0, 12), value: r[chartKey] }))}
+                layout="vertical" margin={{ top: 0, right: 30, bottom: 0, left: 0 }}>
+                <XAxis type="number" tickFormatter={v => chartFmt(Number(v))} tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={72} />
+                <Tooltip formatter={(v: unknown) => chartFmt(Number(v))} />
+                <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                  {chartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* 오른쪽: 플랫폼 분포 + 상태 분포 */}
+          <div className="flex flex-col gap-3">
+            {/* 플랫폼 파이 */}
+            {platformData.length > 1 && (
+              <div className="bg-white border border-gray-200 rounded-2xl p-5 flex-1">
+                <span className="text-sm font-semibold text-gray-800 block mb-3">플랫폼 분포</span>
+                <div className="flex items-center gap-4">
+                  <PieChart width={100} height={100}>
+                    <Pie data={platformData} cx={46} cy={46} innerRadius={28} outerRadius={46}
+                      dataKey="value" paddingAngle={2}>
+                      {platformData.map((entry, i) => (
+                        <Cell key={i} fill={PLATFORM_COLOR[entry.name] ?? CHART_COLORS[i]} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                  <div className="space-y-1.5">
+                    {platformData.map((entry, i) => (
+                      <div key={entry.name} className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: PLATFORM_COLOR[entry.name] ?? CHART_COLORS[i] }} />
+                        <span className="text-xs text-gray-600">{entry.name}</span>
+                        <span className="text-xs font-bold text-gray-900 ml-auto">{entry.value}명</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             )}
-            <th className="text-left text-xs font-medium text-gray-400 px-3 py-2 whitespace-nowrap">플랫폼</th>
-            {headers.map(h => {
-              const isNum = METRIC_KEYWORDS.some(k => h.toLowerCase().includes(k))
-              return (
-                <th
-                  key={h}
-                  onClick={isNum ? () => handleSort(h) : undefined}
-                  className={clsx(
-                    'text-left text-xs font-medium text-gray-500 px-3 py-2 whitespace-nowrap',
-                    isNum && 'cursor-pointer hover:text-indigo-600 select-none'
-                  )}
-                >
-                  {h}
-                  {sortCol === h && (sortDir === 'desc' ? ' ↓' : ' ↑')}
-                </th>
-              )
-            })}
+
+            {/* 상태 분포 */}
+            {Object.keys(statusMap).length > 0 && (
+              <div className="bg-white border border-gray-200 rounded-2xl p-5 flex-1">
+                <span className="text-sm font-semibold text-gray-800 block mb-3">진행 상태</span>
+                <div className="space-y-2">
+                  {Object.entries(statusMap)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([status, count]) => (
+                      <div key={status}>
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-xs text-gray-600">{status}</span>
+                          <span className="text-xs font-medium text-gray-900">{count}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-gray-100">
+                          <div className="h-full rounded-full bg-indigo-400"
+                            style={{ width: `${(count / rows.length) * 100}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── 리더보드 ── */}
+      {leaderboard.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+            <span className="text-sm font-semibold text-gray-800">인플루언서 리더보드</span>
+            <div className="flex gap-1">
+              {([['imp', '조회수'], ['er', 'ER'], ['followers', '팔로워']] as const).map(([k, l]) => (
+                <button key={k} onClick={() => setLbSort(k)}
+                  className={clsx('px-2.5 py-1 text-xs rounded-full border transition-colors',
+                    lbSort === k ? 'bg-indigo-500 text-white border-indigo-500' : 'border-gray-200 text-gray-500'
+                  )}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50/50">
+                  <th className="text-left text-xs text-gray-400 font-medium px-4 py-2.5 w-8">#</th>
+                  <th className="text-left text-xs text-gray-400 font-medium px-3 py-2.5">계정</th>
+                  <th className="text-right text-xs text-gray-400 font-medium px-3 py-2.5">팔로워</th>
+                  {hasImp && <th className="text-right text-xs text-gray-400 font-medium px-3 py-2.5">조회수</th>}
+                  {hasEng && <th className="text-right text-xs text-gray-400 font-medium px-3 py-2.5">ER</th>}
+                  {hasEng && <th className="text-right text-xs text-gray-400 font-medium px-3 py-2.5">ENG</th>}
+                  <th className="text-left text-xs text-gray-400 font-medium px-3 py-2.5">상태</th>
+                  <th className="px-3 py-2.5 w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaderboard.map((r, i) => (
+                  <tr key={i} className="border-t border-gray-50 hover:bg-gray-50/60 transition-colors">
+                    <td className="px-4 py-2.5 text-xs text-gray-400 font-mono">{i + 1}</td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <PlatformBadge p={r.platform} />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900 leading-none">{r.account}</p>
+                          {r._section && <p className="text-xs text-gray-400 mt-0.5">{r._section}</p>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-sm text-gray-600">
+                      {r.followers > 0 ? fmtNum(r.followers) : '—'}
+                    </td>
+                    {hasImp && (
+                      <td className="px-3 py-2.5 text-right text-sm font-medium text-gray-900">
+                        {r.imp > 0 ? fmtNum(r.imp) : '—'}
+                      </td>
+                    )}
+                    {hasEng && (
+                      <td className="px-3 py-2.5 text-right">
+                        {r.er > 0
+                          ? <span className={clsx('text-sm font-bold px-1.5 py-0.5 rounded', erBg(r.er))}>
+                              {r.er.toFixed(2)}%
+                            </span>
+                          : <span className="text-xs text-gray-300">—</span>
+                        }
+                      </td>
+                    )}
+                    {hasEng && (
+                      <td className="px-3 py-2.5 text-right text-sm text-gray-600">
+                        {r.engSum > 0 ? fmtNum(r.engSum) : '—'}
+                      </td>
+                    )}
+                    <td className="px-3 py-2.5">
+                      {r.status && (
+                        <span className={clsx(
+                          'text-xs px-2 py-0.5 rounded-full',
+                          r.status.includes('완료') ? 'bg-green-50 text-green-700' :
+                          r.status === 'NG' ? 'bg-red-50 text-red-600' :
+                          'bg-gray-50 text-gray-500'
+                        )}>{r.status}</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {r.url && (
+                        <a href={r.url} target="_blank" rel="noopener noreferrer"
+                          className="text-gray-300 hover:text-blue-500 transition-colors">
+                          <ExternalLink size={13} />
+                        </a>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── 원본 데이터 토글 ── */}
+      <button
+        onClick={() => setShowTable(v => !v)}
+        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        {showTable ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        {showTable ? '원본 데이터 숨기기' : '원본 데이터 보기'} ({sheet.rowCount}행)
+      </button>
+      {showTable && <RawTable sheet={sheet} />}
+    </div>
+  )
+}
+
+// ── 비성과 탭용 간단 뷰 ──────────────────────────────────────────
+function SimpleSheetView({ sheet }: { sheet: ParsedSheet }) {
+  const [showAll, setShowAll] = useState(false)
+  const rows = showAll ? sheet.rows : sheet.rows.slice(0, 30)
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+          총 {sheet.rowCount}행
+        </span>
+      </div>
+      <RawTable sheet={sheet} rows={rows} />
+      {sheet.rowCount > 30 && !showAll && (
+        <button onClick={() => setShowAll(true)}
+          className="text-xs text-indigo-500 hover:text-indigo-600">
+          +{sheet.rowCount - 30}행 더 보기
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ── 원본 테이블 ───────────────────────────────────────────────────
+function RawTable({ sheet, rows: overrideRows }: { sheet: ParsedSheet; rows?: SheetRow[] }) {
+  const rows = overrideRows ?? sheet.rows
+  const hasSection = rows.some(r => r._section)
+  const urlCols = sheet.rawHeaders.filter(h =>
+    h.toLowerCase() === 'url' || h.toLowerCase().includes('업로드')
+  )
+  return (
+    <div className="overflow-x-auto rounded-xl border border-gray-100">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-100">
+            {hasSection && <th className="text-left text-gray-400 font-medium px-3 py-2 whitespace-nowrap">지점</th>}
+            <th className="text-left text-gray-400 font-medium px-3 py-2 whitespace-nowrap">플랫폼</th>
+            {sheet.rawHeaders.map(h => (
+              <th key={h} className="text-left text-gray-500 font-medium px-3 py-2 whitespace-nowrap">{h}</th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-              {hasSection && (
-                <td className="px-3 py-2 text-xs text-gray-400 whitespace-nowrap">
-                  {row._section ?? ''}
-                </td>
-              )}
-              <td className="px-3 py-2">
-                <PlatformBadge platform={row._platform} />
-              </td>
-              {headers.map(h => {
+            <tr key={i} className="border-t border-gray-50 hover:bg-gray-50/40">
+              {hasSection && <td className="px-3 py-1.5 text-gray-400 whitespace-nowrap">{row._section ?? ''}</td>}
+              <td className="px-3 py-1.5"><PlatformBadge p={String(row._platform ?? '')} /></td>
+              {sheet.rawHeaders.map(h => {
                 const v = row[h]
-                // URL 컬럼 — 링크로 표시
-                if (h === urlCol && v) {
-                  return (
-                    <td key={h} className="px-3 py-2 whitespace-nowrap">
-                      <a href={String(v)} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-blue-500 hover:text-blue-600 text-xs">
-                        <ExternalLink size={11} />링크
-                      </a>
-                    </td>
-                  )
-                }
-                // URL처럼 생긴 값 (업로드 URL 등)
                 if (typeof v === 'string' && v.startsWith('http')) {
                   return (
-                    <td key={h} className="px-3 py-2 whitespace-nowrap">
+                    <td key={h} className="px-3 py-1.5 whitespace-nowrap">
                       <a href={v} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-blue-400 hover:text-blue-500 text-xs">
+                        className="text-blue-400 hover:text-blue-600">
                         <ExternalLink size={11} />
                       </a>
                     </td>
                   )
                 }
-                // boolean
                 if (typeof v === 'boolean') {
-                  return (
-                    <td key={h} className="px-3 py-2">
-                      {v
-                        ? <Check size={14} className="text-green-500" />
-                        : <X size={14} className="text-gray-300" />
-                      }
-                    </td>
-                  )
+                  return <td key={h} className="px-3 py-1.5">
+                    {v ? <Check size={12} className="text-green-500" /> : <X size={12} className="text-gray-300" />}
+                  </td>
                 }
-                // 숫자
-                const isMetric = METRIC_KEYWORDS.some(k => h.toLowerCase().includes(k))
-                const display = v === null || v === ''
-                  ? <span className="text-gray-300">—</span>
-                  : isMetric && typeof v === 'number'
-                    ? fmtNum(v)
-                    : String(v)
-
                 return (
-                  <td key={h} className={clsx(
-                    'px-3 py-2 whitespace-nowrap text-gray-700',
-                    isMetric && typeof v === 'number' && 'font-medium text-gray-900'
-                  )}>
-                    {display}
+                  <td key={h} className="px-3 py-1.5 text-gray-700 whitespace-nowrap">
+                    {v === null || v === '' ? <span className="text-gray-200">—</span> : String(v)}
                   </td>
                 )
               })}
@@ -223,105 +576,21 @@ function SheetTable({ sheet }: { sheet: ParsedSheet }) {
   )
 }
 
-// ── 성과 차트 (timeline / engagement 탭용) ──────────────────────
-function PerformanceSection({ sheet }: { sheet: ParsedSheet }) {
-  const metricCols = getMetricCols(sheet)
-  const [activeMetric, setActiveMetric] = useState(metricCols[0] ?? '')
-
-  if (metricCols.length === 0) return null
-
-  const accountCol = findAccountCol(sheet.rawHeaders)
-  const followCol  = findFollowerCol(sheet.rawHeaders)
-
-  // 요약 통계 카드
-  const stats = metricCols
-    .filter(m => sumMetric(sheet.rows, m) > 0)
-    .slice(0, 6)
-    .map(col => ({ col, total: sumMetric(sheet.rows, col) }))
-
-  // 차트 데이터 (상위 10명, 선택한 지표 기준 정렬)
-  const chartData = sheet.rows
-    .filter(r => typeof r[activeMetric] === 'number' && (r[activeMetric] as number) > 0)
-    .sort((a, b) => (b[activeMetric] as number) - (a[activeMetric] as number))
-    .slice(0, 10)
-    .map(r => ({
-      name: String(r[accountCol ?? ''] ?? r[followCol ?? ''] ?? '?').slice(0, 14),
-      value: r[activeMetric] as number,
-      _platform: r._platform,
-    }))
-
-  if (stats.length === 0) return null
-
-  return (
-    <div className="space-y-4 mb-4">
-      {/* 요약 카드 */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {stats.map(({ col, total }) => (
-          <div key={col} className="bg-white border border-gray-200 rounded-xl p-3">
-            <p className="text-xs text-gray-400 mb-1 truncate">{col}</p>
-            <p className="text-base font-bold text-gray-900">{fmtNum(total)}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* 차트 */}
-      {chartData.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <span className="text-xs font-semibold text-gray-700">
-              인플루언서별 성과 (상위 {chartData.length}명)
-            </span>
-            <div className="flex gap-1 flex-wrap">
-              {metricCols.filter(m => sumMetric(sheet.rows, m) > 0).slice(0, 6).map(m => (
-                <button
-                  key={m}
-                  onClick={() => setActiveMetric(m)}
-                  className={clsx(
-                    'px-2 py-0.5 text-xs rounded-full border transition-colors',
-                    activeMetric === m
-                      ? 'bg-indigo-500 text-white border-indigo-500'
-                      : 'border-gray-200 text-gray-500 hover:border-indigo-300'
-                  )}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={chartData} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-              <YAxis tickFormatter={v => fmtNum(Number(v))} tick={{ fontSize: 10 }} width={46} />
-              <Tooltip formatter={(v: unknown) => fmtNum(Number(v))} />
-              <Bar dataKey="value" radius={[3, 3, 0, 0]}>
-                {chartData.map((_, i) => (
-                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── 메인 ────────────────────────────────────────────────────────
+// ── 메인 페이지 ───────────────────────────────────────────────────
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const router = useRouter()
+  const router  = useRouter()
   const { user } = useAuth()
-  const token = user?.uid ?? ''
+  const token   = user?.uid ?? ''
 
-  const [campaign, setCampaign] = useState<Campaign | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
-  const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [sheetsInput, setSheetsInput] = useState('')
+  const [campaign, setCampaign]         = useState<Campaign | null>(null)
+  const [loading, setLoading]           = useState(true)
+  const [syncing, setSyncing]           = useState(false)
+  const [syncResult, setSyncResult]     = useState<{ ok: boolean; msg: string } | null>(null)
+  const [sheetsInput, setSheetsInput]   = useState('')
   const [editingStatus, setEditingStatus] = useState(false)
   const [savingStatus, setSavingStatus] = useState(false)
-  const [activeSheetKey, setActiveSheetKey] = useState<string | null>(null)
+  const [activeKey, setActiveKey]       = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!token) return
@@ -333,9 +602,7 @@ export default function CampaignDetailPage() {
       const c = data.campaign as Campaign
       setCampaign(c)
       setSheetsInput(c?.sheetsUrl ?? '')
-      if (c?.sheetsIndex?.length) {
-        setActiveSheetKey(prev => prev ?? c.sheetsIndex![0].key)
-      }
+      setActiveKey(prev => prev ?? c?.sheetsIndex?.[0]?.key ?? null)
     } catch { /* silent */ }
     finally { setLoading(false) }
   }, [id, token])
@@ -344,8 +611,7 @@ export default function CampaignDetailPage() {
 
   const syncSheets = async () => {
     if (!sheetsInput.trim()) return
-    setSyncing(true)
-    setSyncResult(null)
+    setSyncing(true); setSyncResult(null)
     try {
       const res = await fetch(`/api/campaigns/${id}/sheets`, {
         method: 'POST',
@@ -354,7 +620,7 @@ export default function CampaignDetailPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setSyncResult({ ok: true, msg: `${data.parsedTabs}개 탭 동기화 완료 (전체 ${data.totalTabs}개)` })
+      setSyncResult({ ok: true, msg: `${data.parsedTabs}개 탭 동기화 완료` })
       await load()
     } catch (err) {
       setSyncResult({ ok: false, msg: err instanceof Error ? err.message : '동기화 실패' })
@@ -374,27 +640,26 @@ export default function CampaignDetailPage() {
     } finally { setSavingStatus(false) }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full text-gray-300">
-        <Loader2 size={24} className="animate-spin" />
-      </div>
-    )
-  }
-  if (!campaign) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-2 text-gray-400">
-        <p className="text-sm">캠페인을 찾을 수 없습니다.</p>
-        <button onClick={() => router.back()} className="text-blue-500 text-sm hover:underline">돌아가기</button>
-      </div>
-    )
-  }
+  if (loading) return (
+    <div className="flex items-center justify-center h-full text-gray-300">
+      <Loader2 size={24} className="animate-spin" />
+    </div>
+  )
+  if (!campaign) return (
+    <div className="flex flex-col items-center justify-center h-full gap-2 text-gray-400">
+      <p className="text-sm">캠페인을 찾을 수 없습니다.</p>
+      <button onClick={() => router.back()} className="text-blue-500 text-sm hover:underline">돌아가기</button>
+    </div>
+  )
 
-  const index: SheetIndexItem[] = campaign.sheetsIndex ?? []
+  const index: SheetIndexItem[]  = campaign.sheetsIndex ?? []
+  const activeItem               = index.find(i => i.key === activeKey)
   const activeSheet: ParsedSheet | undefined =
-    activeSheetKey && campaign.sheets ? campaign.sheets[activeSheetKey] : undefined
+    activeKey && campaign.sheets ? campaign.sheets[activeKey] : undefined
 
-  const showPerf = activeSheet && (activeSheet.type === 'timeline' || activeSheet.type === 'engagement')
+  const isPerfTab = activeSheet?.type === 'timeline' || activeSheet?.type === 'engagement'
+  const cols      = activeSheet ? detectCols(activeSheet.rawHeaders) : {} as ColMap
+  const computed  = activeSheet && isPerfTab ? computeRows(activeSheet, cols) : []
 
   return (
     <div className="h-full overflow-y-auto bg-gray-50/40">
@@ -406,40 +671,32 @@ export default function CampaignDetailPage() {
           <ArrowLeft size={14} />캠페인 목록
         </button>
 
-        {/* 헤더 카드 */}
+        {/* 캠페인 헤더 */}
         <div className="bg-white border border-gray-200 rounded-2xl p-5">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-gray-400 mb-1">{campaign.clientName}</p>
               <h1 className="text-xl font-bold text-gray-900">{campaign.campaignName}</h1>
             </div>
-            {/* 상태 */}
             {editingStatus ? (
               <div className="flex items-center gap-2">
-                <select
-                  defaultValue={campaign.status}
+                <select defaultValue={campaign.status}
                   onChange={e => changeStatus(e.target.value as CampaignStatus)}
                   disabled={savingStatus}
-                  className="text-sm border border-gray-200 rounded-lg px-2 py-1 outline-none"
-                >
+                  className="text-sm border border-gray-200 rounded-lg px-2 py-1 outline-none">
                   {(Object.keys(STATUS_LABELS) as CampaignStatus[]).map(s => (
                     <option key={s} value={s}>{STATUS_LABELS[s]}</option>
                   ))}
                 </select>
-                <button onClick={() => setEditingStatus(false)} className="text-gray-400 hover:text-gray-600">
-                  <X size={15} />
-                </button>
+                <button onClick={() => setEditingStatus(false)} className="text-gray-400"><X size={15} /></button>
               </div>
             ) : (
-              <button
-                onClick={() => setEditingStatus(true)}
-                className={clsx('flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border', STATUS_COLS[campaign.status])}
-              >
+              <button onClick={() => setEditingStatus(true)}
+                className={clsx('flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border', STATUS_COLS[campaign.status])}>
                 {STATUS_LABELS[campaign.status]}<Pencil size={11} />
               </button>
             )}
           </div>
-
           <div className="flex flex-wrap gap-4 mt-3 text-sm text-gray-500">
             <span className="flex items-center gap-1.5">
               <Calendar size={13} className="text-gray-400" />
@@ -451,41 +708,26 @@ export default function CampaignDetailPage() {
                 {fmtBudget(campaign.budget)}
               </span>
             )}
-            {index.length > 0 && (
-              <span className="flex items-center gap-1.5">
-                <Users size={13} className="text-gray-400" />
-                총 {index.reduce((s, i) => s + i.rowCount, 0)}건
-              </span>
-            )}
           </div>
-          {campaign.memo && (
-            <p className="mt-3 text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">{campaign.memo}</p>
-          )}
+          {campaign.memo && <p className="mt-3 text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">{campaign.memo}</p>}
         </div>
 
-        {/* Google Sheets 동기화 */}
+        {/* Sheets 연동 */}
         <div className="bg-white border border-gray-200 rounded-2xl p-5">
           <h2 className="text-sm font-semibold text-gray-800 mb-3">Google Sheets 연동</h2>
           <div className="flex gap-2">
-            <input
-              value={sheetsInput}
-              onChange={e => setSheetsInput(e.target.value)}
+            <input value={sheetsInput} onChange={e => setSheetsInput(e.target.value)}
               placeholder="Google Sheets URL을 붙여넣으세요..."
-              className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
-            />
-            <button
-              onClick={syncSheets}
-              disabled={syncing || !sheetsInput.trim()}
-              className="flex items-center gap-1.5 px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50 shrink-0"
-            >
+              className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100" />
+            <button onClick={syncSheets} disabled={syncing || !sheetsInput.trim()}
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50 shrink-0">
               {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               {syncing ? '동기화 중...' : '동기화'}
             </button>
           </div>
           {syncResult && (
             <p className={clsx('text-xs mt-2 flex items-center gap-1', syncResult.ok ? 'text-green-600' : 'text-red-500')}>
-              {syncResult.ok ? <Check size={11} /> : <X size={11} />}
-              {syncResult.msg}
+              {syncResult.ok ? <Check size={11} /> : <X size={11} />}{syncResult.msg}
             </p>
           )}
           {campaign.sheetsLastSyncAt && !syncResult && (
@@ -496,31 +738,25 @@ export default function CampaignDetailPage() {
           )}
         </div>
 
-        {/* 탭 네비게이션 + 데이터 */}
+        {/* 탭 + 대시보드 */}
         {index.length > 0 ? (
-          <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-            {/* 탭 헤더 */}
-            <div className="flex gap-0 border-b border-gray-100 overflow-x-auto">
+          <>
+            {/* 탭 네비 */}
+            <div className="flex gap-2 overflow-x-auto pb-1">
               {index.map(item => {
                 const meta = TAB_TYPE_META[item.type]
-                const isActive = activeSheetKey === item.key
+                const active = activeKey === item.key
                 return (
-                  <button
-                    key={item.key}
-                    onClick={() => setActiveSheetKey(item.key)}
+                  <button key={item.key} onClick={() => setActiveKey(item.key)}
                     className={clsx(
-                      'flex items-center gap-1.5 px-4 py-3 text-xs font-medium whitespace-nowrap border-b-2 transition-colors shrink-0',
-                      isActive
-                        ? 'border-indigo-500 text-indigo-600 bg-indigo-50/50'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                    )}
-                  >
-                    <span className={isActive ? meta.color : 'text-gray-400'}>{meta.icon}</span>
-                    {item.displayName}
-                    <span className={clsx(
-                      'ml-1 px-1.5 py-0.5 rounded-full text-xs',
-                      isActive ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400'
+                      'flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium whitespace-nowrap border transition-all shrink-0',
+                      active
+                        ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:text-indigo-600'
                     )}>
+                    {meta.icon}
+                    {item.displayName}
+                    <span className={clsx('px-1.5 py-0.5 rounded-full text-xs', active ? 'bg-indigo-400' : 'bg-gray-100 text-gray-400')}>
                       {item.rowCount}
                     </span>
                   </button>
@@ -529,38 +765,28 @@ export default function CampaignDetailPage() {
             </div>
 
             {/* 탭 콘텐츠 */}
-            <div className="p-5">
-              {activeSheet ? (
-                <>
-                  {/* 성과 요약 + 차트 (timeline / engagement 탭만) */}
-                  {showPerf && <PerformanceSection sheet={activeSheet} />}
-
-                  {/* 데이터 테이블 */}
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs text-gray-500">
-                      {activeSheet.rowCount}행
-                      {activeSheet.rows.some(r => r._section) && ' · 지점별 구분'}
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      {TAB_TYPE_META[activeSheet.type].label}
-                    </span>
-                  </div>
-                  <SheetTable sheet={activeSheet} />
-                </>
-              ) : (
-                <div className="flex items-center justify-center py-12 text-gray-300 text-sm">
-                  탭을 선택하세요
-                </div>
-              )}
-            </div>
-          </div>
+            {activeSheet && (
+              <div>
+                {isPerfTab && computed.length > 0 ? (
+                  <PerformanceDashboard
+                    sheet={activeSheet}
+                    rows={computed}
+                    cols={cols}
+                    campaignBudget={campaign.budget ?? 0}
+                  />
+                ) : (
+                  <SimpleSheetView sheet={activeSheet} />
+                )}
+              </div>
+            )}
+          </>
         ) : (
-          /* 미연동 안내 */
-          <div className="flex flex-col items-center justify-center py-16 gap-3 border-2 border-dashed border-gray-200 rounded-2xl text-gray-300">
-            <Instagram size={28} />
-            <p className="text-sm text-gray-400 text-center">
-              Google Sheets URL을 입력하면<br />탭별로 인플루언서 데이터가 자동으로 불러와집니다.
-            </p>
+          <div className="flex flex-col items-center justify-center py-20 gap-3 border-2 border-dashed border-gray-200 rounded-2xl text-gray-300">
+            <TrendingUp size={32} />
+            <div className="text-center">
+              <p className="text-sm text-gray-400 font-medium">Google Sheets를 연동하면</p>
+              <p className="text-sm text-gray-400">조회수 · ER · 인플루언서 현황이 대시보드로 표시됩니다</p>
+            </div>
           </div>
         )}
       </div>
