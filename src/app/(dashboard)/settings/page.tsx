@@ -57,17 +57,6 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      {/* Meta 인사이트 설정 */}
-      <Card className="p-5 mb-4">
-        <h2 className="text-sm font-semibold text-gray-700 mb-2">Meta 인사이트</h2>
-        <p className="text-xs text-gray-400 mb-3">
-          Meta 광고 데이터 연동 설정 (준비 중)
-        </p>
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-          <p className="text-sm text-gray-500 text-center">이 기능은 준비 중입니다.</p>
-        </div>
-      </Card>
-
       {/* 로그아웃 */}
       <Card className="p-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-2">로그아웃</h2>
