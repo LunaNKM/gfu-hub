@@ -117,19 +117,22 @@ function extractVideoVal(actions: VideoAction[] | undefined): number {
   return parseInt(actions.find(a => a.action_type === 'video_view')?.value ?? '0')
 }
 
-// 0~1 정규화 후 파란색 heatmap 색상
+// 0~1 정규화 후 heatmap 색상 — blue-100 → blue-800 RGB 직접 보간
 function heatColor(value: number, min: number, max: number, invert = false): string {
-  if (max === min) return '#f1f5f9'
+  if (max === min) return '#dbeafe'
   let t = (value - min) / (max - min)
   if (invert) t = 1 - t
-  const opacity = 0.08 + t * 0.75
-  return `rgba(59,130,246,${opacity.toFixed(2)})`
+  // #dbeafe(219,234,254) → #1e40af(30,64,175)
+  const r = Math.round(219 - 189 * t)
+  const g = Math.round(234 - 170 * t)
+  const b = Math.round(254 - 79 * t)
+  return `rgb(${r},${g},${b})`
 }
 function heatText(value: number, min: number, max: number, invert = false): string {
-  if (max === min) return '#374151'
+  if (max === min) return '#1e3a8a'
   let t = (value - min) / (max - min)
   if (invert) t = 1 - t
-  return t > 0.55 ? '#fff' : '#374151'
+  return t > 0.45 ? '#fff' : '#1e3a8a'
 }
 
 // ── Sub-components ─────────────────────────────────────────────
