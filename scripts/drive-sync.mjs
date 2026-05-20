@@ -256,24 +256,47 @@ async function main() {
         updatedAt: Timestamp.now(),
       }
 
+      // 청크 + 임베딩 생성 (파일당 최대 30청크 = ~60,000자)
+      // ※ 먼저 청크를 만들어야 chunkCount를 docData에 함께 저장할 수 있음
+      const chunks = chunkText(text).slice(0, 30)
+      const chunkCount = chunks.length
+
       let docId
       if (!existingSnap.empty) {
         docId = existingSnap.docs[0].id
-        await updateDoc(doc(db, 'docs', docId), docData)
+        const oldChunkCount = existingSnap.docs[0].data().chunkCount ?? 0
 
-        // 기존 청크 삭제 (배치)
-        const chunksSnap = await getDocs(query(collection(db, 'docChunks'), where('docId', '==', docId)))
-        if (!chunksSnap.empty) {
-          for (let bi = 0; bi < chunksSnap.docs.length; bi += 400) {
+        // ── 기존 청크 삭제 ────────────────────────────────────────
+        // 청크 ID가 예측 가능한 형식({docId}_{index})이면 쿼리(읽기) 없이 바로 삭제.
+        // chunkCount 필드가 없는 구버전 문서는 쿼리 폴백(1회만 발생).
+        if (oldChunkCount > 0) {
+          // 신규 방식: 예측 가능한 ID로 삭제 → 읽기 0건
+          for (let bi = 0; bi < oldChunkCount; bi += 400) {
             const batch = writeBatch(db)
-            chunksSnap.docs.slice(bi, bi + 400).forEach((c) => batch.delete(doc(db, 'docChunks', c.id)))
+            for (let ci = bi; ci < Math.min(bi + 400, oldChunkCount); ci++) {
+              batch.delete(doc(db, 'docChunks', `${docId}_${ci}`))
+            }
             await batch.commit()
-            await sleep(200)
+            if (bi + 400 < oldChunkCount) await sleep(200)
+          }
+        } else {
+          // 구버전 폴백: 한 번만 쿼리 후 삭제 (마이그레이션 완료 후 사라짐)
+          const chunksSnap = await getDocs(query(collection(db, 'docChunks'), where('docId', '==', docId)))
+          if (!chunksSnap.empty) {
+            for (let bi = 0; bi < chunksSnap.docs.length; bi += 400) {
+              const batch = writeBatch(db)
+              chunksSnap.docs.slice(bi, bi + 400).forEach((c) => batch.delete(doc(db, 'docChunks', c.id)))
+              await batch.commit()
+              if (bi + 400 < chunksSnap.docs.length) await sleep(200)
+            }
           }
         }
+
+        await updateDoc(doc(db, 'docs', docId), { ...docData, chunkCount })
       } else {
         const ref = await addDoc(collection(db, 'docs'), {
           ...docData,
+          chunkCount,
           createdAt: Timestamp.now(),
           createdBy: 'drive-sync',
           updatedBy: 'drive-sync',
@@ -281,10 +304,7 @@ async function main() {
         docId = ref.id
       }
 
-      // 청크 + 임베딩 생성 (파일당 최대 30청크 = ~60,000자)
-      const chunks = chunkText(text).slice(0, 30)
-
-      const chunkDocs = []
+      // ── 청크 쓰기 (예측 가능한 ID: {docId}_{index}) ──────────
       for (let ci = 0; ci < chunks.length; ci++) {
         let embedding = undefined
         if (openai) {
@@ -298,7 +318,8 @@ async function main() {
             // 임베딩 실패 무시
           }
         }
-        chunkDocs.push({
+
+        const chunkData = {
           docId,
           title: file.name,
           chunkIndex: ci,
@@ -307,38 +328,19 @@ async function main() {
           tags: ['drive'],
           updatedAt: Timestamp.now(),
           ...(embedding ? { embedding } : {}),
-        })
-      }
-
-      // WriteBatch로 20개씩 커밋 (임베딩 포함 시 트랜잭션 크기 초과 방지)
-      for (let bi = 0; bi < chunkDocs.length; bi += 20) {
-        const slice = chunkDocs.slice(bi, bi + 20)
-        const batch = writeBatch(db)
-        slice.forEach((data) => {
-          batch.set(doc(collection(db, 'docChunks')), data)
-        })
-        try {
-          await batch.commit()
-        } catch (batchErr) {
-          const msg = batchErr?.message ?? ''
-          if (msg.includes('too big') || msg.includes('INVALID_ARGUMENT')) {
-            // 배치가 너무 클 경우 개별 write로 fallback
-            console.warn(`  ⚠️ 배치 too big, 개별 write로 재시도 (청크 ${bi}~${bi + slice.length - 1})`)
-            for (const data of slice) {
-              await addDoc(collection(db, 'docChunks'), data)
-              await sleep(100)
-            }
-          } else {
-            throw batchErr
-          }
         }
-        if (bi + 20 < chunkDocs.length) await sleep(500)
+
+        // setDoc으로 upsert (ID가 고정이므로 중복 없음)
+        await setDoc(doc(db, 'docChunks', `${docId}_${ci}`), chunkData)
+
+        // OpenAI 임베딩 API 레이트 리밋 방지
+        if (openai) await sleep(50)
       }
 
-      console.log(`  ✅ 완료 (청크 ${chunks.length}개)`)
+      console.log(`  ✅ 완료 (청크 ${chunkCount}개)`)
       synced++
       // 파일 간 딜레이 — Firestore 쓰기 스트림 과부하 방지
-      await sleep(150)
+      await sleep(200)
     } catch (err) {
       console.error(`  ❌ 오류:`, err.message)
       errors.push(`${file.name}: ${err.message}`)
