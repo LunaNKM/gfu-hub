@@ -2,6 +2,7 @@ import { collection, getDocs, query, orderBy, findNearest } from 'firebase/fires
 import { getFirestoreInstance } from '../firebase/firestore'
 import { DocChunk } from '@/types'
 import { getOpenAIClient } from './client'
+import { cohereRerank } from './rerank'
 
 // docChunks 10분 세션 캐시 — 문서가 자주 바뀌지 않으므로 재요청 불필요
 let chunksCache: { data: DocChunk[]; ts: number } | null = null
@@ -79,26 +80,51 @@ export async function searchRelevantDocs(
           })
           const snap = await getDocs(vq)
 
-          // ── Phase 3-2: 하이브리드 스코어링 (벡터 70% + 키워드 30%) ──
-          // findNearest 결과에 키워드 매칭 점수를 가중 합산 → 재순위
-          const results = snap.docs
-            .map((d) => {
-              const data = d.data() as DocChunk & { __dist?: number }
-              // COSINE distance: 0 = 동일, 1 = 직교. similarity = 1 - distance
-              const vectorScore = Math.max(0, 1 - (data.__dist ?? 1))
-              const kwScore = keywordScore(data.content, searchQuery)
+          // 후보군 추출
+          const candidates = snap.docs.map((d) => {
+            const data = d.data() as DocChunk & { __dist?: number }
+            return {
+              docId: data.docId,
+              title: data.title,
+              content: data.content,
+              dist: data.__dist ?? 1,
+            }
+          })
+
+          // ── Phase 3-2: Cohere Rerank (COHERE_API_KEY 있으면 우선 사용) ──
+          // 질문-청크 쌍을 함께 평가 → 하이브리드보다 정확한 관련성 판단
+          const rerankResults = await cohereRerank(
+            searchQuery,
+            candidates.map((c) => c.content),
+            limit
+          )
+
+          if (rerankResults) {
+            return rerankResults
+              .map((r) => ({
+                docId: candidates[r.index].docId,
+                title: candidates[r.index].title,
+                content: candidates[r.index].content,
+                score: r.relevanceScore,
+              }))
+              .filter((r) => r.score > minScore)
+          }
+
+          // ── Cohere 미설정 시 폴백: 하이브리드 스코어링 (벡터 70% + 키워드 30%) ──
+          return candidates
+            .map((c) => {
+              const vectorScore = Math.max(0, 1 - c.dist)
+              const kwScore = keywordScore(c.content, searchQuery)
               return {
-                docId: data.docId,
-                title: data.title,
-                content: data.content,
+                docId: c.docId,
+                title: c.title,
+                content: c.content,
                 score: 0.7 * vectorScore + 0.3 * kwScore,
               }
             })
             .filter((r) => r.score > minScore)
             .sort((a, b) => b.score - a.score)
             .slice(0, limit)
-
-          return results
         } catch {
           // 벡터 인덱스 미배포 또는 로컬 에뮬레이터 → 브루트포스로 폴백
           console.warn('Vector Search 폴백 (인덱스 미준비): 브루트포스 사용')
