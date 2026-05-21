@@ -3,6 +3,7 @@ import { getOpenAIClient } from '@/lib/openai/client'
 import { getDoc } from '@/lib/services/docs'
 import { collection, getDocs, query, where, updateDoc, doc } from 'firebase/firestore'
 import { getFirestoreInstance } from '@/lib/firebase/firestore'
+import { logAiUsage } from '@/lib/services/usage'
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,8 +42,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '청크가 없습니다. 먼저 문서를 저장하세요.' }, { status: 400 })
     }
 
-    // 각 청크에 임베딩 생성
+    // 각 청크에 임베딩 생성 (이미 있는 청크는 스킵)
     let embeddedCount = 0
+    let totalInputTokens = 0
+
     for (const chunkDoc of snapshot.docs) {
       const chunkData = chunkDoc.data()
       if (!chunkData.embedding) {
@@ -53,10 +56,39 @@ export async function POST(req: NextRequest) {
           })
           const embedding = response.data[0].embedding
           await updateDoc(doc(db, 'docChunks', chunkDoc.id), { embedding })
+          totalInputTokens += response.usage?.prompt_tokens ?? 0
           embeddedCount++
         } catch (err) {
           console.error(`청크 ${chunkDoc.id} 임베딩 실패:`, err)
         }
+      }
+    }
+
+    // 임베딩 비용 로그 (새로 생성된 청크가 있는 경우만)
+    if (embeddedCount > 0 && totalInputTokens > 0) {
+      try {
+        const jwtToken = authHeader.replace('Bearer ', '')
+        const parts = jwtToken.split('.')
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'))
+          const userId = payload.user_id || payload.sub || payload.uid
+          const userEmail = payload.email ?? undefined
+          if (userId) {
+            await logAiUsage({
+              userId,
+              userEmail,
+              model: 'text-embedding-3-small',
+              inputTokens: totalInputTokens,
+              outputTokens: 0,
+              totalTokens: totalInputTokens,
+              cachedTokens: 0,
+              feature: 'embedding',
+              success: true,
+            })
+          }
+        }
+      } catch (logErr) {
+        console.error('임베딩 사용량 로그 실패:', logErr)
       }
     }
 
