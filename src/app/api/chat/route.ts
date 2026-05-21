@@ -3,6 +3,7 @@ import { getOpenAIClient, OPENAI_MODEL, TOOL_DECISION_MODEL } from '@/lib/openai
 import { TOOLS, executeToolCalls } from '@/lib/openai/tools'
 import { logAiUsage } from '@/lib/services/usage'
 import { getRelevantMemories } from '@/lib/services/memory'
+import type { ChatCompletionMessageToolCall } from 'openai/resources'
 
 export const maxDuration = 60
 
@@ -258,7 +259,11 @@ export async function POST(req: NextRequest) {
         // → 순차 실행 대비 둘 중 느린 쪽 시간만큼 절약
         controller.enqueue(send({ type: 'plan', content: '🔎 분석 중...' }))
 
-        type ToolCallMessage = { role: 'assistant'; content: string | null; tool_calls?: import('openai/resources').ChatCompletionMessageToolCall[] }
+        type ToolCallMessage = {
+          role: 'assistant'
+          content: string | null
+          tool_calls?: ChatCompletionMessageToolCall[]
+        }
         let toolCallMessage: ToolCallMessage | null = null
         let toolMessages: { role: 'tool'; tool_call_id: string; content: string }[] = []
         let ragSources: { docId: string; title: string; score: number }[] = []
@@ -293,7 +298,7 @@ export async function POST(req: NextRequest) {
 
             toolInputTokens = toolDecision.usage?.prompt_tokens ?? 0
             toolOutputTokens = toolDecision.usage?.completion_tokens ?? 0
-            toolCallMessage = toolDecision.choices[0].message as unknown as ToolCallMessage
+            toolCallMessage = toolDecision.choices[0].message as ToolCallMessage
 
             // ── 도구 실행 ─────────────────────────────────────
             if (toolCallMessage?.tool_calls?.length) {
