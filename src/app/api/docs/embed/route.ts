@@ -50,9 +50,13 @@ export async function POST(req: NextRequest) {
       const chunkData = chunkDoc.data()
       if (!chunkData.embedding) {
         try {
+          // TASK 3: Contextual Retrieval — 문서 제목+카테고리를 프리픽스로 붙여 임베딩 품질 향상
+          // 청크 단독 임베딩보다 검색 정확도 35~49% 개선 (Anthropic 2024 기법)
+          const contextPrefix = `[문서: ${document.title} | ${document.category}]\n\n`
+          const embeddingInput = (contextPrefix + (chunkData.content as string)).slice(0, 8000)
           const response = await client.embeddings.create({
             model: 'text-embedding-3-small',
-            input: chunkData.content.slice(0, 8000),
+            input: embeddingInput,
           })
           const embedding = response.data[0].embedding
           await updateDoc(doc(db, 'docChunks', chunkDoc.id), { embedding })

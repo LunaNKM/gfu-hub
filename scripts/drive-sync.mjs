@@ -332,9 +332,12 @@ async function main() {
         let embedding = undefined
         if (openai) {
           try {
+            // TASK 3: Contextual Retrieval — 문서 제목을 프리픽스로 붙여 임베딩 품질 향상
+            const contextPrefix = `[문서: ${file.name} | Google Drive]\n\n`
+            const embeddingInput = (contextPrefix + chunks[ci]).slice(0, 8000)
             const embRes = await openai.embeddings.create({
               model: 'text-embedding-3-small',
-              input: chunks[ci].slice(0, 8000),
+              input: embeddingInput,
             })
             embedding = embRes.data[0].embedding
           } catch {

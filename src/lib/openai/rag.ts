@@ -30,20 +30,33 @@ async function getAllChunks(): Promise<DocChunk[]> {
   return data
 }
 
-export async function getEmbedding(text: string): Promise<number[]> {
-  const client = getOpenAIClient()
-  if (!client) return []
+// TASK 6: 동시 동일 텍스트 요청 중복 방지 (semantic cache + memory retrieval 병렬 실행 시)
+// 같은 텍스트에 대한 getEmbedding()이 동시에 호출되면 하나의 API 호출로 합쳐짐.
+const _embeddingInFlight = new Map<string, Promise<number[]>>()
 
-  try {
-    const response = await client.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: text.slice(0, 8000),
-    })
-    return response.data[0].embedding
-  } catch (error) {
-    console.error('임베딩 생성 오류:', error)
-    return []
-  }
+export async function getEmbedding(text: string): Promise<number[]> {
+  const key = text.slice(0, 500)
+  const inFlight = _embeddingInFlight.get(key)
+  if (inFlight) return inFlight
+
+  const promise = (async () => {
+    const client = getOpenAIClient()
+    if (!client) return []
+    try {
+      const response = await client.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: text.slice(0, 8000),
+      })
+      return response.data[0].embedding
+    } catch (error) {
+      console.error('임베딩 생성 오류:', error)
+      return []
+    }
+  })()
+
+  _embeddingInFlight.set(key, promise)
+  void promise.finally(() => _embeddingInFlight.delete(key))
+  return promise
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {

@@ -1,0 +1,82 @@
+[
+  {
+    "id": "rag-001",
+    "category": "internal_docs",
+    "query": "진행 중인 캠페인 목록을 알려줘",
+    "expectedKeywords": ["캠페인", "클라이언트"],
+    "ragEnabled": true,
+    "description": "전체 캠페인 스캔 — scan_all 모드 발동 확인"
+  },
+  {
+    "id": "rag-002",
+    "category": "internal_docs",
+    "query": "인플루언서 계약 조건이 어떻게 되어 있어?",
+    "expectedKeywords": ["인플루언서", "계약"],
+    "ragEnabled": true,
+    "description": "사내 문서 검색 — search 모드"
+  },
+  {
+    "id": "web-001",
+    "category": "web_search",
+    "query": "2025년 일본 TikTok 트렌드 최신 동향은?",
+    "expectedKeywords": ["TikTok", "일본", "트렌드"],
+    "ragEnabled": true,
+    "description": "웹 검색 발동 확인"
+  },
+  {
+    "id": "web-002",
+    "category": "web_search",
+    "query": "일본 인스타그램 저장수(保存数) 벤치마크",
+    "expectedKeywords": ["저장", "Instagram", "일본"],
+    "ragEnabled": true,
+    "description": "일본 SNS 지표 — 웹 or 내장 지식"
+  },
+  {
+    "id": "simple-001",
+    "category": "simple",
+    "query": "안녕!",
+    "expectedKeywords": ["안녕"],
+    "ragEnabled": true,
+    "description": "TASK 1: 단순 인사 — fast path 발동 (tool decision 스킵)"
+  },
+  {
+    "id": "simple-002",
+    "category": "simple",
+    "query": "오늘 날씨 어때?",
+    "expectedKeywords": [],
+    "ragEnabled": true,
+    "description": "TASK 1: 업무 무관 짧은 질문"
+  },
+  {
+    "id": "rag-003",
+    "category": "internal_docs",
+    "query": "K-뷰티 브랜드의 일본 진출 전략 사례가 있어?",
+    "expectedKeywords": ["K-뷰티", "일본", "전략"],
+    "ragEnabled": true,
+    "description": "사내 문서 + 일반 지식 혼합"
+  },
+  {
+    "id": "rag-004",
+    "category": "internal_docs",
+    "query": "클라이언트별 예산 현황을 정리해줘",
+    "expectedKeywords": ["예산", "클라이언트"],
+    "ragEnabled": true,
+    "description": "list 모드 발동 예상"
+  },
+  {
+    "id": "norag-001",
+    "category": "no_rag",
+    "query": "인스타그램 ER 계산 방법 알려줘",
+    "expectedKeywords": ["ER", "계산", "인스타"],
+    "ragEnabled": false,
+    "description": "TASK 1: ragEnabled=false → fast path"
+  },
+  {
+    "id": "web-003",
+    "category": "web_search",
+    "query": "LINE 공식 계정 개설 비용 2025년 기준",
+    "expectedKeywords": ["LINE", "비용"],
+    "ragEnabled": true,
+    "description": "최신 외부 데이터 필요 — 웹 검색"
+  }
+]

@@ -203,6 +203,7 @@ export interface Memory {
   userId: string
   content: string
   embedding?: number[]
+  importance?: number   // 1~5 (TASK 5: 중요도 축)
   conversationId?: string
   createdAt: Date
 }

@@ -52,26 +52,38 @@ export async function POST(req: NextRequest) {
           content: `다음 대화에서 미래 대화에 유용한 중요 사실을 최대 3개 추출하세요.
 추출 기준: 회사/팀 특유의 정보, 진행 중인 프로젝트, 중요 결정사항, 사용자 선호도.
 일반 지식이나 AI의 설명은 제외. 없으면 빈 배열 반환.
-반드시 JSON 객체로 응답하세요: { "facts": ["사실1", "사실2"] }`,
+TASK 5: importance는 회사 업무에서의 중요도 (1=낮음, 3=보통, 5=핵심).
+반드시 JSON 객체로 응답하세요:
+{ "facts": [{"content": "사실1", "importance": 4}, {"content": "사실2", "importance": 2}] }`,
         },
         { role: 'user', content: convText },
       ],
-      max_completion_tokens: 250,
+      max_completion_tokens: 300,
       response_format: { type: 'json_object' },
     })
 
     const inputTokens = response.usage?.prompt_tokens ?? 0
     const outputTokens = response.usage?.completion_tokens ?? 0
 
-    // 추출된 사실 파싱
-    let facts: string[] = []
+    // TASK 5: 중요도 포함 파싱
+    let facts: { content: string; importance?: number }[] = []
     try {
       const parsed = JSON.parse(response.choices[0].message.content ?? '{}') as {
         facts?: unknown
       }
       const raw = parsed.facts
       if (Array.isArray(raw)) {
-        facts = raw.filter((f): f is string => typeof f === 'string').slice(0, 3)
+        facts = raw
+          .filter((f): f is { content: string; importance?: number } =>
+            typeof f === 'object' && f !== null && typeof (f as { content?: unknown }).content === 'string'
+          )
+          .map((f) => ({
+            content: f.content,
+            importance: typeof f.importance === 'number'
+              ? Math.min(5, Math.max(1, Math.round(f.importance)))
+              : 3,
+          }))
+          .slice(0, 3)
       }
     } catch {
       facts = []

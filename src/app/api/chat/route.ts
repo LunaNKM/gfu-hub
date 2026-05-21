@@ -3,6 +3,7 @@ import { getOpenAIClient, OPENAI_MODEL, TOOL_DECISION_MODEL } from '@/lib/openai
 import { TOOLS, executeToolCalls } from '@/lib/openai/tools'
 import { logAiUsage } from '@/lib/services/usage'
 import { getRelevantMemories } from '@/lib/services/memory'
+import { getEmbedding } from '@/lib/openai/rag'
 import type { ChatCompletionMessageToolCall } from 'openai/resources'
 
 export const maxDuration = 60
@@ -184,6 +185,60 @@ type: "csv" | "markdown" | "json"
 - 단순 텍스트로 충분하면 아티팩트 불필요
 - 아티팩트는 텍스트 설명 뒤에 추가. 텍스트 없이 아티팩트만 출력 금지`
 
+// ── TASK 1: 단순 질문 판별 ────────────────────────────────────
+// tool decision + memory retrieval을 건너뛰고 1콜 스트리밍으로 처리.
+// 짧고 업무 무관한 인사·확인·감탄 질문을 휴리스틱으로 감지.
+function isSimpleQuestion(msg: string): boolean {
+  const t = msg.trim()
+  // 35자 미만 + 핵심 업무 키워드 없으면 단순 질문으로 간주
+  if (
+    t.length < 35 &&
+    !/캠페인|인플루언서|일본|마케팅|전략|문서|자료|검색|브랜드|클라이언트|예산|SNS|틱톡|인스타|유튜브|트위터|라인|트렌드|시장|분석|보고|계획|일정|성과|CRM|ER|KPI/.test(t)
+  ) return true
+  // 명확한 인사·감사·감탄 패턴
+  if (/^(안녕|hi\b|hello\b|헬로|감사|고마워|수고|ㅎㅎ+|ㅋㅋ+|네[!~.]*$|아[!~.]*$|오[!~.]*$|헉|대박|좋아|알겠|ok\b|ㅇㅋ)/i.test(t)) return true
+  return false
+}
+
+// ── TASK 6: 시맨틱 캐시 ─────────────────────────────────────
+// 유사 쿼리(코사인 ≥ 0.95)에 대해 이전 응답을 재사용.
+// 인메모리 캐시 (서버 재시작 시 초기화, 콜드 스타트엔 효과 없음).
+interface SemanticCacheEntry {
+  queryEmbedding: number[]
+  response: string
+  ts: number
+}
+const semanticCache: SemanticCacheEntry[] = []
+const SEMANTIC_CACHE_TTL = 60 * 60 * 1000  // 1시간
+const SEMANTIC_CACHE_THRESHOLD = 0.95
+const SEMANTIC_CACHE_MAX = 100
+
+function _cosineSim(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0
+  let dot = 0, na = 0, nb = 0
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] ** 2; nb += b[i] ** 2 }
+  return na === 0 || nb === 0 ? 0 : dot / (Math.sqrt(na) * Math.sqrt(nb))
+}
+
+function findSemanticCache(queryEmbedding: number[]): string | null {
+  const now = Date.now()
+  for (const entry of semanticCache) {
+    if (now - entry.ts > SEMANTIC_CACHE_TTL) continue
+    if (_cosineSim(queryEmbedding, entry.queryEmbedding) >= SEMANTIC_CACHE_THRESHOLD) {
+      return entry.response
+    }
+  }
+  return null
+}
+
+function addToSemanticCache(queryEmbedding: number[], response: string): void {
+  const now = Date.now()
+  const alive = semanticCache.filter((e) => now - e.ts <= SEMANTIC_CACHE_TTL)
+  semanticCache.length = 0
+  semanticCache.push(...alive.slice(-(SEMANTIC_CACHE_MAX - 1)))
+  semanticCache.push({ queryEmbedding, response, ts: now })
+}
+
 // ── 히스토리 정제 ─────────────────────────────────────────────
 // 이전 방식의 RAG 컨텍스트 블록 + plan 프리픽스를 제거해 깔끔한 히스토리 유지
 function cleanHistoryMessage(role: string, content: string): string {
@@ -254,9 +309,51 @@ export async function POST(req: NextRequest) {
             content: cleanHistoryMessage(m.role, m.content),
           }))
 
-        // ── 장기 기억 조회 & 도구 선택 병렬 실행 ─────────────
-        // 메모리 조회(Firestore + 임베딩)와 Function Calling을 동시에 시작
-        // → 순차 실행 대비 둘 중 느린 쪽 시간만큼 절약
+        // ── TASK 1: 단순 질문 조기 경로 ─────────────────────
+        // 인사·감탄·짧은 질문은 tool decision + memory를 건너뛰고 1콜로 처리.
+        // ragEnabled=false도 동일 경로(사용자가 명시적으로 RAG 비활성화).
+        if (!ragEnabled || isSimpleQuestion(message)) {
+          controller.enqueue(send({ type: 'plan', content: '💬 답변 생성 중...' }))
+          const simpleStream = await client.chat.completions.create({
+            model: OPENAI_MODEL,
+            messages: [
+              { role: 'system', content: BASE_SYSTEM_PROMPT },
+              ...historyMessages,
+              { role: 'user', content: message },
+            ],
+            stream: true,
+            stream_options: { include_usage: true },
+            max_completion_tokens: 600,
+          })
+          let sInputTokens = 0, sOutputTokens = 0, sCachedTokens = 0
+          for await (const chunk of simpleStream) {
+            const c = chunk.choices[0]?.delta?.content
+            if (c) controller.enqueue(send({ type: 'chunk', content: c }))
+            if (chunk.usage) {
+              sInputTokens = chunk.usage.prompt_tokens ?? 0
+              sOutputTokens = chunk.usage.completion_tokens ?? 0
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              sCachedTokens = (chunk.usage as any).prompt_tokens_details?.cached_tokens ?? 0
+            }
+          }
+          if (userId) {
+            await logAiUsage({
+              userId, userEmail, conversationId, model: OPENAI_MODEL,
+              inputTokens: sInputTokens, outputTokens: sOutputTokens,
+              totalTokens: sInputTokens + sOutputTokens,
+              cachedTokens: sCachedTokens, feature: 'chat', success: true,
+            }).catch(() => {})
+          }
+          controller.enqueue(send({
+            type: 'done', ragSources: [],
+            tokenUsage: { inputTokens: sInputTokens, outputTokens: sOutputTokens, totalTokens: sInputTokens + sOutputTokens },
+          }))
+          return
+        }
+
+        // ── 복잡한 질문 경로: 도구 선택·메모리·임베딩 병렬 실행 ──
+        // getEmbedding(message)은 getRelevantMemories 내부에서도 호출되므로
+        // rag.ts의 in-flight 중복 제거 덕분에 실제 API 호출은 1회만 발생.
         controller.enqueue(send({ type: 'plan', content: '🔎 분석 중...' }))
 
         type ToolCallMessage = {
@@ -269,58 +366,70 @@ export async function POST(req: NextRequest) {
         let ragSources: { docId: string; title: string; score: number }[] = []
         let toolInputTokens = 0
         let toolOutputTokens = 0
-        let userContent = message // 메모리 없을 때 기본값
+        let userContent = message
+        let queryEmbedding: number[] = []
 
-        if (ragEnabled) {
-          try {
-            // gpt-4.1-nano: 도구 선택은 단순 판단 → nano로 충분 (TTFT 0.6초 vs mini 7.5초)
-            // 메모리 조회와 병렬 실행 — Promise.all로 동시 시작
-            const [toolDecision, memories] = await Promise.all([
-              client.chat.completions.create({
-                model: TOOL_DECISION_MODEL,
-                messages: [
-                  { role: 'system', content: BASE_SYSTEM_PROMPT },
-                  ...historyMessages,
-                  { role: 'user', content: message }, // 메모리 미주입 상태로 도구 판단 (충분함)
-                ],
-                tools: TOOLS,
-                tool_choice: 'auto',
-                max_completion_tokens: 300,
-              }),
-              userId ? getRelevantMemories(userId, message, 3) : Promise.resolve([]),
-            ])
+        try {
+          // 3가지 동시 시작: tool decision (nano) + memory retrieval + query embedding
+          const [toolDecision, memories, qEmb] = await Promise.all([
+            client.chat.completions.create({
+              model: TOOL_DECISION_MODEL,
+              messages: [
+                { role: 'system', content: BASE_SYSTEM_PROMPT },
+                ...historyMessages,
+                { role: 'user', content: message },
+              ],
+              tools: TOOLS,
+              tool_choice: 'auto',
+              max_completion_tokens: 300,
+            }),
+            userId ? getRelevantMemories(userId, message, 3) : Promise.resolve([]),
+            getEmbedding(message),  // TASK 6: semantic cache key (dedup'd with memory retrieval)
+          ])
 
-            // 메모리 블록 구성 (병렬 완료 후) → userContent 업데이트
-            if (memories.length > 0) {
-              const memoryBlock = `# 장기 기억 (이전 대화에서 학습한 정보)\n${memories.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\n---\n\n`
-              userContent = memoryBlock + message
+          queryEmbedding = qEmb
+
+          // TASK 6: 시맨틱 캐시 히트 → 저장된 응답 스트리밍 후 조기 반환
+          const cachedResponse = findSemanticCache(queryEmbedding)
+          if (cachedResponse) {
+            controller.enqueue(send({ type: 'plan', content: '⚡ 캐시에서 응답합니다.' }))
+            const tokens = cachedResponse.match(/[\s\S]{1,30}/g) ?? []
+            for (const tok of tokens) {
+              controller.enqueue(send({ type: 'chunk', content: tok }))
             }
+            controller.enqueue(send({ type: 'done', ragSources: [], tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } }))
+            return
+          }
 
-            toolInputTokens = toolDecision.usage?.prompt_tokens ?? 0
-            toolOutputTokens = toolDecision.usage?.completion_tokens ?? 0
-            toolCallMessage = toolDecision.choices[0].message as ToolCallMessage
+          // 메모리 블록 구성 → userContent 업데이트
+          if (memories.length > 0) {
+            const memoryBlock = `# 장기 기억 (이전 대화에서 학습한 정보)\n${memories.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\n---\n\n`
+            userContent = memoryBlock + message
+          }
 
-            // ── 도구 실행 ─────────────────────────────────────
-            if (toolCallMessage?.tool_calls?.length) {
-              const result = await executeToolCalls(toolCallMessage.tool_calls)
-              toolMessages = result.messages
-              ragSources = result.ragSources
+          toolInputTokens = toolDecision.usage?.prompt_tokens ?? 0
+          toolOutputTokens = toolDecision.usage?.completion_tokens ?? 0
+          toolCallMessage = toolDecision.choices[0].message as ToolCallMessage
 
-              controller.enqueue(send({ type: 'plan', content: result.planText }))
-              if (result.searchSummary) {
-                controller.enqueue(send({ type: 'search_done', content: result.searchSummary }))
-              }
-            } else {
-              controller.enqueue(send({ type: 'plan', content: '💬 질문을 분석합니다.' }))
+          // ── 도구 실행 ─────────────────────────────────────
+          if (toolCallMessage?.tool_calls?.length) {
+            const result = await executeToolCalls(toolCallMessage.tool_calls)
+            toolMessages = result.messages
+            ragSources = result.ragSources
+            controller.enqueue(send({ type: 'plan', content: result.planText }))
+            if (result.searchSummary) {
+              controller.enqueue(send({ type: 'search_done', content: result.searchSummary }))
             }
-          } catch (toolErr) {
-            // Function Calling 실패 시 단순 응답으로 폴백
-            console.warn('Function Calling 폴백:', toolErr)
+          } else {
             controller.enqueue(send({ type: 'plan', content: '💬 질문을 분석합니다.' }))
           }
+        } catch (toolErr) {
+          // Function Calling 실패 시 단순 응답으로 폴백
+          console.warn('Function Calling 폴백:', toolErr)
+          controller.enqueue(send({ type: 'plan', content: '💬 질문을 분석합니다.' }))
         }
 
-        // ── 5. 최종 응답 메시지 구성 ─────────────────────────
+        // ── 최종 응답 메시지 구성 ─────────────────────────
         const finalMessages: import('openai/resources').ChatCompletionMessageParam[] = [
           { role: 'system', content: BASE_SYSTEM_PROMPT },
           ...historyMessages,
@@ -333,8 +442,7 @@ export async function POST(req: NextRequest) {
             : []),
         ]
 
-        // ── 6. 출력 토큰 한도 결정 ───────────────────────────
-        // 도구 선택 결과 기반으로 적절한 한도 설정
+        // ── 출력 토큰 한도 결정 ───────────────────────────
         const maxTokens = (() => {
           if (!toolCallMessage?.tool_calls?.length) return 800
           for (const call of toolCallMessage.tool_calls) {
@@ -347,7 +455,7 @@ export async function POST(req: NextRequest) {
           return 1000
         })()
 
-        // ── 7. 스트리밍 응답 ─────────────────────────────────
+        // ── 스트리밍 응답 ─────────────────────────────────
         const openaiStream = await client.chat.completions.create({
           model: OPENAI_MODEL,
           messages: finalMessages,
@@ -359,10 +467,14 @@ export async function POST(req: NextRequest) {
         let inputTokens = 0
         let outputTokens = 0
         let cachedTokens = 0
+        let fullContent = ''  // TASK 6: semantic cache에 저장할 전체 응답
 
         for await (const chunk of openaiStream) {
           const content = chunk.choices[0]?.delta?.content
-          if (content) controller.enqueue(send({ type: 'chunk', content }))
+          if (content) {
+            controller.enqueue(send({ type: 'chunk', content }))
+            fullContent += content
+          }
           if (chunk.usage) {
             inputTokens = chunk.usage.prompt_tokens ?? 0
             outputTokens = chunk.usage.completion_tokens ?? 0
@@ -371,7 +483,12 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // ── 8. 사용량 로그 (도구 선택 + 응답 토큰 합산) ─────
+        // TASK 6: 응답을 시맨틱 캐시에 저장 (다음 유사 쿼리에 재사용)
+        if (queryEmbedding.length > 0 && fullContent.length > 50) {
+          addToSemanticCache(queryEmbedding, fullContent)
+        }
+
+        // ── 사용량 로그 (도구 선택 + 응답 토큰 합산) ─────
         if (userId) {
           try {
             await logAiUsage({
