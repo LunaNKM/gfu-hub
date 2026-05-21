@@ -1,4 +1,4 @@
-import { collection, getDocs, query, orderBy } from 'firebase/firestore'
+import { collection, getDocs, query, orderBy, limit as firestoreLimit } from 'firebase/firestore'
 import { getFirestoreInstance } from '../firebase/firestore'
 import { DocChunk } from '@/types'
 import { getOpenAIClient } from './client'
@@ -12,13 +12,18 @@ export function invalidateChunksCache(): void {
   chunksCache = null
 }
 
+// docChunks 최대 로드 수 — Serverless 환경에서 인메모리 캐시가 콜드 상태일 때
+// 전체 조회 시 문서 수에 비례해 느려지므로 최신 300개로 제한
+// (오래된 문서보다 최신 문서가 검색에 더 유용)
+const CHUNKS_FETCH_LIMIT = 300
+
 async function getAllChunks(): Promise<DocChunk[]> {
   if (chunksCache && Date.now() - chunksCache.ts < CHUNKS_TTL) return chunksCache.data
 
   const db = getFirestoreInstance()
   if (!db) return []
 
-  const q = query(collection(db, 'docChunks'), orderBy('updatedAt', 'desc'))
+  const q = query(collection(db, 'docChunks'), orderBy('updatedAt', 'desc'), firestoreLimit(CHUNKS_FETCH_LIMIT))
   const snapshot = await getDocs(q)
   const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as DocChunk[]
   chunksCache = { data, ts: Date.now() }

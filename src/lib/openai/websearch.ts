@@ -28,7 +28,7 @@ export async function webSearch(query: string): Promise<WebSearchResponse> {
       body: JSON.stringify({
         api_key: apiKey,
         query,
-        search_depth: 'advanced',
+        search_depth: 'basic',
         include_answer: true,
         include_raw_content: false,
         max_results: 7,

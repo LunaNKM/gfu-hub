@@ -264,7 +264,7 @@ export async function POST(req: NextRequest) {
           for (const call of toolCallMessage.tool_calls) {
             if (call.function.name === 'search_internal_docs') {
               const args = JSON.parse(call.function.arguments) as { mode?: string }
-              if (args.mode === 'scan_all' || args.mode === 'list') return 2000
+              if (args.mode === 'scan_all' || args.mode === 'list') return 1500
             }
             if (call.function.name === 'web_search') return 1500
           }
