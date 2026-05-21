@@ -102,5 +102,14 @@ service cloud.firestore {
     match /marketBriefs/{briefId} {
       allow read, write: if isGfutures() || request.auth == null;
     }
+
+    // ── 장기 기억 ─────────────────────────────────────────────
+    // 저장·조회 모두 서버(API 라우트)에서 실행 → request.auth == null 허용
+    // 클라이언트에서는 본인 것만 읽기 가능 (미래 UI용)
+    match /memories/{memoryId} {
+      allow read: if (isGfutures() && isOwner(resource.data.userId)) || request.auth == null;
+      allow create: if isGfutures() || request.auth == null;
+      allow update, delete: if false;
+    }
   }
 }
