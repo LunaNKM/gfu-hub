@@ -217,7 +217,7 @@ export async function POST(req: NextRequest) {
 
             toolInputTokens = toolDecision.usage?.prompt_tokens ?? 0
             toolOutputTokens = toolDecision.usage?.completion_tokens ?? 0
-            toolCallMessage = toolDecision.choices[0].message as typeof toolCallMessage
+            toolCallMessage = toolDecision.choices[0].message as unknown as typeof toolCallMessage
 
             // ── 4. 도구 실행 ──────────────────────────────────
             if (toolCallMessage?.tool_calls?.length) {
