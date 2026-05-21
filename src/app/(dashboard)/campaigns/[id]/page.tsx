@@ -15,7 +15,7 @@ import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  Cell, PieChart, Pie, Legend,
+  Cell, PieChart, Pie,
 } from 'recharts'
 
 // ── 상태/탭 메타 ─────────────────────────────────────────────────
@@ -742,6 +742,7 @@ function RawTable({ sheet, rows: overrideRows }: { sheet: ParsedSheet; rows?: Sh
   const urlCols = sheet.rawHeaders.filter(h =>
     h.toLowerCase() === 'url' || h.toLowerCase().includes('업로드')
   )
+  void urlCols // URL 컬럼 감지 (향후 링크 렌더링에 활용 예정)
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-100">
       <table className="w-full text-xs">
@@ -868,6 +869,7 @@ export default function CampaignDetailPage() {
 
   const index: SheetIndexItem[]  = campaign.sheetsIndex ?? []
   const activeItem               = index.find(i => i.key === activeKey)
+  void activeItem // 향후 시트 메타 표시에 활용 예정
   const activeSheet: ParsedSheet | undefined =
     activeKey && campaign.sheets ? campaign.sheets[activeKey] : undefined
 

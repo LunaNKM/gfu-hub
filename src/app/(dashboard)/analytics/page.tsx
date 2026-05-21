@@ -157,6 +157,7 @@ function KpiCard({ icon, label, value, color = 'blue' }: {
   )
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function QualityBadge({ rank }: { rank?: string }) {
   if (!rank || rank === 'UNKNOWN') return <span className="text-xs text-gray-300">—</span>
   const q = QUALITY_MAP[rank]
