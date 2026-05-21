@@ -195,7 +195,8 @@ export async function POST(req: NextRequest) {
         // ── 3. 도구 선택 (Function Calling, 비스트리밍) ──────
         controller.enqueue(send({ type: 'plan', content: '🔎 분석 중...' }))
 
-        let toolCallMessage: { role: 'assistant'; content: string | null; tool_calls?: import('openai/resources').ChatCompletionMessageToolCall[] } | null = null
+        type ToolCallMessage = { role: 'assistant'; content: string | null; tool_calls?: import('openai/resources').ChatCompletionMessageToolCall[] }
+        let toolCallMessage: ToolCallMessage | null = null
         let toolMessages: { role: 'tool'; tool_call_id: string; content: string }[] = []
         let ragSources: { docId: string; title: string; score: number }[] = []
         let toolInputTokens = 0
@@ -217,7 +218,7 @@ export async function POST(req: NextRequest) {
 
             toolInputTokens = toolDecision.usage?.prompt_tokens ?? 0
             toolOutputTokens = toolDecision.usage?.completion_tokens ?? 0
-            toolCallMessage = toolDecision.choices[0].message as unknown as typeof toolCallMessage
+            toolCallMessage = toolDecision.choices[0].message as unknown as ToolCallMessage
 
             // ── 4. 도구 실행 ──────────────────────────────────
             if (toolCallMessage?.tool_calls?.length) {
