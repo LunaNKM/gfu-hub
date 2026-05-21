@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { getOpenAIClient, OPENAI_MODEL } from '@/lib/openai/client'
+import { getOpenAIClient, OPENAI_MODEL, TOOL_DECISION_MODEL } from '@/lib/openai/client'
 import { TOOLS, executeToolCalls } from '@/lib/openai/tools'
 import { logAiUsage } from '@/lib/services/usage'
 import { getRelevantMemories } from '@/lib/services/memory'
@@ -174,17 +174,7 @@ export async function POST(req: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // ── 1. 장기 기억 조회 ────────────────────────────────
-        const memories = userId ? await getRelevantMemories(userId, message, 3) : []
-
-        // 메모리 블록 (유저 메시지 앞에 주입, 시스템 프롬프트는 정적 유지)
-        const memoryBlock =
-          memories.length > 0
-            ? `# 장기 기억 (이전 대화에서 학습한 정보)\n${memories.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\n---\n\n`
-            : ''
-        const userContent = memoryBlock + message
-
-        // ── 2. 히스토리 정제 (최근 6턴) ─────────────────────
+        // ── 히스토리 정제 (최근 6턴) ─────────────────────────
         const historyMessages = (history as { role: string; content: string }[])
           .slice(-6)
           .map((m) => ({
@@ -192,7 +182,9 @@ export async function POST(req: NextRequest) {
             content: cleanHistoryMessage(m.role, m.content),
           }))
 
-        // ── 3. 도구 선택 (Function Calling, 비스트리밍) ──────
+        // ── 장기 기억 조회 & 도구 선택 병렬 실행 ─────────────
+        // 메모리 조회(Firestore + 임베딩)와 Function Calling을 동시에 시작
+        // → 순차 실행 대비 둘 중 느린 쪽 시간만큼 절약
         controller.enqueue(send({ type: 'plan', content: '🔎 분석 중...' }))
 
         type ToolCallMessage = { role: 'assistant'; content: string | null; tool_calls?: import('openai/resources').ChatCompletionMessageToolCall[] }
@@ -201,38 +193,48 @@ export async function POST(req: NextRequest) {
         let ragSources: { docId: string; title: string; score: number }[] = []
         let toolInputTokens = 0
         let toolOutputTokens = 0
+        let userContent = message // 메모리 없을 때 기본값
 
         if (ragEnabled) {
           try {
-            const toolDecision = await client.chat.completions.create({
-              model: OPENAI_MODEL,
-              messages: [
-                { role: 'system', content: BASE_SYSTEM_PROMPT },
-                ...historyMessages,
-                { role: 'user', content: userContent },
-              ],
-              tools: TOOLS,
-              tool_choice: 'auto',
-              max_completion_tokens: 300,
-            })
+            // gpt-4.1-nano: 도구 선택은 단순 판단 → nano로 충분 (TTFT 0.6초 vs mini 7.5초)
+            // 메모리 조회와 병렬 실행 — Promise.all로 동시 시작
+            const [toolDecision, memories] = await Promise.all([
+              client.chat.completions.create({
+                model: TOOL_DECISION_MODEL,
+                messages: [
+                  { role: 'system', content: BASE_SYSTEM_PROMPT },
+                  ...historyMessages,
+                  { role: 'user', content: message }, // 메모리 미주입 상태로 도구 판단 (충분함)
+                ],
+                tools: TOOLS,
+                tool_choice: 'auto',
+                max_completion_tokens: 300,
+              }),
+              userId ? getRelevantMemories(userId, message, 3) : Promise.resolve([]),
+            ])
+
+            // 메모리 블록 구성 (병렬 완료 후) → userContent 업데이트
+            if (memories.length > 0) {
+              const memoryBlock = `# 장기 기억 (이전 대화에서 학습한 정보)\n${memories.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\n---\n\n`
+              userContent = memoryBlock + message
+            }
 
             toolInputTokens = toolDecision.usage?.prompt_tokens ?? 0
             toolOutputTokens = toolDecision.usage?.completion_tokens ?? 0
             toolCallMessage = toolDecision.choices[0].message as unknown as ToolCallMessage
 
-            // ── 4. 도구 실행 ──────────────────────────────────
+            // ── 도구 실행 ─────────────────────────────────────
             if (toolCallMessage?.tool_calls?.length) {
               const result = await executeToolCalls(toolCallMessage.tool_calls)
               toolMessages = result.messages
               ragSources = result.ragSources
 
-              // 실제 수행한 검색 내용으로 plan 업데이트
               controller.enqueue(send({ type: 'plan', content: result.planText }))
               if (result.searchSummary) {
                 controller.enqueue(send({ type: 'search_done', content: result.searchSummary }))
               }
             } else {
-              // 도구 없이 직접 답변
               controller.enqueue(send({ type: 'plan', content: '💬 질문을 분석합니다.' }))
             }
           } catch (toolErr) {
