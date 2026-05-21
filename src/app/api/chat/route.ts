@@ -1,105 +1,10 @@
 import { NextRequest } from 'next/server'
 import { getOpenAIClient, OPENAI_MODEL } from '@/lib/openai/client'
-import { searchRelevantDocs, scanAllDocTitles, summarizeForListing } from '@/lib/openai/rag'
-import { webSearch } from '@/lib/openai/websearch'
+import { TOOLS, executeToolCalls } from '@/lib/openai/tools'
 import { logAiUsage } from '@/lib/services/usage'
+import { getRelevantMemories } from '@/lib/services/memory'
 
 export const maxDuration = 60
-
-// ── 질문 라우팅 ────────────────────────────────────────────────
-function routeQuery(message: string): {
-  needsRag: boolean
-  needsWebSearch: boolean
-  isStrategy: boolean
-  planText: string
-} {
-  const msg = message.toLowerCase()
-
-  // 사내 데이터가 필요한 신호 — 과거·우리·특정 프로젝트 언급
-  const internalSignals = [
-    '우리', '회사', '사내', '내부', '지난', '이전', '저번', '예전', '기존',
-    '캠페인', '프로젝트', '클라이언트', '진행', '결과', '보고', '우리팀',
-    '지금까지', '했던', '했었', '진행했', '작업했', '담당', '계약', '제안서',
-    '인플루언서', '섭외', '집행', '예산', '실적', '성과', '리스트', '목록',
-    '정리해', '찾아줘', '알려줘', '뭐야', '뭐였', '어떻게 됐',
-  ]
-
-  // 최신 외부 정보가 필요한 신호 — 트렌드·시장·경쟁
-  const webSignals = [
-    '트렌드', '최신', '요즘', '올해', '2024', '2025', '2026',
-    '시장', '경쟁사', '업계', '현황', '동향', '뉴스',
-    '알고리즘', '변경', '업데이트', '새로운',
-  ]
-
-  // 전략·기획 — 두 소스를 모두 활용해야 가장 좋은 답변
-  const strategySignals = [
-    '전략', '기획', '제안', '방향', '어떻게 하면', '방법', '어떻게 해야',
-    '분석', '인사이트', '추천', '개선', '아이디어', '플랜',
-  ]
-
-  const isInternal = internalSignals.some((k) => msg.includes(k))
-  const isWeb = webSignals.some((k) => msg.includes(k))
-  const isStrategy = strategySignals.some((k) => msg.includes(k))
-
-  // 단순 대화·일반 질문 — 검색 불필요
-  const isSimpleChat = !isInternal && !isWeb && !isStrategy
-
-  if (isSimpleChat) {
-    return {
-      needsRag: false,
-      needsWebSearch: false,
-      isStrategy: false,
-      planText: '💬 질문을 분석합니다.',
-    }
-  }
-
-  if (isInternal && !isWeb && !isStrategy) {
-    return {
-      needsRag: true,
-      needsWebSearch: false,
-      isStrategy: false,
-      planText: '📂 사내 문서에서 관련 자료를 검색합니다.',
-    }
-  }
-
-  if ((isWeb || isStrategy) && !isInternal) {
-    return {
-      needsRag: false,
-      needsWebSearch: true,
-      isStrategy: true,
-      planText: '🔍 최신 데이터를 조사하여 근거 있는 답변을 구성합니다.',
-    }
-  }
-
-  // 사내 + 외부 모두 필요
-  return {
-    needsRag: true,
-    needsWebSearch: isWeb || isStrategy,
-    isStrategy: true,
-    planText: '📂🔍 사내 자료와 최신 외부 데이터를 함께 조합하여 전략을 구성합니다.',
-  }
-}
-
-// ── 전수 스캔 감지: 범위가 "전체 문서"인 광범위 조회 ───────────
-// 유사도 검색 대신 모든 문서 제목+스니펫을 스캔 → 커버리지 100%, 토큰 최소화
-function isScanAllQuery(message: string): boolean {
-  const msg = message.toLowerCase()
-  const broadScope = ['모든', '전체', '전부', '다 알려', '다 보여', '리스트업', '목록으로', '모두 알려', '모두 보여', '전부 알려', '전부 보여']
-  const topics = ['캠페인', '문서', '자료', '프로젝트', '클라이언트', '브랜드', '인플루언서', '계약']
-  return broadScope.some((b) => msg.includes(b)) && topics.some((t) => msg.includes(t))
-}
-
-// ── 리스트·열거 질문 감지 ──────────────────────────────────────
-function isListingQuery(message: string): boolean {
-  const msg = message.toLowerCase()
-  const listingSignals = [
-    '정리해', '정리 해', '목록', '리스트', '전부', '전체', '모두', '모든',
-    '다 알려', '다 보여', '나열', '열거', '몇 명', '몇명', '몇 개', '몇개',
-    '있어?', '있나?', '있나요', '있었나', '있었어', '어떤 것들',
-    '어떤 인플루언서', '누가 있', '누구누구', '어디어디',
-  ]
-  return listingSignals.some((k) => msg.includes(k))
-}
 
 // ── 정적 시스템 프롬프트 (모듈 상수) ─────────────────────────
 // 매 요청에서 동일하게 유지 → OpenAI 자동 프롬프트 캐싱 활성화 (1024+ 토큰)
@@ -207,37 +112,24 @@ type: "csv" | "markdown" | "json"
 - 단순 텍스트로 충분하면 아티팩트 불필요
 - 아티팩트는 텍스트 설명 뒤에 추가. 텍스트 없이 아티팩트만 출력 금지`
 
-// ── 동적 컨텍스트 블록 빌더 ──────────────────────────────────
-// RAG/웹 결과를 유저 메시지에 첨부 → 시스템 메시지는 항상 동일하게 유지
-function buildContextBlock(
-  ragSources: { title: string; content: string }[],
-  webResults: { title: string; url: string; content: string }[],
-  webAnswer: string | null
-): string {
-  const hasSources = ragSources.length > 0 || webResults.length > 0 || !!webAnswer
-  if (!hasSources) return ''
-
-  let context = '# 참고 자료\n\n> ⚠️ 아래 자료를 최우선으로 활용하여 답변하라. 자료에 있는 내용은 반드시 인용하고, 자료에 없는 내용은 없다고 밝혀라.\n'
-
-  if (ragSources.length > 0) {
-    context += '\n## 📂 사내 문서\n'
-    context += ragSources
-      .map((s, i) => `### [사내문서 ${i + 1}] ${s.title}\n${s.content}`)
-      .join('\n\n')
+// ── 히스토리 정제 ─────────────────────────────────────────────
+// 이전 방식의 RAG 컨텍스트 블록 + plan 프리픽스를 제거해 깔끔한 히스토리 유지
+function cleanHistoryMessage(role: string, content: string): string {
+  if (role === 'user') {
+    // "# 참고 자료\n...\n\n---\n\n## 질문\n{실제질문}" → 실제 질문만 추출
+    const marker = '\n\n---\n\n## 질문\n'
+    const idx = content.indexOf(marker)
+    if (idx !== -1) return content.slice(idx + marker.length)
+    // "# 장기 기억\n...\n\n---\n\n{실제질문}" → 실제 질문만 추출
+    const memMarker = '\n\n---\n\n'
+    const memIdx = content.indexOf(memMarker)
+    if (memIdx !== -1 && content.startsWith('# 장기 기억')) return content.slice(memIdx + memMarker.length)
   }
-
-  if (webAnswer) {
-    context += `\n\n## 🔍 웹 조사 요약\n${webAnswer}`
+  if (role === 'assistant') {
+    // "> plan text\n\n*status*\n\n실제응답" → 실제 응답만
+    return content.replace(/^(>.*?\n\n)?(\*.*?\*\n\n)?/, '')
   }
-
-  if (webResults.length > 0) {
-    context += '\n\n## 🌐 웹 조사 상세\n'
-    context += webResults
-      .map((r, i) => `### [웹자료 ${i + 1}] ${r.title}\n출처: ${r.url}\n${r.content}`)
-      .join('\n\n')
-  }
-
-  return context
+  return content
 }
 
 // ── 메인 핸들러 (SSE 스트리밍) ────────────────────────────────
@@ -248,7 +140,12 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}))
-  const { conversationId, message, history = [], ragEnabled = true } = body
+  const { conversationId, message, history = [], ragEnabled = true } = body as {
+    conversationId?: string
+    message: string
+    history: { role: string; content: string }[]
+    ragEnabled: boolean
+  }
 
   if (!message) {
     return new Response(JSON.stringify({ error: '메시지가 없습니다.' }), { status: 400 })
@@ -259,105 +156,122 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: 'OpenAI API 키가 설정되지 않았습니다.' }), { status: 503 })
   }
 
+  // JWT에서 userId 추출 (메모리 조회에 필요)
+  let userId: string | null = null
+  let userEmail: string | undefined
+  try {
+    const parts = authHeader.replace('Bearer ', '').split('.')
+    if (parts.length === 3) {
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'))
+      userId = payload.user_id || payload.sub || payload.uid || null
+      userEmail = payload.email ?? undefined
+    }
+  } catch { /* ignore */ }
+
   const encoder = new TextEncoder()
   const send = (data: object) => encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // 1단계: 라우팅 결정 및 계획 출력
-        const routing = ragEnabled
-          ? routeQuery(message)
-          : { needsRag: false, needsWebSearch: false, isStrategy: false, planText: '💬 질문을 분석합니다.' }
+        // ── 1. 장기 기억 조회 ────────────────────────────────
+        const memories = userId ? await getRelevantMemories(userId, message, 3) : []
 
-        const isScanAll = ragEnabled && isScanAllQuery(message)
-        const isListing = !isScanAll && ragEnabled && isListingQuery(message)
+        // 메모리 블록 (유저 메시지 앞에 주입, 시스템 프롬프트는 정적 유지)
+        const memoryBlock =
+          memories.length > 0
+            ? `# 장기 기억 (이전 대화에서 학습한 정보)\n${memories.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\n---\n\n`
+            : ''
+        const userContent = memoryBlock + message
 
-        controller.enqueue(send({
-          type: 'plan',
-          content: isScanAll
-            ? '📂 전체 문서를 스캔하여 목록을 수집합니다.'
-            : isListing
-              ? '📂 관련 문서 전체 범위를 탐색하여 목록을 수집합니다.'
-              : routing.planText,
-        }))
-
-        // 2단계: 검색
-        // 전수스캔: 모든 문서 제목+스니펫 (커버리지 100%, 토큰 최소)
-        // 리스트: 상위 문서 청크 전량
-        // 일반: 유사도 상위 N개
-        let ragSources: { docId: string; title: string; content: string; score: number }[] = []
-        let scanTitles: { docId: string; title: string; snippet: string }[] = []
-
-        const [, webResult] = await Promise.all([
-          (async () => {
-            if (isScanAll) {
-              scanTitles = await scanAllDocTitles()
-            } else if (isListing) {
-              // Phase 2-2: 문서별 요약 레이어 — 40청크 대신 8문서×500자 (90% 토큰 절감)
-              ragSources = await summarizeForListing(message, 8, 500)
-            } else if (routing.needsRag) {
-              ragSources = await searchRelevantDocs(message, 10, 0.15)
-            }
-          })(),
-          routing.needsWebSearch ? webSearch(message) : Promise.resolve({ answer: null, results: [] }),
-        ])
-
-        // 검색 완료 알림
-        const searchSummary: string[] = []
-        if (isScanAll) searchSummary.push(`전체 문서 ${scanTitles.length}건 스캔`)
-        else if (ragSources.length > 0) searchSummary.push(`사내 문서 ${ragSources.length}건`)
-        if (webResult.results.length > 0) searchSummary.push(`웹 조사 ${webResult.results.length}건`)
-        if (searchSummary.length > 0) {
-          controller.enqueue(send({ type: 'search_done', content: `✅ ${searchSummary.join(', ')} 확인 완료. 답변 생성 중...` }))
-        }
-
-        // 3단계: 컨텍스트 블록 구성
-        // 전수스캔은 제목+스니펫만 전달 → 토큰 최소화
-        let userContent: string
-        if (isScanAll && scanTitles.length > 0) {
-          const titleList = scanTitles
-            .map((d, i) => `${i + 1}. [${d.title}] ${d.snippet}`)
-            .join('\n')
-          userContent = `# 사내 전체 문서 목록 (제목 + 요약)\n\n${titleList}\n\n---\n\n## 질문\n${message}`
-        } else {
-          const contextBlock = buildContextBlock(ragSources, webResult.results, webResult.answer)
-          userContent = contextBlock
-            ? `${contextBlock}\n\n---\n\n## 질문\n${message}`
-            : message
-        }
-
-        // 4단계: 대화 히스토리 (최근 6턴)
-        // user 메시지에 붙어있던 RAG 컨텍스트 블록을 제거 → 히스토리 토큰 폭발 방지
-        // 형식: "# 참고 자료\n...\n\n---\n\n## 질문\n{실제 질문}"
-        //       "# 사내 전체 문서 목록\n...\n\n---\n\n## 질문\n{실제 질문}"
-        const stripRagContext = (content: string): string => {
-          const marker = '\n\n---\n\n## 질문\n'
-          const idx = content.indexOf(marker)
-          if (idx !== -1) return content.slice(idx + marker.length)
-          return content
-        }
-
+        // ── 2. 히스토리 정제 (최근 6턴) ─────────────────────
         const historyMessages = (history as { role: string; content: string }[])
           .slice(-6)
           .map((m) => ({
             role: m.role as 'user' | 'assistant',
-            content: m.role === 'user' ? stripRagContext(m.content) : m.content,
+            content: cleanHistoryMessage(m.role, m.content),
           }))
 
-        // 5단계: OpenAI 스트리밍 호출
-        // Phase 2-2 적용 후: 리스팅 컨텍스트가 압축됐으므로 출력도 줄임
-        // 리스트: 2000 / 전략·기획: 1500 / 일반: 800
-        // 시스템 메시지 고정(BASE_SYSTEM_PROMPT) → OpenAI 자동 캐싱 적용
-        const maxTokens = isListing ? 2000 : routing.isStrategy ? 1500 : 800
+        // ── 3. 도구 선택 (Function Calling, 비스트리밍) ──────
+        controller.enqueue(send({ type: 'plan', content: '🔎 분석 중...' }))
 
+        let toolCallMessage: { role: 'assistant'; content: string | null; tool_calls?: import('openai/resources').ChatCompletionMessageToolCall[] } | null = null
+        let toolMessages: { role: 'tool'; tool_call_id: string; content: string }[] = []
+        let ragSources: { docId: string; title: string; score: number }[] = []
+        let toolInputTokens = 0
+        let toolOutputTokens = 0
+
+        if (ragEnabled) {
+          try {
+            const toolDecision = await client.chat.completions.create({
+              model: OPENAI_MODEL,
+              messages: [
+                { role: 'system', content: BASE_SYSTEM_PROMPT },
+                ...historyMessages,
+                { role: 'user', content: userContent },
+              ],
+              tools: TOOLS,
+              tool_choice: 'auto',
+              max_completion_tokens: 300,
+            })
+
+            toolInputTokens = toolDecision.usage?.prompt_tokens ?? 0
+            toolOutputTokens = toolDecision.usage?.completion_tokens ?? 0
+            toolCallMessage = toolDecision.choices[0].message as typeof toolCallMessage
+
+            // ── 4. 도구 실행 ──────────────────────────────────
+            if (toolCallMessage?.tool_calls?.length) {
+              const result = await executeToolCalls(toolCallMessage.tool_calls)
+              toolMessages = result.messages
+              ragSources = result.ragSources
+
+              // 실제 수행한 검색 내용으로 plan 업데이트
+              controller.enqueue(send({ type: 'plan', content: result.planText }))
+              if (result.searchSummary) {
+                controller.enqueue(send({ type: 'search_done', content: result.searchSummary }))
+              }
+            } else {
+              // 도구 없이 직접 답변
+              controller.enqueue(send({ type: 'plan', content: '💬 질문을 분석합니다.' }))
+            }
+          } catch (toolErr) {
+            // Function Calling 실패 시 단순 응답으로 폴백
+            console.warn('Function Calling 폴백:', toolErr)
+            controller.enqueue(send({ type: 'plan', content: '💬 질문을 분석합니다.' }))
+          }
+        }
+
+        // ── 5. 최종 응답 메시지 구성 ─────────────────────────
+        const finalMessages: import('openai/resources').ChatCompletionMessageParam[] = [
+          { role: 'system', content: BASE_SYSTEM_PROMPT },
+          ...historyMessages,
+          { role: 'user', content: userContent },
+          ...(toolCallMessage?.tool_calls?.length
+            ? [
+                toolCallMessage as import('openai/resources').ChatCompletionMessageParam,
+                ...toolMessages as import('openai/resources').ChatCompletionMessageParam[],
+              ]
+            : []),
+        ]
+
+        // ── 6. 출력 토큰 한도 결정 ───────────────────────────
+        // 도구 선택 결과 기반으로 적절한 한도 설정
+        const maxTokens = (() => {
+          if (!toolCallMessage?.tool_calls?.length) return 800
+          for (const call of toolCallMessage.tool_calls) {
+            if (call.function.name === 'search_internal_docs') {
+              const args = JSON.parse(call.function.arguments) as { mode?: string }
+              if (args.mode === 'scan_all' || args.mode === 'list') return 2000
+            }
+            if (call.function.name === 'web_search') return 1500
+          }
+          return 1000
+        })()
+
+        // ── 7. 스트리밍 응답 ─────────────────────────────────
         const openaiStream = await client.chat.completions.create({
           model: OPENAI_MODEL,
-          messages: [
-            { role: 'system', content: BASE_SYSTEM_PROMPT },
-            ...historyMessages,
-            { role: 'user', content: userContent },
-          ],
+          messages: finalMessages,
           stream: true,
           stream_options: { include_usage: true },
           max_completion_tokens: maxTokens,
@@ -369,9 +283,7 @@ export async function POST(req: NextRequest) {
 
         for await (const chunk of openaiStream) {
           const content = chunk.choices[0]?.delta?.content
-          if (content) {
-            controller.enqueue(send({ type: 'chunk', content }))
-          }
+          if (content) controller.enqueue(send({ type: 'chunk', content }))
           if (chunk.usage) {
             inputTokens = chunk.usage.prompt_tokens ?? 0
             outputTokens = chunk.usage.completion_tokens ?? 0
@@ -380,44 +292,35 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const tokenUsage = {
-          inputTokens,
-          outputTokens,
-          totalTokens: inputTokens + outputTokens,
-        }
-
-        // 사용량 로그
-        try {
-          const jwtToken = authHeader.replace('Bearer ', '')
-          const parts = jwtToken.split('.')
-          if (parts.length === 3) {
-            const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'))
-            const userId = payload.user_id || payload.sub || payload.uid
-            const userEmail = payload.email ?? undefined
-            if (userId) {
-              await logAiUsage({
-                userId,
-                userEmail,
-                conversationId,
-                model: OPENAI_MODEL,
-                inputTokens,
-                outputTokens,
-                totalTokens: tokenUsage.totalTokens,
-                cachedTokens,
-                feature: 'chat',
-                success: true,
-              })
-            }
+        // ── 8. 사용량 로그 (도구 선택 + 응답 토큰 합산) ─────
+        if (userId) {
+          try {
+            await logAiUsage({
+              userId,
+              userEmail,
+              conversationId,
+              model: OPENAI_MODEL,
+              inputTokens: inputTokens + toolInputTokens,
+              outputTokens: outputTokens + toolOutputTokens,
+              totalTokens: inputTokens + outputTokens + toolInputTokens + toolOutputTokens,
+              cachedTokens,
+              feature: 'chat',
+              success: true,
+            })
+          } catch (logErr) {
+            console.error('사용량 로그 실패:', logErr)
           }
-        } catch (logErr) {
-          console.error('사용량 로그 실패:', logErr)
         }
 
         controller.enqueue(
           send({
             type: 'done',
-            ragSources: ragSources.map((s) => ({ docId: s.docId, title: s.title, score: s.score })),
-            tokenUsage,
+            ragSources,
+            tokenUsage: {
+              inputTokens: inputTokens + toolInputTokens,
+              outputTokens: outputTokens + toolOutputTokens,
+              totalTokens: inputTokens + outputTokens + toolInputTokens + toolOutputTokens,
+            },
           })
         )
       } catch (err) {

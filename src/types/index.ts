@@ -92,7 +92,7 @@ export interface AiUsageLog {
   cachedTokens?: number
   costUsd: number
   createdAt: Date
-  feature: 'chat' | 'prompt_optimizer' | 'rag' | 'embedding'
+  feature: 'chat' | 'prompt_optimizer' | 'rag' | 'embedding' | 'memory'
   success: boolean
   errorMessage?: string
 }
@@ -195,6 +195,16 @@ export interface MarketBrief {
   sources: { title: string; url: string }[]
   createdAt: Date
   expiresAt: Date
+}
+
+// ── 장기 기억 ────────────────────────────────────────────────
+export interface Memory {
+  id: string
+  userId: string
+  content: string
+  embedding?: number[]
+  conversationId?: string
+  createdAt: Date
 }
 
 export interface Campaign {

@@ -182,6 +182,22 @@ export default function ChatDetailPage() {
                 )
               )
               await fetchConversations()
+
+              // 백그라운드: 대화에서 핵심 사실 추출 → 장기 기억 저장 (fire-and-forget)
+              user?.getIdToken().then((tkn) =>
+                fetch('/api/memory/extract', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tkn}` },
+                  body: JSON.stringify({
+                    conversationId: id,
+                    history: [
+                      ...history.slice(-4),
+                      { role: 'user', content },
+                      { role: 'assistant', content: mainContent },
+                    ],
+                  }),
+                }).catch(() => {})
+              )
             } else if (data.type === 'error') {
               showToast(data.content || 'AI 응답 중 오류가 발생했습니다.', 'error')
               setMessages((prev) => prev.filter((m) => m.id !== streamingId))

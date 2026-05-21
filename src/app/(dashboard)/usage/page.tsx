@@ -25,6 +25,7 @@ const FEATURE_LABELS: Record<string, string> = {
   prompt_optimizer: '프롬프트 최적화',
   rag: 'RAG 검색',
   embedding: '임베딩',
+  memory: '장기 기억',
 }
 
 type Tab = 'my' | 'company'
