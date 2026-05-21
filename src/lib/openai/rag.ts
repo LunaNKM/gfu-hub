@@ -1,4 +1,4 @@
-import { collection, getDocs, query, orderBy } from 'firebase/firestore'
+import { collection, getDocs, query, orderBy, findNearest } from 'firebase/firestore'
 import { getFirestoreInstance } from '../firebase/firestore'
 import { DocChunk } from '@/types'
 import { getOpenAIClient } from './client'
@@ -62,11 +62,53 @@ export async function searchRelevantDocs(
   minScore = 0.15
 ): Promise<{ docId: string; title: string; content: string; score: number }[]> {
   try {
-    const chunks = await getAllChunks()
-
-    if (chunks.length === 0) return []
-
     const queryEmbedding = await getEmbedding(searchQuery)
+
+    // ── Phase 3-1: Firestore Vector Search ──────────────────────
+    // Blaze 플랜 + 벡터 인덱스 배포 후 활성화.
+    // 실패 시 자동으로 브루트포스로 폴백.
+    if (queryEmbedding.length > 0) {
+      const db = getFirestoreInstance()
+      if (db) {
+        try {
+          const coll = collection(db, 'docChunks')
+          const vq = findNearest(coll, 'embedding', queryEmbedding, {
+            limit: limit * 3, // 리랭킹 여유분
+            distanceMeasure: 'COSINE',
+            distanceResultField: '__dist',
+          })
+          const snap = await getDocs(vq)
+
+          // ── Phase 3-2: 하이브리드 스코어링 (벡터 70% + 키워드 30%) ──
+          // findNearest 결과에 키워드 매칭 점수를 가중 합산 → 재순위
+          const results = snap.docs
+            .map((d) => {
+              const data = d.data() as DocChunk & { __dist?: number }
+              // COSINE distance: 0 = 동일, 1 = 직교. similarity = 1 - distance
+              const vectorScore = Math.max(0, 1 - (data.__dist ?? 1))
+              const kwScore = keywordScore(data.content, searchQuery)
+              return {
+                docId: data.docId,
+                title: data.title,
+                content: data.content,
+                score: 0.7 * vectorScore + 0.3 * kwScore,
+              }
+            })
+            .filter((r) => r.score > minScore)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, limit)
+
+          return results
+        } catch {
+          // 벡터 인덱스 미배포 또는 로컬 에뮬레이터 → 브루트포스로 폴백
+          console.warn('Vector Search 폴백 (인덱스 미준비): 브루트포스 사용')
+        }
+      }
+    }
+
+    // ── 브루트포스 폴백 (캐시 활용, O(n) JS 연산) ────────────────
+    const chunks = await getAllChunks()
+    if (chunks.length === 0) return []
 
     let scored: { docId: string; title: string; content: string; score: number }[]
 
@@ -193,4 +235,38 @@ export async function searchAllChunksFromTopDocs(
     console.error('RAG 전체 청크 검색 오류:', error)
     return []
   }
+}
+
+/**
+ * Phase 2-2 — 리스팅 쿼리 전용 요약 레이어
+ *
+ * searchAllChunksFromTopDocs(5, 40) = 최대 40청크 × 1000자 = 40,000자 (토큰 폭발)
+ * summarizeForListing(8, 500)       = 최대 8문서 × 500자  =  4,000자 (90% 절감)
+ *
+ * 각 문서의 청크를 순서대로 합친 뒤 charsPerDoc로 잘라 하나의 요약 블록으로 반환.
+ * 리스팅 질문에서는 문서별 핵심 파악이 목적이므로 전체 청크보다 요약이 적합.
+ */
+export async function summarizeForListing(
+  searchQuery: string,
+  topDocCount = 8,
+  charsPerDoc = 500
+): Promise<{ docId: string; title: string; content: string; score: number }[]> {
+  // 상위 문서의 청크를 넉넉히 가져온 후 문서별로 압축
+  const raw = await searchAllChunksFromTopDocs(searchQuery, topDocCount, topDocCount * 10)
+
+  const docMap = new Map<string, { title: string; parts: string[]; score: number }>()
+  for (const item of raw) {
+    if (!docMap.has(item.docId)) {
+      docMap.set(item.docId, { title: item.title, parts: [], score: item.score })
+    }
+    docMap.get(item.docId)!.parts.push(item.content)
+  }
+
+  return Array.from(docMap.entries()).map(([docId, { title, parts, score }]) => ({
+    docId,
+    title,
+    // 청크들을 이어 붙인 뒤 공백 정리 → charsPerDoc 글자로 자름
+    content: parts.join(' ').replace(/\s+/g, ' ').trim().slice(0, charsPerDoc),
+    score,
+  }))
 }

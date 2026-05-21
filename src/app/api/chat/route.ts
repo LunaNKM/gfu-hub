@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { getOpenAIClient, OPENAI_MODEL } from '@/lib/openai/client'
-import { searchRelevantDocs, searchAllChunksFromTopDocs, scanAllDocTitles } from '@/lib/openai/rag'
+import { searchRelevantDocs, scanAllDocTitles, summarizeForListing } from '@/lib/openai/rag'
 import { webSearch } from '@/lib/openai/websearch'
 import { logAiUsage } from '@/lib/services/usage'
 
@@ -294,7 +294,8 @@ export async function POST(req: NextRequest) {
             if (isScanAll) {
               scanTitles = await scanAllDocTitles()
             } else if (isListing) {
-              ragSources = await searchAllChunksFromTopDocs(message, 5, 40)
+              // Phase 2-2: 문서별 요약 레이어 — 40청크 대신 8문서×500자 (90% 토큰 절감)
+              ragSources = await summarizeForListing(message, 8, 500)
             } else if (routing.needsRag) {
               ragSources = await searchRelevantDocs(message, 10, 0.15)
             }
@@ -345,9 +346,10 @@ export async function POST(req: NextRequest) {
           }))
 
         // 5단계: OpenAI 스트리밍 호출
-        // 리스트: 12000 / 전략·기획: 2500 / 일반: 1500
+        // Phase 2-2 적용 후: 리스팅 컨텍스트가 압축됐으므로 출력도 줄임
+        // 리스트: 2000 / 전략·기획: 1500 / 일반: 800
         // 시스템 메시지 고정(BASE_SYSTEM_PROMPT) → OpenAI 자동 캐싱 적용
-        const maxTokens = isListing ? 5000 : routing.isStrategy ? 1500 : 800
+        const maxTokens = isListing ? 2000 : routing.isStrategy ? 1500 : 800
 
         const openaiStream = await client.chat.completions.create({
           model: OPENAI_MODEL,
