@@ -110,6 +110,27 @@ export async function searchRelevantDocs(
 }
 
 /**
+ * 전수 스캔 전용: 모든 문서의 첫 번째 청크에서 제목 + 150자 스니펫만 반환.
+ * "모든 캠페인 리스트업" 같은 전체 조회 요청에 사용.
+ * 토큰 소모를 최소화하면서 커버리지 100% 보장.
+ */
+export async function scanAllDocTitles(): Promise<{ docId: string; title: string; snippet: string }[]> {
+  const chunks = await getAllChunks()
+  const seen = new Set<string>()
+  return chunks
+    .filter((c) => {
+      if (seen.has(c.docId)) return false
+      seen.add(c.docId)
+      return true
+    })
+    .map((c) => ({
+      docId: c.docId,
+      title: c.title,
+      snippet: c.content.slice(0, 150).replace(/\n/g, ' '),
+    }))
+}
+
+/**
  * 리스트·열거 질문 전용: 관련 문서의 모든 청크를 가져온다.
  * 상위 K개 문서를 먼저 식별한 뒤, 해당 문서의 청크를 전량 수집한다.
  */

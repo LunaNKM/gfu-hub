@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { getOpenAIClient, OPENAI_MODEL } from '@/lib/openai/client'
-import { searchRelevantDocs, searchAllChunksFromTopDocs } from '@/lib/openai/rag'
+import { searchRelevantDocs, searchAllChunksFromTopDocs, scanAllDocTitles } from '@/lib/openai/rag'
 import { webSearch } from '@/lib/openai/websearch'
 import { logAiUsage } from '@/lib/services/usage'
 
@@ -78,6 +78,15 @@ function routeQuery(message: string): {
     isStrategy: true,
     planText: '📂🔍 사내 자료와 최신 외부 데이터를 함께 조합하여 전략을 구성합니다.',
   }
+}
+
+// ── 전수 스캔 감지: 범위가 "전체 문서"인 광범위 조회 ───────────
+// 유사도 검색 대신 모든 문서 제목+스니펫을 스캔 → 커버리지 100%, 토큰 최소화
+function isScanAllQuery(message: string): boolean {
+  const msg = message.toLowerCase()
+  const broadScope = ['모든', '전체', '전부', '다 알려', '다 보여', '리스트업', '목록으로', '모두 알려', '모두 보여', '전부 알려', '전부 보여']
+  const topics = ['캠페인', '문서', '자료', '프로젝트', '클라이언트', '브랜드', '인플루언서', '계약']
+  return broadScope.some((b) => msg.includes(b)) && topics.some((t) => msg.includes(t))
 }
 
 // ── 리스트·열거 질문 감지 ──────────────────────────────────────
@@ -261,40 +270,61 @@ export async function POST(req: NextRequest) {
           ? routeQuery(message)
           : { needsRag: false, needsWebSearch: false, isStrategy: false, planText: '💬 질문을 분석합니다.' }
 
-        const isListing = ragEnabled && isListingQuery(message)
+        const isScanAll = ragEnabled && isScanAllQuery(message)
+        const isListing = !isScanAll && ragEnabled && isListingQuery(message)
 
         controller.enqueue(send({
           type: 'plan',
-          content: isListing
-            ? '📂 관련 문서 전체 범위를 탐색하여 목록을 수집합니다.'
-            : routing.planText,
+          content: isScanAll
+            ? '📂 전체 문서를 스캔하여 목록을 수집합니다.'
+            : isListing
+              ? '📂 관련 문서 전체 범위를 탐색하여 목록을 수집합니다.'
+              : routing.planText,
         }))
 
-        // 2단계: 병렬 검색
-        // 리스트 질문이면 상위 문서의 청크를 전량 수집, 일반 질문은 유사도 상위 N개
-        const [ragSources, webResult] = await Promise.all([
-          isListing
-            ? searchAllChunksFromTopDocs(message, 5, 40)
-            : routing.needsRag
-              ? searchRelevantDocs(message, 10, 0.15)
-              : Promise.resolve([]),
+        // 2단계: 검색
+        // 전수스캔: 모든 문서 제목+스니펫 (커버리지 100%, 토큰 최소)
+        // 리스트: 상위 문서 청크 전량
+        // 일반: 유사도 상위 N개
+        let ragSources: { docId: string; title: string; content: string; score: number }[] = []
+        let scanTitles: { docId: string; title: string; snippet: string }[] = []
+
+        const [, webResult] = await Promise.all([
+          (async () => {
+            if (isScanAll) {
+              scanTitles = await scanAllDocTitles()
+            } else if (isListing) {
+              ragSources = await searchAllChunksFromTopDocs(message, 5, 40)
+            } else if (routing.needsRag) {
+              ragSources = await searchRelevantDocs(message, 10, 0.15)
+            }
+          })(),
           routing.needsWebSearch ? webSearch(message) : Promise.resolve({ answer: null, results: [] }),
         ])
 
         // 검색 완료 알림
         const searchSummary: string[] = []
-        if (ragSources.length > 0) searchSummary.push(`사내 문서 ${ragSources.length}건`)
+        if (isScanAll) searchSummary.push(`전체 문서 ${scanTitles.length}건 스캔`)
+        else if (ragSources.length > 0) searchSummary.push(`사내 문서 ${ragSources.length}건`)
         if (webResult.results.length > 0) searchSummary.push(`웹 조사 ${webResult.results.length}건`)
         if (searchSummary.length > 0) {
           controller.enqueue(send({ type: 'search_done', content: `✅ ${searchSummary.join(', ')} 확인 완료. 답변 생성 중...` }))
         }
 
-        // 3단계: 동적 컨텍스트 블록 구성 (RAG/웹 결과 → 유저 메시지에 첨부)
-        // 시스템 메시지는 BASE_SYSTEM_PROMPT 고정 → 캐시 히트율 극대화
-        const contextBlock = buildContextBlock(ragSources, webResult.results, webResult.answer)
-        const userContent = contextBlock
-          ? `${contextBlock}\n\n---\n\n## 질문\n${message}`
-          : message
+        // 3단계: 컨텍스트 블록 구성
+        // 전수스캔은 제목+스니펫만 전달 → 토큰 최소화
+        let userContent: string
+        if (isScanAll && scanTitles.length > 0) {
+          const titleList = scanTitles
+            .map((d, i) => `${i + 1}. [${d.title}] ${d.snippet}`)
+            .join('\n')
+          userContent = `# 사내 전체 문서 목록 (제목 + 요약)\n\n${titleList}\n\n---\n\n## 질문\n${message}`
+        } else {
+          const contextBlock = buildContextBlock(ragSources, webResult.results, webResult.answer)
+          userContent = contextBlock
+            ? `${contextBlock}\n\n---\n\n## 질문\n${message}`
+            : message
+        }
 
         // 4단계: 대화 히스토리 (최근 10개)
         const historyMessages = (history as { role: string; content: string }[])
