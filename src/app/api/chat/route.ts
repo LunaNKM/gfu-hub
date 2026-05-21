@@ -326,10 +326,23 @@ export async function POST(req: NextRequest) {
             : message
         }
 
-        // 4단계: 대화 히스토리 (최근 10개)
+        // 4단계: 대화 히스토리 (최근 6턴)
+        // user 메시지에 붙어있던 RAG 컨텍스트 블록을 제거 → 히스토리 토큰 폭발 방지
+        // 형식: "# 참고 자료\n...\n\n---\n\n## 질문\n{실제 질문}"
+        //       "# 사내 전체 문서 목록\n...\n\n---\n\n## 질문\n{실제 질문}"
+        const stripRagContext = (content: string): string => {
+          const marker = '\n\n---\n\n## 질문\n'
+          const idx = content.indexOf(marker)
+          if (idx !== -1) return content.slice(idx + marker.length)
+          return content
+        }
+
         const historyMessages = (history as { role: string; content: string }[])
           .slice(-6)
-          .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+          .map((m) => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.role === 'user' ? stripRagContext(m.content) : m.content,
+          }))
 
         // 5단계: OpenAI 스트리밍 호출
         // 리스트: 12000 / 전략·기획: 2500 / 일반: 1500

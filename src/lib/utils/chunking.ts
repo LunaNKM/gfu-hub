@@ -1,4 +1,4 @@
-export function chunkText(text: string, chunkSize = 500, overlap = 50): string[] {
+export function chunkText(text: string, chunkSize = 1000, overlap = 150): string[] {
   if (!text || text.trim().length === 0) return []
 
   const chunks: string[] = []

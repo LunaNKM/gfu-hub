@@ -64,6 +64,11 @@ const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null
 
+// ── 청크 설정 ─────────────────────────────────────────────────
+// MAX_CHUNKS_PER_DOC: 문서당 최대 청크 수. 0 = 제한 없음
+// 예: 200청크 × 1000자 = 200,000자(~200KB) 커버
+const MAX_CHUNKS_PER_DOC = parseInt(process.env.MAX_CHUNKS_PER_DOC ?? '200', 10)
+
 // ── 유틸 함수들 ───────────────────────────────────────────────
 function isSupportedFileType(mimeType, fileName) {
   if (
@@ -81,7 +86,7 @@ function isSupportedFileType(mimeType, fileName) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-function chunkText(text, size = 2000, overlap = 200) {
+function chunkText(text, size = 1000, overlap = 150) {
   const chunks = []
   let start = 0
   while (start < text.length) {
@@ -272,9 +277,11 @@ async function main() {
         updatedAt: Timestamp.now(),
       }
 
-      // 청크 + 임베딩 생성 (파일당 최대 30청크 = ~60,000자)
+      // 청크 + 임베딩 생성
+      // MAX_CHUNKS_PER_DOC(기본 200) × 1000자 = 최대 200,000자 커버
       // ※ 먼저 청크를 만들어야 chunkCount를 docData에 함께 저장할 수 있음
-      const chunks = chunkText(text).slice(0, 30)
+      const rawChunks = chunkText(text)
+      const chunks = MAX_CHUNKS_PER_DOC > 0 ? rawChunks.slice(0, MAX_CHUNKS_PER_DOC) : rawChunks
       const chunkCount = chunks.length
 
       let docId
