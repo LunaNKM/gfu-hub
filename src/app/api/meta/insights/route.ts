@@ -48,13 +48,13 @@ export async function GET(req: NextRequest) {
 
     const trendFields = 'spend,impressions,clicks,frequency,ctr'
 
-    // Meta API v20 기준 유효한 영상 필드만 사용
-    // video_3s_watched_actions, video_avg_time_watch_actions, video_p* 등은 deprecated
+    // Meta API v20 기준 유효한 영상 필드
+    // video_continuous_2_sec_watched_actions — Traffic/Click 목표 캠페인에서 미제공
+    // → plays/imp = 재생률(Hook), thruplay/plays = 완주율(Hold)로 대체
     const videoFields = [
       'campaign_name', 'campaign_id', 'impressions',
-      'video_play_actions',                     // 재생 수
-      'video_continuous_2_sec_watched_actions', // 2초+ 연속 시청 (Hook Rate)
-      'video_thruplay_watched_actions',         // ThruPlay — 완주(15s or 전체) (Hold Rate)
+      'video_play_actions',             // 재생 수 → 재생률(Hook Rate) 분모
+      'video_thruplay_watched_actions', // ThruPlay 완주 → 완주율(Hold Rate) 분자
     ].join(',')
 
     const [campaignRes, trendRes, ageGender, placement, video, hourly] = await Promise.all([
@@ -62,20 +62,7 @@ export async function GET(req: NextRequest) {
       fetch(`${base}?fields=${trendFields}&${dp}&time_increment=1&limit=100&${tk}`).then(r => r.json()),
       safeFetch(`${base}?fields=impressions,clicks,spend,ctr,cpc&breakdowns=age,gender&${dp}&level=account&${tk}`),
       safeFetch(`${base}?fields=impressions,clicks,spend,ctr,cpc,cpm&breakdowns=publisher_platform,platform_position&${dp}&level=account&${tk}`),
-      fetch(`${base}?fields=${videoFields}&${dp}&level=campaign&limit=50&${tk}`)
-        .then(r => r.json())
-        .then(d => {
-          const first = d.data?.[0]
-          if (first) console.log('[Video first row]', JSON.stringify({
-            campaign: first.campaign_name,
-            plays: first.video_play_actions,
-            s2: first.video_continuous_2_sec_watched_actions,
-            thruplay: first.video_thruplay_watched_actions,
-          }))
-          if (d.error) console.log('[Video Error]', JSON.stringify(d.error))
-          return d.data ?? []
-        })
-        .catch(() => []),
+      safeFetch(`${base}?fields=${videoFields}&${dp}&level=campaign&limit=50&${tk}`),
       safeFetch(`${base}?fields=impressions,clicks,ctr,spend&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&${dp}&level=account&${tk}`),
     ])
 

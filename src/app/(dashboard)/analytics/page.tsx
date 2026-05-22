@@ -45,7 +45,6 @@ interface VideoAction { action_type: string; value: string }
 interface VideoRow {
   campaign_id: string; campaign_name: string; impressions: string
   video_play_actions?: VideoAction[]
-  video_continuous_2_sec_watched_actions?: VideoAction[]
   video_thruplay_watched_actions?: VideoAction[]
 }
 
@@ -324,18 +323,15 @@ export default function AnalyticsPage() {
     .map(v => {
       const imp = parseInt(v.impressions || '0')
       const plays = extractVideoVal(v.video_play_actions)
-      const s2 = extractVideoVal(v.video_continuous_2_sec_watched_actions)
       const thruplay = extractVideoVal(v.video_thruplay_watched_actions)
       if (imp === 0) return null
-      const base = plays > 0 ? plays : imp
       return {
         id: v.campaign_id,
         name: v.campaign_name.length > 24 ? v.campaign_name.slice(0, 24) + '…' : v.campaign_name,
-        hookRate: base > 0 ? (s2 / base * 100) : 0,   // 2초 시청 / 재생
-        holdRate: s2 > 0 ? (thruplay / s2 * 100) : 0,  // ThruPlay / 2초시청
+        hookRate: imp > 0 ? (plays / imp * 100) : 0,       // 재생률 = plays / 노출
+        holdRate: plays > 0 ? (thruplay / plays * 100) : 0, // 완주율 = ThruPlay / 재생
         impressions: imp,
         plays,
-        s2,
         thruplay,
       }
     })
@@ -802,7 +798,7 @@ export default function AnalyticsPage() {
               <div className="mb-4">
                 <h2 className="text-sm font-semibold text-gray-700">영상 광고 시청 퍼널</h2>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Hook Rate(2초 연속 시청률) = 썸네일 매력도 · Hold Rate(완주/2초) = 콘텐츠 흡입력
+                  Hook Rate(재생률) = 썸네일 매력도 · Hold Rate(ThruPlay 완주율) = 콘텐츠 흡입력
                 </p>
               </div>
 
@@ -826,9 +822,8 @@ export default function AnalyticsPage() {
                       <div className="space-y-2">
                         {[
                           { label: `노출 (${v.impressions.toLocaleString()})`, pct: 100, color: '#e2e8f0' },
-                          { label: `재생 (${v.plays.toLocaleString()})`, pct: v.impressions > 0 ? v.plays / v.impressions * 100 : 0, color: '#a78bfa' },
-                          { label: `2초 시청 — Hook Rate ${v.hookRate.toFixed(1)}%`, pct: v.hookRate, color: '#3b82f6' },
-                          { label: `ThruPlay — Hold Rate ${v.holdRate.toFixed(1)}%`, pct: v.holdRate, color: '#10b981' },
+                          { label: `재생 — Hook Rate ${v.hookRate.toFixed(1)}% (${v.plays.toLocaleString()})`, pct: v.hookRate, color: '#a78bfa' },
+                          { label: `ThruPlay 완주 — Hold Rate ${v.holdRate.toFixed(1)}% (${v.thruplay.toLocaleString()})`, pct: v.holdRate, color: '#10b981' },
                         ].map(bar => (
                           <div key={bar.label} className="flex items-center gap-3">
                             <span className="text-xs text-gray-500 w-36 shrink-0">{bar.label}</span>
