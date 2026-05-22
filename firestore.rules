@@ -91,6 +91,24 @@ service cloud.firestore {
       allow read, write: if isGfutures() || request.auth == null;
     }
 
+    // ── 캠페인 워크플로우 태스크 ─────────────────────────────
+    // 서버(API 라우트)에서 생성/수정/조회 → request.auth == null 허용
+    match /campaignTasks/{taskId} {
+      allow read, write: if isGfutures() || request.auth == null;
+    }
+
+    // ── 캠페인별 인플루언서 점수 ─────────────────────────────
+    // 서버(API 라우트)에서 계산/저장/조회 → request.auth == null 허용
+    match /influencerScores/{scoreId} {
+      allow read, write: if isGfutures() || request.auth == null;
+    }
+
+    // ── AI 업무 실행 기록 ────────────────────────────────────
+    // 서버(API 라우트)에서 실행 결과 저장/조회 → request.auth == null 허용
+    match /aiActionRuns/{runId} {
+      allow read, write: if isGfutures() || request.auth == null;
+    }
+
     // ── 인플루언서 CRM ─────────────────────────────────────────
     // Sheets 동기화 시 서버(API 라우트)에서 upsert → request.auth == null 허용
     match /influencers/{influencerId} {
@@ -100,6 +118,23 @@ service cloud.firestore {
     // ── 일본 시장 인텔리전스 브리핑 ───────────────────────────
     // Cron / 수동 생성 모두 서버에서 addDoc → request.auth == null 허용
     match /marketBriefs/{briefId} {
+      allow read, write: if isGfutures() || request.auth == null;
+    }
+
+    // ── 저장형 시장 인텔리전스 ───────────────────────────────
+    match /trendSignals/{signalId} {
+      allow read, write: if isGfutures() || request.auth == null;
+    }
+
+    match /brandImpacts/{impactId} {
+      allow read, write: if isGfutures() || request.auth == null;
+    }
+
+    match /competitorWatches/{watchId} {
+      allow read, write: if isGfutures() || request.auth == null;
+    }
+
+    match /weeklyMarketReports/{reportId} {
       allow read, write: if isGfutures() || request.auth == null;
     }
 
