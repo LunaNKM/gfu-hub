@@ -190,6 +190,8 @@ type: "csv" | "markdown" | "json"
 // 짧고 업무 무관한 인사·확인·감탄 질문을 휴리스틱으로 감지.
 function isSimpleQuestion(msg: string): boolean {
   const t = msg.trim()
+  // 긴 답변이 필요한 질문은 단순으로 분류하지 않음
+  if (isLongAnswerNeeded(t)) return false
   // 35자 미만 + 핵심 업무 키워드 없으면 단순 질문으로 간주
   if (
     t.length < 35 &&
@@ -198,6 +200,11 @@ function isSimpleQuestion(msg: string): boolean {
   // 명확한 인사·감사·감탄 패턴
   if (/^(안녕|hi\b|hello\b|헬로|감사|고마워|수고|ㅎㅎ+|ㅋㅋ+|네[!~.]*$|아[!~.]*$|오[!~.]*$|헉|대박|좋아|알겠|ok\b|ㅇㅋ)/i.test(t)) return true
   return false
+}
+
+// 긴 답변이 필요한 질문 판별 — 전략/계획/분석 요청
+function isLongAnswerNeeded(msg: string): boolean {
+  return /플랜|전략|계획|방안|제안서|보고서|정리해|써줘|작성해|알려줘|설명해|분석해|정의해|비교해|단계|순서|어떻게|무엇인지|어떤지/.test(msg)
 }
 
 // ── TASK 6: 시맨틱 캐시 ─────────────────────────────────────
@@ -443,16 +450,20 @@ export async function POST(req: NextRequest) {
         ]
 
         // ── 출력 토큰 한도 결정 ───────────────────────────
+        // 전략·플랜·분석 요청처럼 긴 답변이 필요한 경우엔 상한을 높임.
+        // max_completion_tokens는 상한일 뿐 — 짧은 답변이면 자연히 일찍 끝나므로
+        // 높게 잡아도 짧은 응답의 레이턴시에는 영향 없음.
+        const longAnswer = isLongAnswerNeeded(message)
         const maxTokens = (() => {
-          if (!toolCallMessage?.tool_calls?.length) return 800
+          if (!toolCallMessage?.tool_calls?.length) return longAnswer ? 2500 : 800
           for (const call of toolCallMessage.tool_calls) {
             if (call.function.name === 'search_internal_docs') {
               const args = JSON.parse(call.function.arguments) as { mode?: string }
-              if (args.mode === 'scan_all' || args.mode === 'list') return 1500
+              if (args.mode === 'scan_all' || args.mode === 'list') return longAnswer ? 2500 : 1500
             }
-            if (call.function.name === 'web_search') return 1500
+            if (call.function.name === 'web_search') return longAnswer ? 2500 : 1500
           }
-          return 1000
+          return longAnswer ? 2000 : 1000
         })()
 
         // ── 스트리밍 응답 ─────────────────────────────────
