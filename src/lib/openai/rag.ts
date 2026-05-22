@@ -25,6 +25,7 @@ const DOC_INDEX_TTL = 10 * 60 * 1000  // 10분
 export function invalidateDocIndexCache(): void {
   docIndexCache = null
   chunksCache = null
+  _idfCache = null
 }
 
 async function getDocIndex(): Promise<DocIndex[]> {
@@ -54,8 +55,18 @@ async function getDocIndex(): Promise<DocIndex[]> {
 let chunksCache: { data: DocChunk[]; ts: number } | null = null
 const CHUNKS_TTL = 10 * 60 * 1000
 
+// ── BM25 IDF 캐시 ─────────────────────────────────────────────
+interface IdfData {
+  idf: Map<string, number>
+  avgDocLen: number
+}
+
+let _idfCache: { data: IdfData; ts: number } | null = null
+const IDF_TTL = 10 * 60 * 1000
+
 export function invalidateChunksCache(): void {
   chunksCache = null
+  _idfCache = null
 }
 
 // scan_all / summarize 용 전체 청크 (최신 300개 제한 유지)
@@ -148,6 +159,73 @@ function keywordScore(content: string, query: string): number {
   return matches.length / terms.length
 }
 
+// ── BM25 (sparse retrieval, 고유명사·정확매칭에 강함) ────────────
+const BM25_K1 = 1.5
+const BM25_B = 0.75
+const STOPWORDS = new Set([
+  // 한국어
+  '그리고', '하지만', '그러나', '그래서', '또한', '이것', '저것', '그것', '있는', '없는', '입니다', '합니다',
+  // 일본어
+  'です', 'ます', 'して', 'した', 'ある', 'いる', 'これ', 'それ', 'あれ',
+  // 영어
+  'the', 'and', 'for', 'with', 'this', 'that', 'are', 'was', 'were', 'have', 'has',
+])
+
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\sぁ-んァ-ヶー一-龯가-힣]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !STOPWORDS.has(t))
+}
+
+function buildIdf(chunks: DocChunk[]): IdfData {
+  const N = chunks.length
+  const df = new Map<string, number>()
+  let totalLen = 0
+  for (const c of chunks) {
+    const uniq = new Set(tokenize(`${c.title} ${c.content}`))
+    totalLen += uniq.size
+    for (const t of uniq) df.set(t, (df.get(t) ?? 0) + 1)
+  }
+  const idf = new Map<string, number>()
+  for (const [t, dfVal] of df) {
+    idf.set(t, Math.log((N - dfVal + 0.5) / (dfVal + 0.5) + 1))
+  }
+  return { idf, avgDocLen: totalLen / Math.max(1, N) }
+}
+
+function bm25Score(chunkText: string, queryTokens: string[], idfData: IdfData): number {
+  const docTokens = tokenize(chunkText)
+  const docLen = docTokens.length
+  if (docLen === 0) return 0
+  const tf = new Map<string, number>()
+  for (const t of docTokens) tf.set(t, (tf.get(t) ?? 0) + 1)
+
+  let score = 0
+  for (const qt of queryTokens) {
+    const f = tf.get(qt) ?? 0
+    if (f === 0) continue
+    const termIdf = idfData.idf.get(qt) ?? 0
+    const num = f * (BM25_K1 + 1)
+    const den = f + BM25_K1 * (1 - BM25_B + (BM25_B * docLen) / idfData.avgDocLen)
+    score += (termIdf * num) / den
+  }
+  return score
+}
+
+function normalizeBm25(raw: number): number {
+  return Math.min(raw / 10, 1)
+}
+
+async function getIdf(): Promise<IdfData> {
+  if (_idfCache && Date.now() - _idfCache.ts < IDF_TTL) return _idfCache.data
+  const all = await getAllChunks()
+  const data = buildIdf(all)
+  _idfCache = { data, ts: Date.now() }
+  return data
+}
+
 // ── 2단계 문서 선별 ─────────────────────────────────────────────
 // doc-level embedding으로 관련 문서 N개 선정 → 해당 문서의 청크만 로드
 async function selectTopDocIds(
@@ -199,35 +277,27 @@ export async function searchRelevantDocs(
 
     if (chunks.length === 0) return []
 
-    // 청크 레벨 스코어링
-    let scored: { docId: string; title: string; content: string; score: number }[]
+    // 청크 레벨 스코어링 (Hybrid: 0.6 * dense + 0.4 * BM25)
+    const queryTokens = tokenize(searchQuery)
+    const idfData = await getIdf()
 
-    if (queryEmbedding.length > 0) {
-      const withEmb = chunks
-        .filter((c) => c.embedding && c.embedding.length > 0)
-        .map((c) => ({
-          docId: c.docId,
-          title: c.title,
-          content: c.content,
-          score: cosineSimilarity(queryEmbedding, c.embedding!),
-        }))
-      const noEmb = chunks
-        .filter((c) => !c.embedding || c.embedding.length === 0)
-        .map((c) => ({
-          docId: c.docId,
-          title: c.title,
-          content: c.content,
-          score: keywordScore(c.content, searchQuery) * 0.5,
-        }))
-      scored = [...withEmb, ...noEmb]
-    } else {
-      scored = chunks.map((c) => ({
+    const scored = chunks.map((c) => {
+      const denseScore =
+        queryEmbedding.length > 0 && c.embedding && c.embedding.length > 0
+          ? cosineSimilarity(queryEmbedding, c.embedding)
+          : 0
+      const bm25Raw = bm25Score(`${c.title}\n${c.content}`, queryTokens, idfData)
+      const bm25Norm = normalizeBm25(bm25Raw)
+      const fused = denseScore > 0
+        ? 0.6 * denseScore + 0.4 * bm25Norm
+        : bm25Norm
+      return {
         docId: c.docId,
         title: c.title,
         content: c.content,
-        score: keywordScore(c.content, searchQuery),
-      }))
-    }
+        score: fused,
+      }
+    })
 
     // 초기 필터: 낮은 임계값으로 후보 40개 선별 (Cohere rerank 입력)
     const candidates = scored
@@ -316,14 +386,17 @@ export async function searchAllChunksFromTopDocs(
       chunks = await getAllChunks()
       if (chunks.length === 0) return []
 
-      // doc-level 인덱스 없는 환경 — 청크 직접 스코어링
+      // doc-level 인덱스 없는 환경 — 청크 직접 스코어링 (Hybrid: 0.6 * dense + 0.4 * BM25)
+      const fallbackTokens = tokenize(searchQuery)
+      const fallbackIdf = await getIdf()
       const scored = chunks.map((chunk) => {
-        let score = 0
-        if (queryEmbedding.length > 0 && chunk.embedding && chunk.embedding.length > 0) {
-          score = cosineSimilarity(queryEmbedding, chunk.embedding)
-        } else {
-          score = keywordScore(chunk.content, searchQuery)
-        }
+        const denseScore =
+          queryEmbedding.length > 0 && chunk.embedding && chunk.embedding.length > 0
+            ? cosineSimilarity(queryEmbedding, chunk.embedding)
+            : 0
+        const bm25Raw = bm25Score(`${chunk.title}\n${chunk.content}`, fallbackTokens, fallbackIdf)
+        const bm25Norm = normalizeBm25(bm25Raw)
+        const score = denseScore > 0 ? 0.6 * denseScore + 0.4 * bm25Norm : bm25Norm
         return { docId: chunk.docId, title: chunk.title, content: chunk.content, score }
       })
       const docMaxScore: Record<string, number> = {}
@@ -354,14 +427,17 @@ export async function searchAllChunksFromTopDocs(
 
     if (chunks.length === 0) return []
 
-    // Stage 2: 선별된 청크 스코어링
+    // Stage 2: 선별된 청크 스코어링 (Hybrid: 0.6 * dense + 0.4 * BM25)
+    const queryTokens = tokenize(searchQuery)
+    const idfData = await getIdf()
     const scored = chunks.map((chunk) => {
-      let score = 0
-      if (queryEmbedding.length > 0 && chunk.embedding && chunk.embedding.length > 0) {
-        score = cosineSimilarity(queryEmbedding, chunk.embedding)
-      } else {
-        score = keywordScore(chunk.content, searchQuery)
-      }
+      const denseScore =
+        queryEmbedding.length > 0 && chunk.embedding && chunk.embedding.length > 0
+          ? cosineSimilarity(queryEmbedding, chunk.embedding)
+          : 0
+      const bm25Raw = bm25Score(`${chunk.title}\n${chunk.content}`, queryTokens, idfData)
+      const bm25Norm = normalizeBm25(bm25Raw)
+      const score = denseScore > 0 ? 0.6 * denseScore + 0.4 * bm25Norm : bm25Norm
       return { docId: chunk.docId, title: chunk.title, content: chunk.content, score }
     })
 

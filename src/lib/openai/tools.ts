@@ -73,6 +73,31 @@ export interface ToolExecutionResult {
   searchSummary: string
 }
 
+// ── 청크 직렬화 (압축 + 중복 제거) ────────────────────────────
+// 점수 높은 청크는 800자, 낮은 청크는 300자만 사용. 동일 doc 내 중복 제거.
+function serializeSources(
+  sources: { docId: string; title: string; content: string; score: number }[]
+): string {
+  if (sources.length === 0) return '관련 문서를 찾지 못했습니다.'
+
+  const dedup: typeof sources = []
+  const seen = new Set<string>()
+  for (const s of sources) {
+    const key = `${s.docId}:${s.content.slice(0, 100).replace(/\s+/g, '')}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    dedup.push(s)
+  }
+
+  return dedup
+    .map((s, i) => {
+      const maxChars = s.score >= 0.5 ? 800 : 300
+      const body = s.content.length > maxChars ? s.content.slice(0, maxChars) + '…' : s.content
+      return `### [사내문서 ${i + 1}] ${s.title}\n${body}`
+    })
+    .join('\n\n')
+}
+
 // ── 도구 실행기 ───────────────────────────────────────────────
 export async function executeToolCalls(
   calls: ChatCompletionMessageToolCall[]
@@ -101,24 +126,14 @@ export async function executeToolCalls(
 
           } else if (mode === 'list') {
             const sources = await withTimeout(summarizeForListing(args.query, 8, 500), 20000, [])
-            content =
-              sources.length > 0
-                ? sources
-                    .map((s, i) => `### [사내문서 ${i + 1}] ${s.title}\n${s.content}`)
-                    .join('\n\n')
-                : '관련 문서를 찾지 못했습니다.'
+            content = serializeSources(sources)
             sources.forEach((s) => ragSources.push({ docId: s.docId, title: s.title, score: s.score }))
             searchSummaryParts.push(`사내 문서 ${sources.length}건`)
 
           } else {
             // minScore=0.25 (Cohere rerank 있으면 내부에서 0.3 적용)
             const sources = await withTimeout(searchRelevantDocs(args.query, 10, 0.25), 20000, [])
-            content =
-              sources.length > 0
-                ? sources
-                    .map((s, i) => `### [사내문서 ${i + 1}] ${s.title}\n${s.content}`)
-                    .join('\n\n')
-                : '관련 문서를 찾지 못했습니다.'
+            content = serializeSources(sources)
             sources.forEach((s) => ragSources.push({ docId: s.docId, title: s.title, score: s.score }))
             searchSummaryParts.push(`사내 문서 ${sources.length}건`)
           }

@@ -4,8 +4,72 @@ import { TOOLS, executeToolCalls } from '@/lib/openai/tools'
 import { logAiUsage } from '@/lib/services/usage'
 import { getRelevantMemories } from '@/lib/services/memory'
 import type { ChatCompletionMessageToolCall } from 'openai/resources'
+import { ROUTER_PROMPT } from '@/lib/openai/router-prompt'
 
 export const maxDuration = 60
+
+// ── 강제 검색 휴리스틱 ────────────────────────────────────────
+// 사내 문서가 반드시 필요한 발화 패턴. nano 라우터를 건너뛰고 직접 search_internal_docs 호출.
+const ANAPHORA_RE = /(우리|기존|사내|예전|지난번|지난 캠페인|전에 했던|이전 캠페인|이전에 진행|과거 캠페인|진행했던|예전에|이전에 했던|비슷한 사례|유사 사례|유사한 사례)/
+const LISTING_RE = /(모든|전체|전부|리스트업|목록|싹 다|싸그리)/
+const WEB_RE = /(트렌드|최신|요즘|뉴스|시장 동향|최근|업데이트|발표|출시)/
+
+// 일반 플랫폼·서비스명은 고유명사로 취급하지 않음 (내부 검색 불필요)
+const COMMON_BRANDS = new Set([
+  'Instagram', 'TikTok', 'YouTube', 'Twitter', 'Facebook', 'Meta', 'LINE',
+  'Google', 'Apple', 'Amazon', 'Netflix', 'Naver', 'Kakao', 'Shopify',
+])
+
+function detectProperNouns(msg: string): string[] {
+  const out: string[] = []
+  // 영문 2단어 이상 ALL CAPS (예: TWO SLASH FOUR)
+  const m1 = msg.match(/\b[A-Z][A-Z0-9]{1,}(?:\s+[A-Z][A-Z0-9]{1,}){1,4}\b/g)
+  if (m1) out.push(...m1)
+  // CamelCase 브랜드 (예: NaverPay, KakaoStyle) — 공용 플랫폼명 제외
+  const m2 = msg.match(/\b[A-Z][a-z]+[A-Z][a-zA-Z]+\b/g)
+  if (m2) out.push(...m2.filter((w) => !COMMON_BRANDS.has(w)))
+  // 카타카나 3자 이상 연속
+  const m3 = msg.match(/[ァ-ヶー]{3,}/g)
+  if (m3) out.push(...m3)
+  // 따옴표/꺾쇠 안 텍스트 (2자 이상)
+  const m4 = msg.match(/(?:['"「『])([^'"」』\n]{2,30})(?:['"」』])/g)
+  if (m4) out.push(...m4.map((s) => s.slice(1, -1)))
+  return Array.from(new Set(out))
+}
+
+function needsInternalSearch(msg: string): boolean {
+  if (ANAPHORA_RE.test(msg)) return true
+  if (detectProperNouns(msg).length > 0) return true
+  // "캠페인 + 사례/했던/진행/분석" 같은 사내 자료성 의도
+  if (/(캠페인|클라이언트|브랜드|인플루언서).*(사례|분석|결과|성과|레퍼런스|히스토리)/.test(msg)) return true
+  return false
+}
+
+function needsWebSearch(msg: string): boolean {
+  return WEB_RE.test(msg)
+}
+
+function detectListingMode(msg: string): 'scan_all' | 'list' | 'search' {
+  if (LISTING_RE.test(msg) && /(캠페인|문서|브랜드|인플루언서|클라이언트)/.test(msg)) return 'scan_all'
+  if (/(어떤|어느|뭐가 있|있는|있어\?|있나)/.test(msg) && /(캠페인|문서|브랜드)/.test(msg)) return 'list'
+  return 'search'
+}
+
+// 직전 user 턴에서 고유명사를 추출해 anaphora 쿼리에 보강
+function enrichQueryFromHistory(
+  message: string,
+  history: { role: string; content: string }[]
+): string {
+  if (!ANAPHORA_RE.test(message)) return message
+  const lastUserTurns = history.filter((h) => h.role === 'user').slice(-2)
+  const entities: string[] = []
+  for (const t of lastUserTurns) {
+    entities.push(...detectProperNouns(t.content))
+  }
+  if (entities.length === 0) return message
+  const uniq = Array.from(new Set(entities)).slice(0, 3)
+  return `${uniq.join(' ')} ${message}`
+}
 
 // ── 정적 시스템 프롬프트 (모듈 상수) ─────────────────────────
 // 매 요청에서 동일하게 유지 → OpenAI 자동 프롬프트 캐싱 활성화 (1024+ 토큰)
@@ -194,6 +258,11 @@ type: "csv" | "markdown" | "json"
 - 단순 텍스트로 충분하면 아티팩트 불필요
 - 아티팩트는 텍스트 설명 뒤에 추가. 텍스트 없이 아티팩트만 출력 금지`
 
+// 인사·감탄·짧은 단답용 미니 프롬프트. 도메인 지식 불필요.
+const SIMPLE_SYSTEM_PROMPT = `당신은 GFutures AI다. 한국 기반 일본 디지털 마케팅 에이전시 GFutures의 내부 AI 어시스턴트.
+모든 답변은 한국어로 3문장 이내. 친근하고 간결하게 응답한다.
+업무성 질문이 오면 짧게 답한 뒤 "구체적으로 알려주시면 캠페인·인플루언서·시장 자료를 함께 찾아보겠습니다." 안내를 덧붙여라.`
+
 // ── 단순 질문 판별 ─────────────────────────────────────────────
 // tool decision + memory retrieval을 건너뛰고 1콜 스트리밍으로 처리.
 // 짧고 업무 무관한 인사·확인·감탄 질문을 휴리스틱으로 감지.
@@ -211,16 +280,12 @@ function isSimpleQuestion(msg: string): boolean {
 
 // ── 응답 길이 결정 ─────────────────────────────────────────────
 // nano 모델이 [SHORT/MEDIUM/LONG] 태그를 content에 포함 → 없으면 키워드 폴백
-function resolveMaxTokens(
-  nanoContent: string | null | undefined,
-  hasToolCalls: boolean,
-  userMsg: string
-): number {
-  const hint = nanoContent?.match(/\[(SHORT|MEDIUM|LONG)\]/)?.[1]
-  const length = hint ?? (/전략|계획|플랜|보고서|제안서|상세|분석해|알려줘|설명해|써줘|작성해/.test(userMsg) ? 'LONG' : 'MEDIUM')
-  if (length === 'LONG') return 2500
-  if (length === 'SHORT') return hasToolCalls ? 800 : 600
-  return hasToolCalls ? 1200 : 1000  // MEDIUM
+function resolveMaxTokens(hasToolCalls: boolean, userMsg: string): number {
+  const isLong = /전략|계획|플랜|보고서|제안서|상세|분석해|써줘|작성해|짜줘|만들어/.test(userMsg)
+  const isShort = /^(.{1,40})$/.test(userMsg.trim()) && /\?$|있어|뭐야|뭐임|맞아|맞나/.test(userMsg)
+  if (isLong) return 2500
+  if (isShort) return hasToolCalls ? 800 : 600
+  return hasToolCalls ? 1200 : 1000
 }
 
 // ── 히스토리 정제 ─────────────────────────────────────────────
@@ -301,13 +366,13 @@ export async function POST(req: NextRequest) {
           const simpleStream = await client.chat.completions.create({
             model: OPENAI_MODEL,
             messages: [
-              { role: 'system', content: BASE_SYSTEM_PROMPT },
+              { role: 'system', content: SIMPLE_SYSTEM_PROMPT },
               ...historyMessages,
               { role: 'user', content: message },
             ],
             stream: true,
             stream_options: { include_usage: true },
-            max_completion_tokens: 600,
+            max_completion_tokens: 300,
           })
           let sInputTokens = 0, sOutputTokens = 0, sCachedTokens = 0
           for await (const chunk of simpleStream) {
@@ -335,11 +400,7 @@ export async function POST(req: NextRequest) {
           return
         }
 
-        // ── 복잡한 질문 경로: 도구 선택·메모리·임베딩 병렬 실행 ──
-        // getEmbedding(message)은 getRelevantMemories 내부에서도 호출되므로
-        // rag.ts의 in-flight 중복 제거 덕분에 실제 API 호출은 1회만 발생.
-        controller.enqueue(send({ type: 'plan', content: '🔎 분석 중...' }))
-
+        // ── 복잡한 질문 경로: 강제 검색 or nano 라우팅 ──────────
         type ToolCallMessage = {
           role: 'assistant'
           content: string | null
@@ -352,62 +413,125 @@ export async function POST(req: NextRequest) {
         let toolOutputTokens = 0
         let userContent = message
 
-        // nano에 length hint 지시를 추가한 시스템 프롬프트 (프롬프트 캐시 영향 없음 — nano 전용)
-        const nanoSystemPrompt = BASE_SYSTEM_PROMPT +
-          '\n\n---\n\n# 응답 길이 예측\n' +
-          'tool_calls 결정과 별개로, content 첫 줄에 반드시 [SHORT], [MEDIUM], [LONG] 중 하나를 포함하라.\n' +
-          '[SHORT] 단답·확인 (≤5문장)\n' +
-          '[MEDIUM] 일반 설명·비교·분석 (300단어 이하)\n' +
-          '[LONG] 전략·계획·보고서·상세 분석 (300단어 이상)'
+        const mustSearchInternal = needsInternalSearch(message)
+        const mustSearchWeb = needsWebSearch(message)
 
-        try {
-          // 2가지 동시 시작: tool decision (nano) + memory retrieval
-          const [toolDecision, memories] = await Promise.all([
-            client.chat.completions.create({
-              model: TOOL_DECISION_MODEL,
-              messages: [
-                { role: 'system', content: nanoSystemPrompt },
-                ...historyMessages,
-                { role: 'user', content: message },
-              ],
-              tools: TOOLS,
-              tool_choice: 'auto',
-              max_completion_tokens: 300,
-            }),
+        if (mustSearchInternal) {
+          // ── 강제 검색 경로 (nano 건너뛰기) ─────────────────
+          // anaphora·고유명사 감지 시 nano 라우팅 생략하고 직접 search_internal_docs 호출.
+          controller.enqueue(send({ type: 'plan', content: '📂 사내 자료를 검색합니다...' }))
+
+          const enrichedQuery = enrichQueryFromHistory(message, historyMessages)
+          const mode = detectListingMode(message)
+
+          const forcedCalls: ChatCompletionMessageToolCall[] = [
+            {
+              id: `forced_internal_${Date.now()}`,
+              type: 'function',
+              function: {
+                name: 'search_internal_docs',
+                arguments: JSON.stringify({ query: enrichedQuery, mode }),
+              },
+            },
+          ]
+          if (mustSearchWeb) {
+            forcedCalls.push({
+              id: `forced_web_${Date.now()}`,
+              type: 'function',
+              function: {
+                name: 'web_search',
+                arguments: JSON.stringify({ query: enrichedQuery }),
+              },
+            })
+          }
+
+          const [forcedResult, forcedMemories] = await Promise.all([
+            executeToolCalls(forcedCalls),
             userId ? getRelevantMemories(userId, message, 3) : Promise.resolve([]),
           ])
 
-          // 메모리 블록 구성 → userContent 업데이트
-          if (memories.length > 0) {
-            const memoryBlock = `# 장기 기억 (이전 대화에서 학습한 정보)\n${memories.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\n---\n\n`
+          toolCallMessage = { role: 'assistant', content: null, tool_calls: forcedCalls }
+          toolMessages = forcedResult.messages
+          ragSources = forcedResult.ragSources
+
+          if (forcedMemories.length > 0) {
+            const memoryBlock = `# 장기 기억 (이전 대화에서 학습한 정보)\n${forcedMemories.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\n---\n\n`
             userContent = memoryBlock + message
           }
 
-          toolInputTokens = toolDecision.usage?.prompt_tokens ?? 0
-          toolOutputTokens = toolDecision.usage?.completion_tokens ?? 0
-          toolCallMessage = toolDecision.choices[0].message as ToolCallMessage
+          if (forcedResult.searchSummary) {
+            controller.enqueue(send({ type: 'search_done', content: forcedResult.searchSummary }))
+          }
+          // nano 호출 0회 → toolInputTokens / toolOutputTokens 0 유지
 
-          // ── 도구 실행 ─────────────────────────────────────
-          if (toolCallMessage?.tool_calls?.length) {
-            const result = await executeToolCalls(toolCallMessage.tool_calls)
-            toolMessages = result.messages
-            ragSources = result.ragSources
-            controller.enqueue(send({ type: 'plan', content: result.planText }))
-            if (result.searchSummary) {
-              controller.enqueue(send({ type: 'search_done', content: result.searchSummary }))
+        } else {
+          // ── nano 라우터 경로 ────────────────────────────────
+          controller.enqueue(send({ type: 'plan', content: '🔎 분석 중...' }))
+
+          try {
+            const [toolDecision, memories] = await Promise.all([
+              client.chat.completions.create({
+                model: TOOL_DECISION_MODEL,
+                messages: [
+                  { role: 'system', content: ROUTER_PROMPT },
+                  ...historyMessages,
+                  { role: 'user', content: message },
+                ],
+                tools: TOOLS,
+                tool_choice: 'auto',
+                max_completion_tokens: 150,
+              }),
+              userId ? getRelevantMemories(userId, message, 3) : Promise.resolve([]),
+            ])
+
+            // 메모리 블록 구성 → userContent 업데이트
+            if (memories.length > 0) {
+              const memoryBlock = `# 장기 기억 (이전 대화에서 학습한 정보)\n${memories.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\n---\n\n`
+              userContent = memoryBlock + message
             }
-          } else {
+
+            toolInputTokens = toolDecision.usage?.prompt_tokens ?? 0
+            toolOutputTokens = toolDecision.usage?.completion_tokens ?? 0
+            toolCallMessage = toolDecision.choices[0].message as ToolCallMessage
+
+            // ── 도구 실행 ─────────────────────────────────────
+            if (toolCallMessage?.tool_calls?.length) {
+              const result = await executeToolCalls(toolCallMessage.tool_calls)
+              toolMessages = result.messages
+              ragSources = result.ragSources
+              controller.enqueue(send({ type: 'plan', content: result.planText }))
+              if (result.searchSummary) {
+                controller.enqueue(send({ type: 'search_done', content: result.searchSummary }))
+              }
+            } else {
+              controller.enqueue(send({ type: 'plan', content: '💬 질문을 분석합니다.' }))
+            }
+          } catch (toolErr) {
+            // Function Calling 실패 시 단순 응답으로 폴백
+            console.warn('Function Calling 폴백:', toolErr)
             controller.enqueue(send({ type: 'plan', content: '💬 질문을 분석합니다.' }))
           }
-        } catch (toolErr) {
-          // Function Calling 실패 시 단순 응답으로 폴백
-          console.warn('Function Calling 폴백:', toolErr)
-          controller.enqueue(send({ type: 'plan', content: '💬 질문을 분석합니다.' }))
         }
 
         // ── 최종 응답 메시지 구성 ─────────────────────────
+        // grounding 메시지: 검색 결과가 있을 때만 citation 강제. BASE_SYSTEM_PROMPT 캐시 유지.
+        const groundingMessage: import('openai/resources').ChatCompletionMessageParam | null =
+          ragSources.length > 0
+            ? {
+                role: 'system',
+                content: `# 이번 답변 grounding 규칙 (필수)
+이번 응답에 사내 자료 ${ragSources.length}건이 검색되었다. 아래 규칙을 엄수하라.
+
+1. 사내 자료를 인용한 모든 주장 뒤에 반드시 [출처: 문서명] 인라인 표기.
+2. 사내 자료에 없는 사실은 (추정) 표기 또는 답변에서 제외.
+3. 검색된 사내 자료가 질문과 무관할 경우에만 "사내 자료에서 직접 매칭 없음. 유사 사례 기반 추론." 1줄 표기 후 일반 지식 답변 허용.
+4. 사내 자료를 단 하나도 인용하지 않은 채 일반론만으로 답변하는 것 금지. 검색된 자료를 반드시 1회 이상 인용하라.`,
+              }
+            : null
+
         const finalMessages: import('openai/resources').ChatCompletionMessageParam[] = [
           { role: 'system', content: BASE_SYSTEM_PROMPT },
+          ...(groundingMessage ? [groundingMessage] : []),
           ...historyMessages,
           { role: 'user', content: userContent },
           ...(toolCallMessage?.tool_calls?.length
@@ -422,7 +546,7 @@ export async function POST(req: NextRequest) {
         // nano 모델의 [SHORT/MEDIUM/LONG] 태그 → max_completion_tokens 결정.
         // max_completion_tokens는 상한일 뿐 — 짧은 답변이면 자연히 일찍 끝남.
         const hasToolCalls = !!(toolCallMessage?.tool_calls?.length)
-        const maxTokens = resolveMaxTokens(toolCallMessage?.content, hasToolCalls, message)
+        const maxTokens = resolveMaxTokens(hasToolCalls, message)
 
         // ── 스트리밍 응답 ─────────────────────────────────
         const openaiStream = await client.chat.completions.create({
