@@ -113,8 +113,12 @@ function shortNum(n: number) {
 }
 
 function extractVideoVal(actions: VideoAction[] | undefined): number {
-  if (!actions) return 0
-  return parseInt(actions.find(a => a.action_type === 'video_view')?.value ?? '0')
+  if (!actions || actions.length === 0) return 0
+  // Meta API는 action_type이 버전/목표에 따라 다를 수 있음
+  // ("video_view", "post_video_view", "omni_video_view" 등)
+  // → 가장 큰 값을 반환 (일반적으로 첫 번째 항목이 합산값)
+  const vals = actions.map(a => parseInt(a.value ?? '0')).filter(n => !isNaN(n) && n > 0)
+  return vals.length > 0 ? Math.max(...vals) : 0
 }
 
 // 0~1 정규화 후 heatmap 색상 — #f8fafc(거의흰색) → #6366f1(인디고) 직접 보간
@@ -322,7 +326,7 @@ export default function AnalyticsPage() {
     .map(v => {
       const imp = parseInt(v.impressions || '0')
       const s3 = extractVideoVal(v.video_3s_watched_actions)
-      if (imp === 0 || s3 === 0) return null
+      if (imp === 0) return null  // impressions 없는 캠페인만 제외 (s3=0이어도 데이터 표시)
       const p25 = extractVideoVal(v.video_p25_watched_actions)
       const p50 = extractVideoVal(v.video_p50_watched_actions)
       const p75 = extractVideoVal(v.video_p75_watched_actions)
