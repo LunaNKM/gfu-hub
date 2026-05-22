@@ -17,6 +17,9 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Cell, PieChart, Pie,
 } from 'recharts'
+import { CampaignWorkflow } from '@/components/campaigns/CampaignWorkflow'
+import { CampaignCandidateScores } from '@/components/campaigns/CampaignCandidateScores'
+import { CampaignAiActions } from '@/components/campaigns/CampaignAiActions'
 
 // ── 상태/탭 메타 ─────────────────────────────────────────────────
 const STATUS_COLS: Record<CampaignStatus, string> = {
@@ -806,6 +809,7 @@ export default function CampaignDetailPage() {
   const [editingStatus, setEditingStatus] = useState(false)
   const [savingStatus, setSavingStatus] = useState(false)
   const [activeKey, setActiveKey]       = useState<string | null>(null)
+  const [activePanel, setActivePanel]   = useState<'workflow' | 'candidates' | 'ai' | 'sheets'>('workflow')
 
   const load = useCallback(async () => {
     if (!token) return
@@ -928,6 +932,35 @@ export default function CampaignDetailPage() {
           {campaign.memo && <p className="mt-3 text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">{campaign.memo}</p>}
         </div>
 
+        {/* 운영 탭 */}
+        <div className="flex gap-2 overflow-x-auto">
+          {([
+            ['workflow', '워크플로우'],
+            ['candidates', '후보 점수'],
+            ['ai', 'AI 실행'],
+            ['sheets', 'Sheets 분석'],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setActivePanel(key)}
+              className={clsx(
+                'px-4 py-2 rounded-xl text-sm font-medium border whitespace-nowrap transition-colors',
+                activePanel === key
+                  ? 'bg-gray-900 text-white border-gray-900'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {activePanel === 'workflow' && <CampaignWorkflow campaignId={id} />}
+        {activePanel === 'candidates' && <CampaignCandidateScores campaignId={id} />}
+        {activePanel === 'ai' && <CampaignAiActions campaignId={id} />}
+
+        {activePanel === 'sheets' && (
+        <>
         {/* Sheets 연동 */}
         <div className="bg-white border border-gray-200 rounded-2xl p-5">
           <h2 className="text-sm font-semibold text-gray-800 mb-3">Google Sheets 연동</h2>
@@ -1004,6 +1037,8 @@ export default function CampaignDetailPage() {
               <p className="text-sm text-gray-400">조회수 · ER · 인플루언서 현황이 대시보드로 표시됩니다</p>
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

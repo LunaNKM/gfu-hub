@@ -11,10 +11,39 @@ import {
 import { clsx } from 'clsx'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
+import { IntelligenceWorkspace } from '@/components/intelligence/IntelligenceWorkspace'
 
 // ── 브리프 카드 ───────────────────────────────────────────────
 function BriefCard({ brief, isLatest }: { brief: MarketBrief; isLatest: boolean }) {
+  const { user } = useAuth()
   const [showSources, setShowSources] = useState(false)
+  const [savingIdx, setSavingIdx] = useState<number | null>(null)
+
+  const saveTopic = async (topic: MarketBrief['topics'][number], index: number) => {
+    if (!user) return
+    setSavingIdx(index)
+    try {
+      const token = await user.getIdToken()
+      await fetch('/api/intelligence/trends', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          title: topic.title,
+          summary: topic.description,
+          category: /美容|コスメ|뷰티|화장품|beauty/i.test(`${topic.title} ${topic.description}`) ? 'beauty' : 'consumer',
+          platforms: ['Instagram', 'TikTok'].filter((p) => `${topic.title} ${topic.description}`.includes(p)),
+          relatedBrands: [],
+          relatedCompetitors: [],
+          impactScore: isLatest ? 75 : 60,
+          confidenceScore: topic.source ? 75 : 55,
+          sourceUrls: brief.sources.map((s) => s.url),
+          observedAt: brief.searchDate || brief.date,
+        }),
+      })
+    } finally {
+      setSavingIdx(null)
+    }
+  }
 
   return (
     <div
@@ -81,6 +110,13 @@ function BriefCard({ brief, isLatest }: { brief: MarketBrief; isLatest: boolean 
                   {topic.source && (
                     <p className="text-xs text-gray-400 mt-0.5 italic">출처: {topic.source}</p>
                   )}
+                  <button
+                    onClick={() => saveTopic(topic, i)}
+                    disabled={savingIdx === i}
+                    className="mt-2 text-xs text-indigo-500 hover:text-indigo-700 disabled:opacity-50"
+                  >
+                    {savingIdx === i ? '저장 중...' : '트렌드 저장'}
+                  </button>
                 </div>
               </div>
             ))}
@@ -218,6 +254,8 @@ export default function IntelligencePage() {
             {genError}
           </div>
         )}
+
+        <IntelligenceWorkspace />
 
         {/* 오늘 이미 있을 때 메시지 */}
         {hasTodayBrief && !loading && (

@@ -213,9 +213,15 @@ export interface Campaign {
   clientName: string
   campaignName: string
   status: CampaignStatus
+  currentStage?: CampaignStage
   startDate: string        // YYYY-MM-DD
   endDate: string          // YYYY-MM-DD
   budget: number           // 원
+  targetBrand?: string
+  targetPlatforms?: string[]
+  targetCategories?: string[]
+  targetBudget?: number
+  objectives?: string[]
   sheetsUrl?: string
   sheetsIndex?: SheetIndexItem[]
   sheets?: Record<string, ParsedSheet>
@@ -224,4 +230,147 @@ export interface Campaign {
   createdAt: Date
   updatedAt: Date
   createdBy: string
+}
+
+export type CampaignStage =
+  | 'discovery'
+  | 'contacting'
+  | 'contracting'
+  | 'draft_review'
+  | 'approval'
+  | 'publishing'
+  | 'performance'
+  | 'reporting'
+  | 'completed'
+
+export type CampaignTaskStatus = 'todo' | 'doing' | 'done' | 'blocked'
+
+export interface CampaignTask {
+  id: string
+  campaignId: string
+  stage: CampaignStage
+  title: string
+  description?: string
+  assigneeId?: string
+  dueDate?: string
+  status: CampaignTaskStatus
+  relatedInfluencerId?: string
+  createdAt: Date
+  updatedAt: Date
+  createdBy: string
+}
+
+export type CandidateStatus =
+  | 'recommended'
+  | 'shortlisted'
+  | 'contacting'
+  | 'accepted'
+  | 'rejected'
+
+export interface CampaignInfluencerCandidate {
+  id: string
+  campaignId: string
+  influencerId: string
+  status: CandidateStatus
+  scoreId?: string
+  note?: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface InfluencerScore {
+  id: string
+  influencerId: string
+  campaignId?: string
+  handle: string
+  platform: string
+  followers: number
+  erScore: number
+  cpvScore: number
+  followerScore: number
+  historyScore: number
+  brandFitScore: number
+  platformFitScore: number
+  riskScore: number
+  totalScore: number
+  expectedViews?: number
+  estimatedCpv?: number
+  reasons: string[]
+  risks: string[]
+  updatedAt: Date
+}
+
+export type AiActionType =
+  | 'recommend_influencers'
+  | 'draft_proposal'
+  | 'review_content'
+  | 'generate_report_insights'
+  | 'check_japanese_pr_compliance'
+  | 'summarize_campaign'
+
+export interface AiActionRun {
+  id: string
+  type: AiActionType
+  campaignId?: string
+  influencerId?: string
+  input: Record<string, unknown>
+  output: Record<string, unknown>
+  status: 'queued' | 'running' | 'completed' | 'failed'
+  errorMessage?: string
+  createdBy: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface TrendSignal {
+  id: string
+  title: string
+  summary: string
+  market: 'JP'
+  category: 'beauty' | 'fashion' | 'food' | 'travel' | 'platform' | 'consumer' | 'other'
+  platforms: string[]
+  relatedBrands: string[]
+  relatedCompetitors: string[]
+  impactScore: number
+  confidenceScore: number
+  sourceUrls: string[]
+  observedAt: string
+  savedBy?: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface BrandImpact {
+  id: string
+  trendSignalId: string
+  brandName: string
+  relevanceScore: number
+  opportunity: string
+  risk: string
+  suggestedAction: string
+  createdAt: Date
+}
+
+export interface CompetitorWatch {
+  id: string
+  brandName: string
+  competitorName: string
+  keywords: string[]
+  platforms: string[]
+  active: boolean
+  lastCheckedAt?: Date
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface WeeklyMarketReport {
+  id: string
+  weekStart: string
+  weekEnd: string
+  summary: string
+  keyTrends: string[]
+  brandImpacts: BrandImpact[]
+  competitorMoves: string[]
+  recommendedActions: string[]
+  createdAt: Date
 }
