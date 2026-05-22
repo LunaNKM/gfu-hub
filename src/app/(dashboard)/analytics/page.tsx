@@ -47,11 +47,6 @@ interface VideoRow {
   video_play_actions?: VideoAction[]
   video_continuous_2_sec_watched_actions?: VideoAction[]
   video_thruplay_watched_actions?: VideoAction[]
-  video_avg_time_watch_actions?: VideoAction[]
-  video_p25_watched_actions?: VideoAction[]
-  video_p50_watched_actions?: VideoAction[]
-  video_p75_watched_actions?: VideoAction[]
-  video_p100_watched_actions?: VideoAction[]
 }
 
 interface HourlyRow {
@@ -331,25 +326,17 @@ export default function AnalyticsPage() {
       const plays = extractVideoVal(v.video_play_actions)
       const s2 = extractVideoVal(v.video_continuous_2_sec_watched_actions)
       const thruplay = extractVideoVal(v.video_thruplay_watched_actions)
-      const avgTimeMs = extractVideoVal(v.video_avg_time_watch_actions)
       if (imp === 0) return null
-      const p25 = extractVideoVal(v.video_p25_watched_actions)
-      const p50 = extractVideoVal(v.video_p50_watched_actions)
-      const p75 = extractVideoVal(v.video_p75_watched_actions)
-      const p100 = extractVideoVal(v.video_p100_watched_actions)
-      // Hook Rate = 2초 시청 / 노출 (구 3s 대체)
       const base = plays > 0 ? plays : imp
       return {
         id: v.campaign_id,
         name: v.campaign_name.length > 24 ? v.campaign_name.slice(0, 24) + '…' : v.campaign_name,
-        hookRate: base > 0 ? (s2 / base * 100) : 0,
-        p25Rate: base > 0 ? (p25 / base * 100) : 0,
-        p50Rate: base > 0 ? (p50 / base * 100) : 0,
-        p75Rate: base > 0 ? (p75 / base * 100) : 0,
-        holdRate: s2 > 0 ? (thruplay / s2 * 100) : 0,  // Hold Rate = 완주 / 2초시청
-        avgTimeSec: Math.round(avgTimeMs / 1000),
+        hookRate: base > 0 ? (s2 / base * 100) : 0,   // 2초 시청 / 재생
+        holdRate: s2 > 0 ? (thruplay / s2 * 100) : 0,  // ThruPlay / 2초시청
         impressions: imp,
         plays,
+        s2,
+        thruplay,
       }
     })
     .filter(Boolean)
@@ -838,12 +825,10 @@ export default function AnalyticsPage() {
                       </div>
                       <div className="space-y-2">
                         {[
-                          { label: '노출 (100%)', pct: 100, color: '#e2e8f0' },
-                          { label: `2초 시청 (${v.hookRate.toFixed(1)}%)`, pct: v.hookRate, color: '#3b82f6' },
-                          { label: `25% 시청 (${v.p25Rate.toFixed(1)}%)`, pct: v.p25Rate, color: '#60a5fa' },
-                          { label: `50% 시청 (${v.p50Rate.toFixed(1)}%)`, pct: v.p50Rate, color: '#93c5fd' },
-                          { label: `75% 시청 (${v.p75Rate.toFixed(1)}%)`, pct: v.p75Rate, color: '#bfdbfe' },
-                          { label: `완주 (${v.holdRate.toFixed(1)}%)`, pct: v.holdRate, color: '#10b981' },
+                          { label: `노출 (${v.impressions.toLocaleString()})`, pct: 100, color: '#e2e8f0' },
+                          { label: `재생 (${v.plays.toLocaleString()})`, pct: v.impressions > 0 ? v.plays / v.impressions * 100 : 0, color: '#a78bfa' },
+                          { label: `2초 시청 — Hook Rate ${v.hookRate.toFixed(1)}%`, pct: v.hookRate, color: '#3b82f6' },
+                          { label: `ThruPlay — Hold Rate ${v.holdRate.toFixed(1)}%`, pct: v.holdRate, color: '#10b981' },
                         ].map(bar => (
                           <div key={bar.label} className="flex items-center gap-3">
                             <span className="text-xs text-gray-500 w-36 shrink-0">{bar.label}</span>
