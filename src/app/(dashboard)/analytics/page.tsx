@@ -44,7 +44,10 @@ interface PlacementRow {
 interface VideoAction { action_type: string; value: string }
 interface VideoRow {
   campaign_id: string; campaign_name: string; impressions: string
-  video_3s_watched_actions?: VideoAction[]
+  video_play_actions?: VideoAction[]
+  video_continuous_2_sec_watched_actions?: VideoAction[]
+  video_thruplay_watched_actions?: VideoAction[]
+  video_avg_time_watch_actions?: VideoAction[]
   video_p25_watched_actions?: VideoAction[]
   video_p50_watched_actions?: VideoAction[]
   video_p75_watched_actions?: VideoAction[]
@@ -325,21 +328,28 @@ export default function AnalyticsPage() {
     .filter(v => selectedIds.size === 0 || selectedIds.has(v.campaign_id))
     .map(v => {
       const imp = parseInt(v.impressions || '0')
-      const s3 = extractVideoVal(v.video_3s_watched_actions)
-      if (imp === 0) return null  // impressions 없는 캠페인만 제외 (s3=0이어도 데이터 표시)
+      const plays = extractVideoVal(v.video_play_actions)
+      const s2 = extractVideoVal(v.video_continuous_2_sec_watched_actions)
+      const thruplay = extractVideoVal(v.video_thruplay_watched_actions)
+      const avgTimeMs = extractVideoVal(v.video_avg_time_watch_actions)
+      if (imp === 0) return null
       const p25 = extractVideoVal(v.video_p25_watched_actions)
       const p50 = extractVideoVal(v.video_p50_watched_actions)
       const p75 = extractVideoVal(v.video_p75_watched_actions)
       const p100 = extractVideoVal(v.video_p100_watched_actions)
+      // Hook Rate = 2초 시청 / 노출 (구 3s 대체)
+      const base = plays > 0 ? plays : imp
       return {
         id: v.campaign_id,
         name: v.campaign_name.length > 24 ? v.campaign_name.slice(0, 24) + '…' : v.campaign_name,
-        hookRate: ((s3 / imp) * 100),
-        p25Rate: imp > 0 ? (p25 / imp * 100) : 0,
-        p50Rate: imp > 0 ? (p50 / imp * 100) : 0,
-        p75Rate: imp > 0 ? (p75 / imp * 100) : 0,
-        holdRate: s3 > 0 ? (p100 / s3 * 100) : 0,
+        hookRate: base > 0 ? (s2 / base * 100) : 0,
+        p25Rate: base > 0 ? (p25 / base * 100) : 0,
+        p50Rate: base > 0 ? (p50 / base * 100) : 0,
+        p75Rate: base > 0 ? (p75 / base * 100) : 0,
+        holdRate: s2 > 0 ? (thruplay / s2 * 100) : 0,  // Hold Rate = 완주 / 2초시청
+        avgTimeSec: Math.round(avgTimeMs / 1000),
         impressions: imp,
+        plays,
       }
     })
     .filter(Boolean)
@@ -805,7 +815,7 @@ export default function AnalyticsPage() {
               <div className="mb-4">
                 <h2 className="text-sm font-semibold text-gray-700">영상 광고 시청 퍼널</h2>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Hook Rate(3초 시청률) = 썸네일 매력도 · Hold Rate(완주/3초) = 콘텐츠 흡입력
+                  Hook Rate(2초 연속 시청률) = 썸네일 매력도 · Hold Rate(완주/2초) = 콘텐츠 흡입력
                 </p>
               </div>
 
@@ -829,7 +839,7 @@ export default function AnalyticsPage() {
                       <div className="space-y-2">
                         {[
                           { label: '노출 (100%)', pct: 100, color: '#e2e8f0' },
-                          { label: `3초 시청 (${v.hookRate.toFixed(1)}%)`, pct: v.hookRate, color: '#3b82f6' },
+                          { label: `2초 시청 (${v.hookRate.toFixed(1)}%)`, pct: v.hookRate, color: '#3b82f6' },
                           { label: `25% 시청 (${v.p25Rate.toFixed(1)}%)`, pct: v.p25Rate, color: '#60a5fa' },
                           { label: `50% 시청 (${v.p50Rate.toFixed(1)}%)`, pct: v.p50Rate, color: '#93c5fd' },
                           { label: `75% 시청 (${v.p75Rate.toFixed(1)}%)`, pct: v.p75Rate, color: '#bfdbfe' },

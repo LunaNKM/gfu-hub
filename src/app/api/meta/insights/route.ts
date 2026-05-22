@@ -50,8 +50,13 @@ export async function GET(req: NextRequest) {
 
     const videoFields = [
       'campaign_name', 'campaign_id', 'impressions',
-      'video_3s_watched_actions', 'video_p25_watched_actions',
-      'video_p50_watched_actions', 'video_p75_watched_actions',
+      'video_play_actions',                     // 재생 수
+      'video_continuous_2_sec_watched_actions', // 2초+ 시청 (구 3s 대체)
+      'video_thruplay_watched_actions',         // 완주 시청 (15s 또는 전체)
+      'video_avg_time_watch_actions',           // 평균 시청 시간(ms)
+      'video_p25_watched_actions',
+      'video_p50_watched_actions',
+      'video_p75_watched_actions',
       'video_p100_watched_actions',
     ].join(',')
 
@@ -60,10 +65,7 @@ export async function GET(req: NextRequest) {
       fetch(`${base}?fields=${trendFields}&${dp}&time_increment=1&limit=100&${tk}`).then(r => r.json()),
       safeFetch(`${base}?fields=impressions,clicks,spend,ctr,cpc&breakdowns=age,gender&${dp}&level=account&${tk}`),
       safeFetch(`${base}?fields=impressions,clicks,spend,ctr,cpc,cpm&breakdowns=publisher_platform,platform_position&${dp}&level=account&${tk}`),
-      fetch(`${base}?fields=${videoFields}&${dp}&level=campaign&limit=50&${tk}`)
-        .then(r => r.json())
-        .then(d => { console.log('[Meta Video Raw]', JSON.stringify(d).slice(0, 500)); return d.data ?? [] })
-        .catch(() => []),
+      safeFetch(`${base}?fields=${videoFields}&${dp}&level=campaign&limit=50&${tk}`),
       safeFetch(`${base}?fields=impressions,clicks,ctr,spend&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&${dp}&level=account&${tk}`),
     ])
 
