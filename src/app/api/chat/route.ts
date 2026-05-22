@@ -3,7 +3,6 @@ import { getOpenAIClient, OPENAI_MODEL, TOOL_DECISION_MODEL } from '@/lib/openai
 import { TOOLS, executeToolCalls } from '@/lib/openai/tools'
 import { logAiUsage } from '@/lib/services/usage'
 import { getRelevantMemories } from '@/lib/services/memory'
-import { getEmbedding } from '@/lib/openai/rag'
 import type { ChatCompletionMessageToolCall } from 'openai/resources'
 
 export const maxDuration = 60
@@ -131,6 +130,16 @@ const BASE_SYSTEM_PROMPT = `# 역할 및 전문가 배경
 
 ---
 
+# 인용 (사내 자료 사용 시 필수)
+
+사내 문서를 직접 참조한 내용 바로 뒤에 **[출처: 문서제목]** 을 인라인으로 명시한다.
+- 사내 자료 직접 인용 → **[출처: 문서명]**
+- 웹 검색 결과 인용 → **[웹: 출처명]**
+- 일반 지식·추론 → **(추정)**
+- 출처 표시 없이 사내 자료를 일반 지식처럼 서술 금지
+
+---
+
 # 아티팩트 출력 (시각화·파일)
 
 텍스트보다 시각적으로 표현하면 더 유용한 경우, 아래 아티팩트 블록을 텍스트 답변 뒤에 추가한다.
@@ -185,13 +194,11 @@ type: "csv" | "markdown" | "json"
 - 단순 텍스트로 충분하면 아티팩트 불필요
 - 아티팩트는 텍스트 설명 뒤에 추가. 텍스트 없이 아티팩트만 출력 금지`
 
-// ── TASK 1: 단순 질문 판별 ────────────────────────────────────
+// ── 단순 질문 판별 ─────────────────────────────────────────────
 // tool decision + memory retrieval을 건너뛰고 1콜 스트리밍으로 처리.
 // 짧고 업무 무관한 인사·확인·감탄 질문을 휴리스틱으로 감지.
 function isSimpleQuestion(msg: string): boolean {
   const t = msg.trim()
-  // 긴 답변이 필요한 질문은 단순으로 분류하지 않음
-  if (isLongAnswerNeeded(t)) return false
   // 35자 미만 + 핵심 업무 키워드 없으면 단순 질문으로 간주
   if (
     t.length < 35 &&
@@ -202,48 +209,18 @@ function isSimpleQuestion(msg: string): boolean {
   return false
 }
 
-// 긴 답변이 필요한 질문 판별 — 전략/계획/분석 요청
-function isLongAnswerNeeded(msg: string): boolean {
-  return /플랜|전략|계획|방안|제안서|보고서|정리해|써줘|작성해|알려줘|설명해|분석해|정의해|비교해|단계|순서|어떻게|무엇인지|어떤지/.test(msg)
-}
-
-// ── TASK 6: 시맨틱 캐시 ─────────────────────────────────────
-// 유사 쿼리(코사인 ≥ 0.95)에 대해 이전 응답을 재사용.
-// 인메모리 캐시 (서버 재시작 시 초기화, 콜드 스타트엔 효과 없음).
-interface SemanticCacheEntry {
-  queryEmbedding: number[]
-  response: string
-  ts: number
-}
-const semanticCache: SemanticCacheEntry[] = []
-const SEMANTIC_CACHE_TTL = 60 * 60 * 1000  // 1시간
-const SEMANTIC_CACHE_THRESHOLD = 0.95
-const SEMANTIC_CACHE_MAX = 100
-
-function _cosineSim(a: number[], b: number[]): number {
-  if (a.length !== b.length || a.length === 0) return 0
-  let dot = 0, na = 0, nb = 0
-  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] ** 2; nb += b[i] ** 2 }
-  return na === 0 || nb === 0 ? 0 : dot / (Math.sqrt(na) * Math.sqrt(nb))
-}
-
-function findSemanticCache(queryEmbedding: number[]): string | null {
-  const now = Date.now()
-  for (const entry of semanticCache) {
-    if (now - entry.ts > SEMANTIC_CACHE_TTL) continue
-    if (_cosineSim(queryEmbedding, entry.queryEmbedding) >= SEMANTIC_CACHE_THRESHOLD) {
-      return entry.response
-    }
-  }
-  return null
-}
-
-function addToSemanticCache(queryEmbedding: number[], response: string): void {
-  const now = Date.now()
-  const alive = semanticCache.filter((e) => now - e.ts <= SEMANTIC_CACHE_TTL)
-  semanticCache.length = 0
-  semanticCache.push(...alive.slice(-(SEMANTIC_CACHE_MAX - 1)))
-  semanticCache.push({ queryEmbedding, response, ts: now })
+// ── 응답 길이 결정 ─────────────────────────────────────────────
+// nano 모델이 [SHORT/MEDIUM/LONG] 태그를 content에 포함 → 없으면 키워드 폴백
+function resolveMaxTokens(
+  nanoContent: string | null | undefined,
+  hasToolCalls: boolean,
+  userMsg: string
+): number {
+  const hint = nanoContent?.match(/\[(SHORT|MEDIUM|LONG)\]/)?.[1]
+  const length = hint ?? (/전략|계획|플랜|보고서|제안서|상세|분석해|알려줘|설명해|써줘|작성해/.test(userMsg) ? 'LONG' : 'MEDIUM')
+  if (length === 'LONG') return 2500
+  if (length === 'SHORT') return hasToolCalls ? 800 : 600
+  return hasToolCalls ? 1200 : 1000  // MEDIUM
 }
 
 // ── 히스토리 정제 ─────────────────────────────────────────────
@@ -374,15 +351,22 @@ export async function POST(req: NextRequest) {
         let toolInputTokens = 0
         let toolOutputTokens = 0
         let userContent = message
-        let queryEmbedding: number[] = []
+
+        // nano에 length hint 지시를 추가한 시스템 프롬프트 (프롬프트 캐시 영향 없음 — nano 전용)
+        const nanoSystemPrompt = BASE_SYSTEM_PROMPT +
+          '\n\n---\n\n# 응답 길이 예측\n' +
+          'tool_calls 결정과 별개로, content 첫 줄에 반드시 [SHORT], [MEDIUM], [LONG] 중 하나를 포함하라.\n' +
+          '[SHORT] 단답·확인 (≤5문장)\n' +
+          '[MEDIUM] 일반 설명·비교·분석 (300단어 이하)\n' +
+          '[LONG] 전략·계획·보고서·상세 분석 (300단어 이상)'
 
         try {
-          // 3가지 동시 시작: tool decision (nano) + memory retrieval + query embedding
-          const [toolDecision, memories, qEmb] = await Promise.all([
+          // 2가지 동시 시작: tool decision (nano) + memory retrieval
+          const [toolDecision, memories] = await Promise.all([
             client.chat.completions.create({
               model: TOOL_DECISION_MODEL,
               messages: [
-                { role: 'system', content: BASE_SYSTEM_PROMPT },
+                { role: 'system', content: nanoSystemPrompt },
                 ...historyMessages,
                 { role: 'user', content: message },
               ],
@@ -391,22 +375,7 @@ export async function POST(req: NextRequest) {
               max_completion_tokens: 300,
             }),
             userId ? getRelevantMemories(userId, message, 3) : Promise.resolve([]),
-            getEmbedding(message),  // TASK 6: semantic cache key (dedup'd with memory retrieval)
           ])
-
-          queryEmbedding = qEmb
-
-          // TASK 6: 시맨틱 캐시 히트 → 저장된 응답 스트리밍 후 조기 반환
-          const cachedResponse = findSemanticCache(queryEmbedding)
-          if (cachedResponse) {
-            controller.enqueue(send({ type: 'plan', content: '⚡ 캐시에서 응답합니다.' }))
-            const tokens = cachedResponse.match(/[\s\S]{1,30}/g) ?? []
-            for (const tok of tokens) {
-              controller.enqueue(send({ type: 'chunk', content: tok }))
-            }
-            controller.enqueue(send({ type: 'done', ragSources: [], tokenUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } }))
-            return
-          }
 
           // 메모리 블록 구성 → userContent 업데이트
           if (memories.length > 0) {
@@ -450,21 +419,10 @@ export async function POST(req: NextRequest) {
         ]
 
         // ── 출력 토큰 한도 결정 ───────────────────────────
-        // 전략·플랜·분석 요청처럼 긴 답변이 필요한 경우엔 상한을 높임.
-        // max_completion_tokens는 상한일 뿐 — 짧은 답변이면 자연히 일찍 끝나므로
-        // 높게 잡아도 짧은 응답의 레이턴시에는 영향 없음.
-        const longAnswer = isLongAnswerNeeded(message)
-        const maxTokens = (() => {
-          if (!toolCallMessage?.tool_calls?.length) return longAnswer ? 2500 : 800
-          for (const call of toolCallMessage.tool_calls) {
-            if (call.function.name === 'search_internal_docs') {
-              const args = JSON.parse(call.function.arguments) as { mode?: string }
-              if (args.mode === 'scan_all' || args.mode === 'list') return longAnswer ? 2500 : 1500
-            }
-            if (call.function.name === 'web_search') return longAnswer ? 2500 : 1500
-          }
-          return longAnswer ? 2000 : 1000
-        })()
+        // nano 모델의 [SHORT/MEDIUM/LONG] 태그 → max_completion_tokens 결정.
+        // max_completion_tokens는 상한일 뿐 — 짧은 답변이면 자연히 일찍 끝남.
+        const hasToolCalls = !!(toolCallMessage?.tool_calls?.length)
+        const maxTokens = resolveMaxTokens(toolCallMessage?.content, hasToolCalls, message)
 
         // ── 스트리밍 응답 ─────────────────────────────────
         const openaiStream = await client.chat.completions.create({
@@ -478,13 +436,11 @@ export async function POST(req: NextRequest) {
         let inputTokens = 0
         let outputTokens = 0
         let cachedTokens = 0
-        let fullContent = ''  // TASK 6: semantic cache에 저장할 전체 응답
 
         for await (const chunk of openaiStream) {
           const content = chunk.choices[0]?.delta?.content
           if (content) {
             controller.enqueue(send({ type: 'chunk', content }))
-            fullContent += content
           }
           if (chunk.usage) {
             inputTokens = chunk.usage.prompt_tokens ?? 0
@@ -492,11 +448,6 @@ export async function POST(req: NextRequest) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             cachedTokens = (chunk.usage as any).prompt_tokens_details?.cached_tokens ?? 0
           }
-        }
-
-        // TASK 6: 응답을 시맨틱 캐시에 저장 (다음 유사 쿼리에 재사용)
-        if (queryEmbedding.length > 0 && fullContent.length > 50) {
-          addToSemanticCache(queryEmbedding, fullContent)
         }
 
         // ── 사용량 로그 (도구 선택 + 응답 토큰 합산) ─────

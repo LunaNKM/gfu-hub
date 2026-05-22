@@ -1,10 +1,56 @@
-import { collection, getDocs, query, orderBy, limit as firestoreLimit } from 'firebase/firestore'
+import {
+  collection,
+  getDocs,
+  query,
+  orderBy,
+  where,
+  limit as firestoreLimit,
+} from 'firebase/firestore'
 import { getFirestoreInstance } from '../firebase/firestore'
 import { DocChunk } from '@/types'
 import { getOpenAIClient } from './client'
 import { cohereRerank } from './rerank'
 
-// docChunks 10분 세션 캐시 — 문서가 자주 바뀌지 않으므로 재요청 불필요
+// ── Doc-level 인덱스 (2단계 검색 Stage 1) ───────────────────────
+// docs 컬렉션에서 docEmbedding 필드만 활용 — 청크 전체 로드 없이 관련 문서 선별
+interface DocIndex {
+  id: string
+  title: string
+  docEmbedding?: number[]
+}
+
+let docIndexCache: { data: DocIndex[]; ts: number } | null = null
+const DOC_INDEX_TTL = 10 * 60 * 1000  // 10분
+
+export function invalidateDocIndexCache(): void {
+  docIndexCache = null
+  chunksCache = null
+}
+
+async function getDocIndex(): Promise<DocIndex[]> {
+  if (docIndexCache && Date.now() - docIndexCache.ts < DOC_INDEX_TTL) return docIndexCache.data
+
+  const db = getFirestoreInstance()
+  if (!db) return []
+
+  try {
+    const q = query(collection(db, 'docs'), orderBy('updatedAt', 'desc'))
+    const snap = await getDocs(q)
+    const data: DocIndex[] = snap.docs.map((d) => ({
+      id: d.id,
+      title: (d.data().title as string) ?? '',
+      docEmbedding: d.data().docEmbedding as number[] | undefined,
+    }))
+    docIndexCache = { data, ts: Date.now() }
+    return data
+  } catch (err) {
+    console.error('DocIndex 로드 오류:', err)
+    return []
+  }
+}
+
+// ── 청크 캐시 (2단계 검색 Stage 2) ─────────────────────────────
+// 특정 docId 목록의 청크만 로드 — 전체 300개 제한 해소
 let chunksCache: { data: DocChunk[]; ts: number } | null = null
 const CHUNKS_TTL = 10 * 60 * 1000
 
@@ -12,9 +58,7 @@ export function invalidateChunksCache(): void {
   chunksCache = null
 }
 
-// docChunks 최대 로드 수 — Serverless 환경에서 인메모리 캐시가 콜드 상태일 때
-// 전체 조회 시 문서 수에 비례해 느려지므로 최신 300개로 제한
-// (오래된 문서보다 최신 문서가 검색에 더 유용)
+// scan_all / summarize 용 전체 청크 (최신 300개 제한 유지)
 const CHUNKS_FETCH_LIMIT = 300
 
 async function getAllChunks(): Promise<DocChunk[]> {
@@ -30,8 +74,36 @@ async function getAllChunks(): Promise<DocChunk[]> {
   return data
 }
 
-// TASK 6: 동시 동일 텍스트 요청 중복 방지 (semantic cache + memory retrieval 병렬 실행 시)
-// 같은 텍스트에 대한 getEmbedding()이 동시에 호출되면 하나의 API 호출로 합쳐짐.
+// 특정 문서들의 청크만 Firestore에서 쿼리 (Firestore 'in' 쿼리, 최대 10개)
+async function getChunksForDocs(docIds: string[]): Promise<DocChunk[]> {
+  if (docIds.length === 0) return []
+
+  const db = getFirestoreInstance()
+  if (!db) return []
+
+  try {
+    // Firestore 'in' 쿼리 — 한 번에 최대 10개 docId
+    const batches = []
+    for (let i = 0; i < docIds.length; i += 10) {
+      batches.push(docIds.slice(i, i + 10))
+    }
+
+    const results: DocChunk[] = []
+    await Promise.all(
+      batches.map(async (batch) => {
+        const q = query(collection(db, 'docChunks'), where('docId', 'in', batch))
+        const snap = await getDocs(q)
+        snap.docs.forEach((d) => results.push({ id: d.id, ...d.data() } as DocChunk))
+      })
+    )
+    return results
+  } catch (err) {
+    console.error('getChunksForDocs 오류:', err)
+    return []
+  }
+}
+
+// ── 임베딩 (in-flight 중복 제거) ────────────────────────────────
 const _embeddingInFlight = new Map<string, Promise<number[]>>()
 
 export async function getEmbedding(text: string): Promise<number[]> {
@@ -59,6 +131,7 @@ export async function getEmbedding(text: string): Promise<number[]> {
   return promise
 }
 
+// ── 유틸 ────────────────────────────────────────────────────────
 function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length || a.length === 0) return 0
   const dot = a.reduce((sum, val, i) => sum + val * b[i], 0)
@@ -75,52 +148,113 @@ function keywordScore(content: string, query: string): number {
   return matches.length / terms.length
 }
 
+// ── 2단계 문서 선별 ─────────────────────────────────────────────
+// doc-level embedding으로 관련 문서 N개 선정 → 해당 문서의 청크만 로드
+async function selectTopDocIds(
+  queryEmbedding: number[],
+  searchQuery: string,
+  topN: number,
+  minDocScore: number
+): Promise<string[]> {
+  const docIndex = await getDocIndex()
+  if (docIndex.length === 0) return []
+
+  const scored = docIndex.map((doc) => {
+    let score = 0
+    if (queryEmbedding.length > 0 && doc.docEmbedding && doc.docEmbedding.length > 0) {
+      score = cosineSimilarity(queryEmbedding, doc.docEmbedding)
+    } else {
+      score = keywordScore(doc.title, searchQuery) * 0.6
+    }
+    return { id: doc.id, score }
+  })
+
+  return scored
+    .filter((d) => d.score >= minDocScore)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topN)
+    .map((d) => d.id)
+}
+
+// ── 메인 검색: 2단계 + Cohere Rerank ────────────────────────────
 export async function searchRelevantDocs(
   searchQuery: string,
   limit = 10,
-  minScore = 0.15
+  minScore = 0.25
 ): Promise<{ docId: string; title: string; content: string; score: number }[]> {
   try {
     const queryEmbedding = await getEmbedding(searchQuery)
 
-    // ── 브루트포스 폴백 (캐시 활용, O(n) JS 연산) ────────────────
-    const chunks = await getAllChunks()
+    // Stage 1: doc-level 유사도로 상위 8개 문서 선별 (minDocScore=0.15 — 넓게 잡아 Stage 2에서 좁힘)
+    const topDocIds = await selectTopDocIds(queryEmbedding, searchQuery, 8, 0.15)
+
+    let chunks: DocChunk[]
+    if (topDocIds.length > 0) {
+      // Stage 2: 선별된 문서의 청크만 로드 (전체 300개 제한 우회)
+      chunks = await getChunksForDocs(topDocIds)
+    } else {
+      // 폴백: doc-level 인덱스 없는 환경 → 전체 청크 브루트포스
+      chunks = await getAllChunks()
+    }
+
     if (chunks.length === 0) return []
 
+    // 청크 레벨 스코어링
     let scored: { docId: string; title: string; content: string; score: number }[]
 
     if (queryEmbedding.length > 0) {
-      scored = chunks
-        .filter((chunk) => chunk.embedding && chunk.embedding.length > 0)
-        .map((chunk) => ({
-          docId: chunk.docId,
-          title: chunk.title,
-          content: chunk.content,
-          score: cosineSimilarity(queryEmbedding, chunk.embedding!),
+      const withEmb = chunks
+        .filter((c) => c.embedding && c.embedding.length > 0)
+        .map((c) => ({
+          docId: c.docId,
+          title: c.title,
+          content: c.content,
+          score: cosineSimilarity(queryEmbedding, c.embedding!),
         }))
-
-      const noEmbedding = chunks
-        .filter((chunk) => !chunk.embedding || chunk.embedding.length === 0)
-        .map((chunk) => ({
-          docId: chunk.docId,
-          title: chunk.title,
-          content: chunk.content,
-          score: keywordScore(chunk.content, searchQuery) * 0.5,
+      const noEmb = chunks
+        .filter((c) => !c.embedding || c.embedding.length === 0)
+        .map((c) => ({
+          docId: c.docId,
+          title: c.title,
+          content: c.content,
+          score: keywordScore(c.content, searchQuery) * 0.5,
         }))
-
-      scored = [...scored, ...noEmbedding]
+      scored = [...withEmb, ...noEmb]
     } else {
-      scored = chunks.map((chunk) => ({
-        docId: chunk.docId,
-        title: chunk.title,
-        content: chunk.content,
-        score: keywordScore(chunk.content, searchQuery),
+      scored = chunks.map((c) => ({
+        docId: c.docId,
+        title: c.title,
+        content: c.content,
+        score: keywordScore(c.content, searchQuery),
       }))
     }
 
-    return scored
-      .filter((item) => item.score > minScore)
+    // 초기 필터: 낮은 임계값으로 후보 40개 선별 (Cohere rerank 입력)
+    const candidates = scored
+      .filter((item) => item.score > 0.1)
       .sort((a, b) => b.score - a.score)
+      .slice(0, 40)
+
+    if (candidates.length === 0) return []
+
+    // Cohere Rerank 시도 (API 키 없으면 자동 null → 코사인 폴백)
+    const rerankResults = await cohereRerank(
+      searchQuery,
+      candidates.map((c) => `${c.title}\n${c.content}`),
+      limit
+    )
+
+    if (rerankResults) {
+      // Cohere 기준 score >= 0.3인 결과만 반환
+      return rerankResults
+        .filter((r) => r.relevanceScore >= 0.3)
+        .map((r) => candidates[r.index])
+        .slice(0, limit)
+    }
+
+    // 폴백: 코사인 점수 기준 minScore 필터
+    return candidates
+      .filter((item) => item.score > minScore)
       .slice(0, limit)
   } catch (error) {
     console.error('RAG 검색 오류:', error)
@@ -129,11 +263,22 @@ export async function searchRelevantDocs(
 }
 
 /**
- * 전수 스캔 전용: 모든 문서의 첫 번째 청크에서 제목 + 150자 스니펫만 반환.
+ * 전수 스캔 전용: doc-level 인덱스에서 제목 + 스니펫(첫 청크) 반환.
  * "모든 캠페인 리스트업" 같은 전체 조회 요청에 사용.
- * 토큰 소모를 최소화하면서 커버리지 100% 보장.
  */
 export async function scanAllDocTitles(): Promise<{ docId: string; title: string; snippet: string }[]> {
+  const docIndex = await getDocIndex()
+
+  if (docIndex.length > 0) {
+    // doc-level 인덱스 사용 (빠름)
+    return docIndex.map((d) => ({
+      docId: d.id,
+      title: d.title,
+      snippet: '',
+    }))
+  }
+
+  // 폴백: 청크에서 첫 번째 청크만 수집
   const chunks = await getAllChunks()
   const seen = new Set<string>()
   return chunks
@@ -150,8 +295,7 @@ export async function scanAllDocTitles(): Promise<{ docId: string; title: string
 }
 
 /**
- * 리스트·열거 질문 전용: 관련 문서의 모든 청크를 가져온다.
- * 상위 K개 문서를 먼저 식별한 뒤, 해당 문서의 청크를 전량 수집한다.
+ * 리스트·열거 질문 전용: 2단계로 관련 문서의 청크 수집.
  */
 export async function searchAllChunksFromTopDocs(
   searchQuery: string,
@@ -159,13 +303,58 @@ export async function searchAllChunksFromTopDocs(
   maxTotalChunks = 40
 ): Promise<{ docId: string; title: string; content: string; score: number }[]> {
   try {
-    const chunks = await getAllChunks()
+    const queryEmbedding = await getEmbedding(searchQuery)
+
+    // Stage 1: doc-level 선별
+    const topDocIds = await selectTopDocIds(queryEmbedding, searchQuery, topDocCount, 0.15)
+
+    let chunks: DocChunk[]
+    if (topDocIds.length > 0) {
+      chunks = await getChunksForDocs(topDocIds)
+    } else {
+      // 폴백: 전체 청크 브루트포스
+      chunks = await getAllChunks()
+      if (chunks.length === 0) return []
+
+      // doc-level 인덱스 없는 환경 — 청크 직접 스코어링
+      const scored = chunks.map((chunk) => {
+        let score = 0
+        if (queryEmbedding.length > 0 && chunk.embedding && chunk.embedding.length > 0) {
+          score = cosineSimilarity(queryEmbedding, chunk.embedding)
+        } else {
+          score = keywordScore(chunk.content, searchQuery)
+        }
+        return { docId: chunk.docId, title: chunk.title, content: chunk.content, score }
+      })
+      const docMaxScore: Record<string, number> = {}
+      for (const item of scored) {
+        if (!docMaxScore[item.docId] || item.score > docMaxScore[item.docId]) {
+          docMaxScore[item.docId] = item.score
+        }
+      }
+      const fallbackTopIds = Object.entries(docMaxScore)
+        .filter(([, s]) => s > 0.2)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, topDocCount)
+        .map(([id]) => id)
+
+      if (fallbackTopIds.length === 0) {
+        return scored.filter((i) => i.score > 0.2).sort((a, b) => b.score - a.score).slice(0, 30)
+      }
+      return scored
+        .filter((item) => fallbackTopIds.includes(item.docId))
+        .sort((a, b) => {
+          const orderA = fallbackTopIds.indexOf(a.docId)
+          const orderB = fallbackTopIds.indexOf(b.docId)
+          if (orderA !== orderB) return orderA - orderB
+          return b.score - a.score
+        })
+        .slice(0, maxTotalChunks)
+    }
 
     if (chunks.length === 0) return []
 
-    const queryEmbedding = await getEmbedding(searchQuery)
-
-    // 1단계: 각 청크에 점수 부여
+    // Stage 2: 선별된 청크 스코어링
     const scored = chunks.map((chunk) => {
       let score = 0
       if (queryEmbedding.length > 0 && chunk.embedding && chunk.embedding.length > 0) {
@@ -176,35 +365,12 @@ export async function searchAllChunksFromTopDocs(
       return { docId: chunk.docId, title: chunk.title, content: chunk.content, score }
     })
 
-    // 2단계: 문서별 최고 점수 집계 → 상위 N개 docId 선정
-    const docMaxScore: Record<string, number> = {}
-    for (const item of scored) {
-      if (!docMaxScore[item.docId] || item.score > docMaxScore[item.docId]) {
-        docMaxScore[item.docId] = item.score
-      }
-    }
-    const topDocIds = Object.entries(docMaxScore)
-      .filter(([, s]) => s > 0.05)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, topDocCount)
-      .map(([docId]) => docId)
-
-    if (topDocIds.length === 0) {
-      // 관련 문서를 못 찾으면 일반 검색으로 폴백
-      return scored
-        .filter((i) => i.score > 0.05)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 30)
-    }
-
-    // 3단계: 선정된 문서의 모든 청크 수집 (점수 순 정렬)
     return scored
       .filter((item) => topDocIds.includes(item.docId))
       .sort((a, b) => {
-        // 같은 문서 내에서는 원본 순서 유지를 위해 score 차이가 작으면 동등 처리
-        const docOrderA = topDocIds.indexOf(a.docId)
-        const docOrderB = topDocIds.indexOf(b.docId)
-        if (docOrderA !== docOrderB) return docOrderA - docOrderB
+        const orderA = topDocIds.indexOf(a.docId)
+        const orderB = topDocIds.indexOf(b.docId)
+        if (orderA !== orderB) return orderA - orderB
         return b.score - a.score
       })
       .slice(0, maxTotalChunks)
@@ -216,19 +382,12 @@ export async function searchAllChunksFromTopDocs(
 
 /**
  * Phase 2-2 — 리스팅 쿼리 전용 요약 레이어
- *
- * searchAllChunksFromTopDocs(5, 40) = 최대 40청크 × 1000자 = 40,000자 (토큰 폭발)
- * summarizeForListing(8, 500)       = 최대 8문서 × 500자  =  4,000자 (90% 절감)
- *
- * 각 문서의 청크를 순서대로 합친 뒤 charsPerDoc로 잘라 하나의 요약 블록으로 반환.
- * 리스팅 질문에서는 문서별 핵심 파악이 목적이므로 전체 청크보다 요약이 적합.
  */
 export async function summarizeForListing(
   searchQuery: string,
   topDocCount = 8,
   charsPerDoc = 500
 ): Promise<{ docId: string; title: string; content: string; score: number }[]> {
-  // 상위 문서의 청크를 넉넉히 가져온 후 문서별로 압축
   const raw = await searchAllChunksFromTopDocs(searchQuery, topDocCount, topDocCount * 10)
 
   const docMap = new Map<string, { title: string; parts: string[]; score: number }>()
@@ -242,7 +401,6 @@ export async function summarizeForListing(
   return Array.from(docMap.entries()).map(([docId, { title, parts, score }]) => ({
     docId,
     title,
-    // 청크들을 이어 붙인 뒤 공백 정리 → charsPerDoc 글자로 자름
     content: parts.join(' ').replace(/\s+/g, ' ').trim().slice(0, charsPerDoc),
     score,
   }))

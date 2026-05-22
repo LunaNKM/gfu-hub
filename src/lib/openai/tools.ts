@@ -9,6 +9,14 @@ import { ChatCompletionTool, ChatCompletionMessageToolCall } from 'openai/resour
 import { searchRelevantDocs, summarizeForListing, scanAllDocTitles } from './rag'
 import { webSearch } from './websearch'
 
+// ── 타임아웃 가드 (60s Vercel 예산 보호) ─────────────────────────
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ])
+}
+
 // ── 도구 정의 ─────────────────────────────────────────────────
 export const TOOLS: ChatCompletionTool[] = [
   {
@@ -84,15 +92,15 @@ export async function executeToolCalls(
           const mode = args.mode ?? 'search'
 
           if (mode === 'scan_all') {
-            const titles = await scanAllDocTitles()
+            const titles = await withTimeout(scanAllDocTitles(), 15000, [])
             const titleList = titles
-              .map((d, i) => `${i + 1}. [${d.title}] ${d.snippet}`)
+              .map((d, i) => `${i + 1}. [${d.title}]${d.snippet ? ' ' + d.snippet : ''}`)
               .join('\n')
             content = `# 사내 전체 문서 목록 (${titles.length}건)\n\n${titleList}`
             searchSummaryParts.push(`전체 문서 ${titles.length}건 스캔`)
 
           } else if (mode === 'list') {
-            const sources = await summarizeForListing(args.query, 8, 500)
+            const sources = await withTimeout(summarizeForListing(args.query, 8, 500), 20000, [])
             content =
               sources.length > 0
                 ? sources
@@ -103,7 +111,8 @@ export async function executeToolCalls(
             searchSummaryParts.push(`사내 문서 ${sources.length}건`)
 
           } else {
-            const sources = await searchRelevantDocs(args.query, 10, 0.15)
+            // minScore=0.25 (Cohere rerank 있으면 내부에서 0.3 적용)
+            const sources = await withTimeout(searchRelevantDocs(args.query, 10, 0.25), 20000, [])
             content =
               sources.length > 0
                 ? sources
@@ -115,7 +124,11 @@ export async function executeToolCalls(
           }
 
         } else if (call.function.name === 'web_search') {
-          const webResult = await webSearch(args.query)
+          const webResult = await withTimeout(
+            webSearch(args.query),
+            12000,
+            { answer: '', results: [] }
+          )
           const parts: string[] = []
           if (webResult.answer) parts.push(`## 요약\n${webResult.answer}`)
           if (webResult.results.length > 0) {

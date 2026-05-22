@@ -284,6 +284,28 @@ async function main() {
       const chunks = MAX_CHUNKS_PER_DOC > 0 ? rawChunks.slice(0, MAX_CHUNKS_PER_DOC) : rawChunks
       const chunkCount = chunks.length
 
+      // ── Doc-level 임베딩 생성 (2단계 검색 Stage 1용) ────────────
+      // 첫 3,000자로 문서 전체를 대표하는 임베딩 1개 생성
+      // → rag.ts의 getDocIndex()가 이를 사용해 관련 문서를 먼저 선별함
+      let docEmbedding = undefined
+      if (openai) {
+        try {
+          const docEmbInput = `[문서: ${file.name}]\n${text.slice(0, 3000)}`
+          const docEmbRes = await openai.embeddings.create({
+            model: 'text-embedding-3-small',
+            input: docEmbInput,
+          })
+          docEmbedding = docEmbRes.data[0].embedding
+        } catch {
+          // 실패해도 진행 (chunk 임베딩으로 폴백 가능)
+        }
+      }
+
+      // docEmbedding을 docData에 추가
+      if (docEmbedding) {
+        docData.docEmbedding = docEmbedding
+      }
+
       let docId
       if (!existingSnap.empty) {
         docId = existingSnap.docs[0].id

@@ -10,6 +10,9 @@ out/
 .env.local
 .env.production
 
+# OAuth 자격증명 포함 스크립트 (하드코딩된 CLIENT_ID/SECRET)
+scripts/get-drive-token.js
+
 # 로그
 *.log
 npm-debug.log*
