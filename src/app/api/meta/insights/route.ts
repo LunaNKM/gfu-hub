@@ -65,7 +65,10 @@ export async function GET(req: NextRequest) {
       fetch(`${base}?fields=${trendFields}&${dp}&time_increment=1&limit=100&${tk}`).then(r => r.json()),
       safeFetch(`${base}?fields=impressions,clicks,spend,ctr,cpc&breakdowns=age,gender&${dp}&level=account&${tk}`),
       safeFetch(`${base}?fields=impressions,clicks,spend,ctr,cpc,cpm&breakdowns=publisher_platform,platform_position&${dp}&level=account&${tk}`),
-      safeFetch(`${base}?fields=${videoFields}&${dp}&level=campaign&limit=50&${tk}`),
+      fetch(`${base}?fields=${videoFields}&${dp}&level=campaign&limit=50&${tk}`)
+        .then(r => r.json())
+        .then(d => { console.log('[Video Raw]', JSON.stringify(d).slice(0, 800)); return d.data ?? [] })
+        .catch(e => { console.log('[Video Err]', e); return [] }),
       safeFetch(`${base}?fields=impressions,clicks,ctr,spend&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&${dp}&level=account&${tk}`),
     ])
 
