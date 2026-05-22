@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAiActionRun, getAiActionRuns, updateAiActionRun } from '@/lib/services/aiActions'
 import { getOpenAIClient, OPENAI_MODEL } from '@/lib/openai/client'
 import { getCampaign } from '@/lib/services/campaigns'
-import { getInfluencerScores, scoreInfluencersForCampaign } from '@/lib/services/influencerScoring'
+import { scoreInfluencerForCampaign } from '@/lib/services/influencerScoring'
+import { getInfluencers } from '@/lib/services/influencers'
 import { AiActionType } from '@/types'
 import { isAuthResponse, requireAuth } from '@/lib/server/auth'
+import { createDocument, patchDocument, queryCollectionByField } from '@/lib/server/firestoreRest'
 
 function actionPrompt(type: AiActionType, input: Record<string, unknown>) {
   const base = `당신은 한국 브랜드의 일본 인플루언서 마케팅을 운영하는 시니어 PM입니다.
@@ -75,7 +76,8 @@ export async function GET(req: NextRequest) {
   if (!campaignId) return NextResponse.json({ error: 'campaignId가 필요합니다.' }, { status: 400 })
 
   try {
-    const runs = await getAiActionRuns(campaignId)
+    const runs = await queryCollectionByField<Record<string, unknown>>(user.token, 'aiActionRuns', 'campaignId', campaignId)
+    runs.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     return NextResponse.json({ runs })
   } catch (err) {
     console.error('AI 액션 기록 조회 오류:', err)
@@ -97,12 +99,16 @@ export async function POST(req: NextRequest) {
     let input: Record<string, unknown> = { ...(body.input ?? {}), campaign }
 
     if (type === 'recommend_influencers' && campaignId) {
-      const existing = await getInfluencerScores(campaignId)
-      const scores = existing.length > 0 ? existing : await scoreInfluencersForCampaign(campaignId)
+      const existing = await queryCollectionByField<Record<string, unknown>>(user.token, 'influencerScores', 'campaignId', campaignId)
+      const scores = existing.length > 0
+        ? existing.sort((a, b) => Number(b.totalScore ?? 0) - Number(a.totalScore ?? 0))
+        : (await getInfluencers(500))
+            .map((influencer) => scoreInfluencerForCampaign(influencer, campaign))
+            .sort((a, b) => b.totalScore - a.totalScore)
       input = { ...input, scores: scores.slice(0, 20) }
     }
 
-    const runId = await createAiActionRun({
+    const runId = await createDocument(user.token, 'aiActionRuns', {
       type,
       campaignId,
       influencerId: body.influencerId,
@@ -110,13 +116,16 @@ export async function POST(req: NextRequest) {
       output: {},
       status: 'running',
       createdBy: user.uid,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     })
 
     const output = await runAction(type, input)
-    await updateAiActionRun(runId, {
+    await patchDocument(user.token, 'aiActionRuns', runId, {
       output,
       status: output.error ? 'failed' : 'completed',
       errorMessage: typeof output.error === 'string' ? output.error : undefined,
+      updatedAt: new Date(),
     })
 
     return NextResponse.json({ id: runId, output, status: output.error ? 'failed' : 'completed' })
@@ -125,4 +134,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'AI 액션 실행에 실패했습니다.' }, { status: 500 })
   }
 }
-

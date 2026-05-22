@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getTrendSignals, saveTrendSignal } from '@/lib/services/intelligenceSignals'
 import { isAuthResponse, requireAuth } from '@/lib/server/auth'
 import { TrendSignal } from '@/types'
+import { createDocument, listCollection } from '@/lib/server/firestoreRest'
 
 export async function GET(req: NextRequest) {
   const user = requireAuth(req)
   if (isAuthResponse(user)) return user
   try {
-    const signals = await getTrendSignals()
+    const signals = await listCollection<TrendSignal>(user.token, 'trendSignals')
+    signals.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     return NextResponse.json({ signals })
   } catch (err) {
     console.error('트렌드 조회 오류:', err)
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
     const title = String(body.title ?? '').trim()
     if (!title) return NextResponse.json({ error: 'title이 필요합니다.' }, { status: 400 })
 
-    const id = await saveTrendSignal({
+    const id = await createDocument(user.token, 'trendSignals', {
       title,
       summary: String(body.summary ?? ''),
       market: 'JP',
@@ -36,6 +37,8 @@ export async function POST(req: NextRequest) {
       sourceUrls: Array.isArray(body.sourceUrls) ? body.sourceUrls : [],
       observedAt: String(body.observedAt ?? new Date().toISOString().slice(0, 10)),
       savedBy: user.uid,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     })
     return NextResponse.json({ id }, { status: 201 })
   } catch (err) {
@@ -43,4 +46,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '트렌드를 저장할 수 없습니다.' }, { status: 500 })
   }
 }
-

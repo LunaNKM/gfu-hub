@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 export interface RequestUser {
   uid: string
   email?: string
+  token: string
 }
 
 export function requireAuth(req: NextRequest): RequestUser | Response {
@@ -22,18 +23,17 @@ export function requireAuth(req: NextRequest): RequestUser | Response {
       if (email && !email.endsWith('@gfutures.co')) {
         return Response.json({ error: '권한이 없습니다.' }, { status: 403 })
       }
-      return { uid, email }
+      return { uid, email, token }
     }
   } catch {
     return Response.json({ error: '인증 실패' }, { status: 401 })
   }
 
   // TODO: firebase-admin 도입 후 verifyIdToken으로 교체.
-  if (token.length > 0) return { uid: token }
+  if (token.length > 0) return { uid: token, token }
   return Response.json({ error: '인증 실패' }, { status: 401 })
 }
 
 export function isAuthResponse(value: RequestUser | Response): value is Response {
   return value instanceof Response
 }
-

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getBrandImpacts, getTrendSignals, getWeeklyMarketReports, saveWeeklyMarketReport } from '@/lib/services/intelligenceSignals'
 import { isAuthResponse, requireAuth } from '@/lib/server/auth'
+import { BrandImpact, TrendSignal, WeeklyMarketReport } from '@/types'
+import { createDocument, listCollection } from '@/lib/server/firestoreRest'
 
 function weekRange() {
   const now = new Date()
@@ -19,7 +20,8 @@ export async function GET(req: NextRequest) {
   const user = requireAuth(req)
   if (isAuthResponse(user)) return user
   try {
-    const reports = await getWeeklyMarketReports()
+    const reports = await listCollection<WeeklyMarketReport>(user.token, 'weeklyMarketReports')
+    reports.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     return NextResponse.json({ reports })
   } catch (err) {
     console.error('주간 리포트 조회 오류:', err)
@@ -31,9 +33,12 @@ export async function POST(req: NextRequest) {
   const user = requireAuth(req)
   if (isAuthResponse(user)) return user
   try {
-    const [signals, impacts] = await Promise.all([getTrendSignals(20), getBrandImpacts()])
+    const [signals, impacts] = await Promise.all([
+      listCollection<TrendSignal>(user.token, 'trendSignals'),
+      listCollection<BrandImpact>(user.token, 'brandImpacts'),
+    ])
     const range = weekRange()
-    const id = await saveWeeklyMarketReport({
+    const id = await createDocument(user.token, 'weeklyMarketReports', {
       ...range,
       summary:
         signals.length > 0
@@ -50,6 +55,7 @@ export async function POST(req: NextRequest) {
         '경쟁사 언급이 있는 트렌드는 후보 발굴 키워드에 추가',
         '주간 리포트 내용을 캠페인 제안서/리포트 인사이트에 재사용',
       ],
+      createdAt: new Date(),
     })
     return NextResponse.json({ id }, { status: 201 })
   } catch (err) {
@@ -57,4 +63,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '주간 리포트를 생성할 수 없습니다.' }, { status: 500 })
   }
 }
-
