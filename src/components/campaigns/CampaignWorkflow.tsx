@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { CampaignStage, CampaignTask, CampaignTaskStatus } from '@/types'
-import { CheckCircle2, Circle, Loader2, Plus, Trash2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Circle, Loader2, Plus, Trash2 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -31,25 +31,31 @@ export function CampaignWorkflow({ campaignId }: { campaignId: string }) {
   const [saving, setSaving] = useState(false)
   const [title, setTitle] = useState('')
   const [stage, setStage] = useState<CampaignStage>('discovery')
+  const [error, setError] = useState('')
 
   const load = async (ensure = false) => {
+    if (!user) return
     setLoading(true)
+    setError('')
     try {
-      const token = await user?.getIdToken()
+      const token = await user.getIdToken()
       const res = await fetch(`/api/campaigns/${campaignId}/tasks${ensure ? '?ensure=1' : ''}`, {
-        headers: { Authorization: `Bearer ${token ?? ''}` },
+        headers: { Authorization: `Bearer ${token}` },
       })
       const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? '워크플로우를 불러올 수 없습니다.')
       setTasks(data.tasks ?? [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '워크플로우를 불러올 수 없습니다.')
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    load()
+    if (user) load()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campaignId])
+  }, [campaignId, user])
 
   const byStage = useMemo(() => {
     const grouped: Record<string, CampaignTask[]> = {}
@@ -63,38 +69,48 @@ export function CampaignWorkflow({ campaignId }: { campaignId: string }) {
 
   const createTask = async () => {
     if (!title.trim()) return
+    if (!user) return
     setSaving(true)
+    setError('')
     try {
-      const token = await user?.getIdToken()
-      await fetch(`/api/campaigns/${campaignId}/tasks`, {
+      const token = await user.getIdToken()
+      const res = await fetch(`/api/campaigns/${campaignId}/tasks`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token ?? ''}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ title, stage }),
       })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? '태스크를 생성할 수 없습니다.')
       setTitle('')
       await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '태스크를 생성할 수 없습니다.')
     } finally {
       setSaving(false)
     }
   }
 
   const updateTask = async (task: CampaignTask, patch: Partial<CampaignTask>) => {
-    const token = await user?.getIdToken()
+    if (!user) return
+    const token = await user.getIdToken()
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...patch } : t)))
-    await fetch(`/api/campaigns/${campaignId}/tasks/${task.id}`, {
+    const res = await fetch(`/api/campaigns/${campaignId}/tasks/${task.id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token ?? ''}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(patch),
     })
+    if (!res.ok) await load()
   }
 
   const removeTask = async (task: CampaignTask) => {
-    const token = await user?.getIdToken()
+    if (!user) return
+    const token = await user.getIdToken()
     setTasks((prev) => prev.filter((t) => t.id !== task.id))
-    await fetch(`/api/campaigns/${campaignId}/tasks/${task.id}`, {
+    const res = await fetch(`/api/campaigns/${campaignId}/tasks/${task.id}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token ?? ''}` },
+      headers: { Authorization: `Bearer ${token}` },
     })
+    if (!res.ok) await load()
   }
 
   return (
@@ -137,6 +153,13 @@ export function CampaignWorkflow({ campaignId }: { campaignId: string }) {
             추가
           </button>
         </div>
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-xl px-3 py-2 mb-4 text-sm bg-red-50 text-red-700 border border-red-100">
+            <AlertCircle size={15} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center py-12 text-gray-300"><Loader2 size={20} className="animate-spin" /></div>

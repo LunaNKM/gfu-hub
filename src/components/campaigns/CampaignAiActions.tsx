@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { AiActionRun, AiActionType } from '@/types'
-import { Bot, FileText, Loader2, ShieldCheck, Sparkles, Wand2 } from 'lucide-react'
+import { AlertCircle, Bot, CheckCircle2, FileText, Loader2, ShieldCheck, Sparkles, Wand2 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 
 const ACTIONS: { type: AiActionType; label: string; desc: string; icon: React.ReactNode }[] = [
@@ -18,28 +18,40 @@ export function CampaignAiActions({ campaignId }: { campaignId: string }) {
   const [runs, setRuns] = useState<AiActionRun[]>([])
   const [running, setRunning] = useState<AiActionType | null>(null)
   const [content, setContent] = useState('')
+  const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
 
   const load = async () => {
-    const token = await user?.getIdToken()
-    const res = await fetch(`/api/ai-actions?campaignId=${campaignId}`, {
-      headers: { Authorization: `Bearer ${token ?? ''}` },
-    })
-    const data = await res.json()
-    setRuns(data.runs ?? [])
+    if (!user) return
+    try {
+      const token = await user.getIdToken()
+      const res = await fetch(`/api/ai-actions?campaignId=${campaignId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'AI 실행 기록을 불러올 수 없습니다.')
+      setRuns(data.runs ?? [])
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'AI 실행 기록을 불러올 수 없습니다.' })
+    }
   }
 
   useEffect(() => {
-    load()
+    if (user) load()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campaignId])
+  }, [campaignId, user])
 
   const run = async (type: AiActionType) => {
+    if (!user) {
+      setMessage({ type: 'error', text: '로그인 정보를 확인할 수 없습니다. 새로고침 후 다시 시도하세요.' })
+      return
+    }
     setRunning(type)
+    setMessage({ type: 'info', text: 'AI 업무를 실행하고 있습니다. 결과가 생성되면 실행 기록에 표시됩니다.' })
     try {
-      const token = await user?.getIdToken()
+      const token = await user.getIdToken()
       const res = await fetch('/api/ai-actions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token ?? ''}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           type,
           campaignId,
@@ -49,7 +61,16 @@ export function CampaignAiActions({ campaignId }: { campaignId: string }) {
         }),
       })
       const data = await res.json()
-      if (data.id) await load()
+      if (!res.ok) throw new Error(data.error ?? 'AI 실행에 실패했습니다.')
+      setMessage({
+        type: data.status === 'failed' ? 'error' : 'success',
+        text: data.status === 'failed'
+          ? String(data.output?.error ?? 'AI 실행에 실패했습니다.')
+          : 'AI 실행이 완료되었습니다. 최근 실행 기록을 확인하세요.',
+      })
+      await load()
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'AI 실행에 실패했습니다.' })
     } finally {
       setRunning(null)
     }
@@ -68,6 +89,19 @@ export function CampaignAiActions({ campaignId }: { campaignId: string }) {
         placeholder="콘텐츠 초안, PR 문구, 리포트에 반영할 메모를 입력하세요. 후보 추천/제안서 생성은 비워둬도 실행됩니다."
         className="w-full min-h-24 text-sm border border-gray-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400 resize-vertical"
       />
+
+      {message && (
+        <div className={`flex items-start gap-2 rounded-xl px-3 py-2 text-sm ${
+          message.type === 'error'
+            ? 'bg-red-50 text-red-700 border border-red-100'
+            : message.type === 'success'
+              ? 'bg-green-50 text-green-700 border border-green-100'
+              : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+        }`}>
+          {message.type === 'error' ? <AlertCircle size={15} className="mt-0.5 shrink-0" /> : <CheckCircle2 size={15} className="mt-0.5 shrink-0" />}
+          <span>{message.text}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
         {ACTIONS.map((action) => (
