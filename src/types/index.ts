@@ -374,3 +374,100 @@ export interface WeeklyMarketReport {
   recommendedActions: string[]
   createdAt: Date
 }
+
+// ── 캠페인 워크스페이스 ───────────────────────────────────────────
+
+export type CampaignSectionType = 'document' | 'data_table' | 'dashboard'
+
+export type CampaignColumnType =
+  | 'text'
+  | 'number'
+  | 'currency'
+  | 'percent'
+  | 'date'
+  | 'select'
+  | 'checkbox'
+  | 'url'
+
+export type CampaignColumnRole =
+  | 'dimension'
+  | 'metric'
+  | 'status'
+  | 'platform'
+  | 'cost'
+  | 'performance'
+
+export type CampaignCrmSyncType =
+  | 'confirmed_influencers'
+  | 'influencer_performance'
+
+export interface CampaignDataColumn {
+  id: string
+  name: string
+  type: CampaignColumnType
+  role?: CampaignColumnRole
+  options?: string[]
+}
+
+export interface CampaignDataRow {
+  id: string
+  cells: Record<string, string | number | boolean | null>
+}
+
+export interface CampaignDocumentContent {
+  blocks: unknown[]
+}
+
+export interface CampaignDataTableContent {
+  columns: CampaignDataColumn[]
+  rows: CampaignDataRow[]
+}
+
+export type CampaignDashboardWidgetType =
+  | 'kpi'
+  | 'bar'
+  | 'line'
+  | 'pie'
+  | 'funnel'
+  | 'ranking'
+
+export type CampaignDashboardAggregation =
+  | 'sum'
+  | 'avg'
+  | 'count'
+  | 'min'
+  | 'max'
+
+export interface CampaignDashboardWidget {
+  id: string
+  title: string
+  type: CampaignDashboardWidgetType
+  sourceSectionId?: string
+  dimensionColumnId?: string
+  metricColumnId?: string
+  aggregation: CampaignDashboardAggregation
+}
+
+export interface CampaignDashboardContent {
+  widgets: CampaignDashboardWidget[]
+}
+
+export interface CampaignSection {
+  id: string
+  campaignId: string
+  title: string
+  type: CampaignSectionType
+  order: number
+  internalVisible: boolean
+  clientShareEnabled: boolean
+  clientEditable: boolean
+  crmSyncType?: CampaignCrmSyncType
+  content:
+    | CampaignDocumentContent
+    | CampaignDataTableContent
+    | CampaignDashboardContent
+  createdAt: Date | string
+  updatedAt: Date | string
+  createdBy: string
+  updatedBy: string
+}

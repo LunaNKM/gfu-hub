@@ -154,3 +154,49 @@ export async function deleteDocument(
     method: 'DELETE',
   })
 }
+
+export async function getDocument<T extends object>(
+  token: string,
+  collectionId: string,
+  documentId: string
+): Promise<T | null> {
+  try {
+    const data = await firestoreFetch(
+      token,
+      `${BASE_URL}/${collectionId}/${encodeURIComponent(documentId)}`
+    )
+    if (!data.name) return null
+    return decodeDocument(data) as T
+  } catch {
+    return null
+  }
+}
+
+export async function queryCollectionOrdered<T extends object>(
+  token: string,
+  collectionId: string,
+  fieldPath: string,
+  value: string,
+  orderByField: string
+): Promise<T[]> {
+  const body = {
+    structuredQuery: {
+      from: [{ collectionId }],
+      where: {
+        fieldFilter: {
+          field: { fieldPath },
+          op: 'EQUAL',
+          value: encodeValue(value),
+        },
+      },
+      orderBy: [{ field: { fieldPath: orderByField }, direction: 'ASCENDING' }],
+    },
+  }
+  const data = await firestoreFetch(token, `${BASE_URL}:runQuery`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  return (data as { document?: { name: string; fields?: Record<string, FirestoreValue> } }[])
+    .filter((row) => row.document)
+    .map((row) => decodeDocument(row.document!) as T)
+}
