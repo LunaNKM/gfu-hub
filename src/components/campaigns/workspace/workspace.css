@@ -1,0 +1,63 @@
+/* ── GFU 워크스페이스 AG Grid 커스텀 테마 ─────────────────────── */
+
+.gfu-grid.ag-theme-quartz {
+  --ag-font-family: inherit;
+  --ag-font-size: 13px;
+  --ag-foreground-color: #1f2937;
+  --ag-background-color: #ffffff;
+  --ag-header-background-color: #f9fafb;
+  --ag-header-foreground-color: #6b7280;
+  --ag-border-color: #eceef1;
+  --ag-row-border-color: #eceef1;
+  --ag-row-hover-color: #f8f9fb;
+  --ag-selected-row-background-color: #eff6ff;
+  --ag-range-selection-border-color: #3b82f6;
+  --ag-header-height: 38px;
+  --ag-row-height: 36px;
+  --ag-cell-horizontal-padding: 12px;
+  --ag-header-column-separator-display: none;
+  --ag-column-hover-color: transparent;
+  --ag-input-focus-border-color: #3b82f6;
+  --ag-checkbox-checked-color: #3b82f6;
+  --ag-grid-size: 4px;
+
+  border-radius: 8px;
+  border: 1px solid #eceef1;
+  overflow: hidden;
+}
+
+/* 헤더 폰트 강조 */
+.gfu-grid .ag-header-cell-label {
+  font-weight: 500;
+  gap: 6px;
+}
+
+/* 필터 아이콘: 평소 숨김, 헤더 hover 시 표시 */
+.gfu-grid .ag-header-cell .ag-header-cell-menu-button {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.gfu-grid .ag-header-cell:hover .ag-header-cell-menu-button {
+  opacity: 1;
+}
+
+/* 셀 세로 정렬 */
+.gfu-grid .ag-cell {
+  display: flex;
+  align-items: center;
+}
+
+/* 외곽 테두리 제거 (컨테이너에서 처리) */
+.gfu-grid .ag-root-wrapper {
+  border: none;
+}
+
+/* 헤더 하단 구분선 */
+.gfu-grid .ag-header {
+  border-bottom: 1px solid #eceef1;
+}
+
+/* 체크박스 컬럼 패딩 */
+.gfu-grid .ag-cell-wrapper.ag-row-group {
+  align-items: center;
+}

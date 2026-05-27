@@ -202,16 +202,37 @@ export function CampaignWorkspace({ campaignId }: Props) {
 
       {/* 중앙 편집 영역 */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* 상단 바 */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white shrink-0">
-          <p className="text-sm font-medium text-gray-700">
-            {activeSection?.title ?? '섹션을 선택하세요'}
-          </p>
-          <span className="text-xs text-gray-400">
-            {saveStatus === 'saving' && '저장 중...'}
-            {saveStatus === 'saved' && '저장됨'}
-            {saveStatus === 'error' && '저장 실패'}
-          </span>
+        {/* 상단 바 — 브레드크럼 */}
+        <div className="flex items-center justify-between px-4 border-b border-gray-200 bg-white shrink-0 h-10">
+          {/* 브레드크럼 */}
+          <div className="flex items-center gap-1.5 text-sm min-w-0">
+            <span className="text-gray-400 text-xs truncate shrink-0">{campaign.clientName}</span>
+            <span className="text-gray-300 text-xs shrink-0">›</span>
+            <span className="text-gray-700 font-medium text-sm truncate">
+              {activeSection?.title ?? '섹션을 선택하세요'}
+            </span>
+          </div>
+          {/* 저장 상태 — dot + 텍스트 */}
+          <div className="flex items-center gap-1.5 shrink-0 ml-4">
+            {saveStatus === 'saving' && (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                <span className="text-xs text-gray-400">저장 중...</span>
+              </>
+            )}
+            {saveStatus === 'saved' && (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                <span className="text-xs text-gray-400">저장됨</span>
+              </>
+            )}
+            {saveStatus === 'error' && (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                <span className="text-xs text-red-400">저장 실패</span>
+              </>
+            )}
+          </div>
         </div>
 
         {/* 편집기 */}

@@ -102,3 +102,25 @@ export function formatNumber(n: number): string {
   if (Number.isInteger(n)) return n.toLocaleString()
   return n.toFixed(2)
 }
+
+// ── 태그 컬러 (문자열 해시 기반 파스텔 팔레트) ────────────────────
+
+const PASTEL_PALETTE = [
+  { bg: '#dbeafe', text: '#1e40af' }, // 블루
+  { bg: '#fce7f3', text: '#9d174d' }, // 핑크
+  { bg: '#dcfce7', text: '#166534' }, // 그린
+  { bg: '#fef3c7', text: '#92400e' }, // 앰버
+  { bg: '#ede9fe', text: '#5b21b6' }, // 퍼플
+  { bg: '#ffedd5', text: '#9a3412' }, // 오렌지
+  { bg: '#d1fae5', text: '#065f46' }, // 에메랄드
+  { bg: '#fae8ff', text: '#86198f' }, // 푸시아
+]
+
+export function tagColor(value: string): { bg: string; text: string } {
+  let hash = 0
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash << 5) - hash + value.charCodeAt(i)
+    hash |= 0
+  }
+  return PASTEL_PALETTE[Math.abs(hash) % PASTEL_PALETTE.length]
+}

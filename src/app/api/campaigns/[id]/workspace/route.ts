@@ -11,9 +11,15 @@ function sortSections(sections: CampaignSection[]): CampaignSection[] {
   return [...sections].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
 }
 
+const DEFAULT_DATA_TABLE_COLUMNS = [
+  { id: 'col_account',  name: '계정',   type: 'text',   role: 'dimension' },
+  { id: 'col_platform', name: '플랫폼', type: 'select', role: 'platform', options: ['Instagram', 'TikTok', 'YouTube', 'X'] },
+  { id: 'col_followers',name: '팔로워', type: 'number', role: 'metric' },
+]
+
 function defaultContent(type: string) {
   if (type === 'document') return { blocks: [] }
-  if (type === 'data_table') return { columns: [], rows: [] }
+  if (type === 'data_table') return { columns: DEFAULT_DATA_TABLE_COLUMNS, rows: [] }
   return { widgets: [] }
 }
 
