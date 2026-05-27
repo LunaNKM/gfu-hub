@@ -16,8 +16,9 @@ interface EditableCellProps {
   onStartEdit: () => void
   onStopEdit: () => void
   onChange: (value: CampaignCellValue) => void
-  onNavigate?: (dir: NavigateDir) => void
+  onNavigate?: (dir: NavigateDir) => boolean | void
   onPaste?: (text: string) => void
+  onAfterCommit?: () => void
 }
 
 // ── 별점 컴포넌트 ─────────────────────────────────────────────────
@@ -160,10 +161,12 @@ export function EditableCell({
   onChange,
   onNavigate,
   onPaste,
+  onAfterCommit,
 }: EditableCellProps) {
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(null)
   const wasEditingRef = useRef(false)
+  const suppressNextBlurCommitRef = useRef(false)
 
   useEffect(() => {
     if (editing && !wasEditingRef.current) {
@@ -174,8 +177,11 @@ export function EditableCell({
 
   useEffect(() => {
     if (editing) {
-      inputRef.current?.focus()
-      if (inputRef.current instanceof HTMLInputElement) inputRef.current.select()
+      const raf = window.requestAnimationFrame(() => {
+        inputRef.current?.focus()
+        if (inputRef.current instanceof HTMLInputElement) inputRef.current.select()
+      })
+      return () => window.cancelAnimationFrame(raf)
     }
   }, [editing])
 
@@ -187,18 +193,33 @@ export function EditableCell({
   const commit = (nextDraft = draft) => {
     onChange(normalizeCellValue(nextDraft, column.type))
     onStopEdit()
+    onAfterCommit?.()
   }
 
   const commitAndNavigate = (dir: NavigateDir) => {
     onChange(normalizeCellValue(draft, column.type))
-    onStopEdit()
-    window.setTimeout(() => onNavigate?.(dir), 0)
+    const moved = onNavigate?.(dir)
+    if (!moved) {
+      onStopEdit()
+      onAfterCommit?.()
+      return
+    }
+    suppressNextBlurCommitRef.current = true
+  }
+
+  const handleBlurCommit = () => {
+    if (suppressNextBlurCommitRef.current) {
+      suppressNextBlurCommitRef.current = false
+      return
+    }
+    commit()
   }
 
   const baseViewProps = {
     tabIndex: 0,
     'data-cell-row': rowId,
     'data-cell-col': colId,
+    'data-editable-cell': 'true',
     className: 'flex h-full w-full cursor-text items-center overflow-hidden rounded-sm outline-none focus:ring-1 focus:ring-blue-400 focus:ring-inset',
     onPaste: (event: React.ClipboardEvent) => {
       const text = event.clipboardData?.getData('text')
@@ -302,9 +323,12 @@ export function EditableCell({
     return (
       <select
         ref={inputRef as React.RefObject<HTMLSelectElement>}
+        data-cell-row={rowId}
+        data-cell-col={colId}
+        data-editable-cell="true"
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => commit()}
+        onBlur={handleBlurCommit}
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === 'Enter') { event.preventDefault(); commitAndNavigate('down') }
@@ -337,10 +361,13 @@ export function EditableCell({
     return (
       <textarea
         ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+        data-cell-row={rowId}
+        data-cell-col={colId}
+        data-editable-cell="true"
         autoFocus
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => commit()}
+        onBlur={handleBlurCommit}
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === 'Escape') { onStopEdit(); return }
@@ -376,10 +403,13 @@ export function EditableCell({
   return (
     <input
       ref={inputRef as React.RefObject<HTMLInputElement>}
+      data-cell-row={rowId}
+      data-cell-col={colId}
+      data-editable-cell="true"
       type={inputType}
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => commit()}
+      onBlur={handleBlurCommit}
       onMouseDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
         if (event.key === 'Enter') { event.preventDefault(); commitAndNavigate('down') }

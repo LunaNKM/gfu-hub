@@ -346,6 +346,7 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
   const [globalFilter, setGlobalFilter] = useState('')
   const [showColumnDrawer, setShowColumnDrawer] = useState(false)
   const [editingCell, setEditingCell] = useState<{ rowId: string; colId: string } | null>(null)
+  const pendingPointerCellRef = useRef<{ rowId: string; colId: string } | null>(null)
 
   // table 인스턴스를 ref로 최신 유지 (navigateFrom에서 표시 순서 기반 이동)
   const tableRef = useRef<ReturnType<typeof useReactTable<CampaignDataRow>> | null>(null)
@@ -359,11 +360,20 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
 
   // ── 셀 포커스 / 키보드 이동 ──────────────────────────────────────────
 
-  const focusCell = useCallback((rowId: string, colId: string) => {
-    const el = tableContainerRef.current?.querySelector(
-      `[data-cell-row="${rowId}"][data-cell-col="${colId}"]`
-    ) as HTMLElement | null
-    el?.focus()
+  type ActivateCellOptions = {
+    edit?: boolean
+    selectText?: boolean
+  }
+
+  const activateCell = useCallback((rowId: string, colId: string, options: ActivateCellOptions = {}) => {
+    if (options.edit) setEditingCell({ rowId, colId })
+    window.requestAnimationFrame(() => {
+      const el = tableContainerRef.current?.querySelector(
+        `[data-cell-row="${rowId}"][data-cell-col="${colId}"]`
+      ) as HTMLElement | null
+      el?.focus()
+      if (options.selectText && el instanceof HTMLInputElement) el.select()
+    })
   }, [])
 
   const navigateFrom = useCallback(
@@ -390,15 +400,49 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
           break
       }
 
-      if (targetRowIdx < 0 || targetRowIdx >= displayRows.length) return
-      if (targetColIdx < 0 || targetColIdx >= latestColumns.length) return
+      if (targetRowIdx < 0 || targetRowIdx >= displayRows.length) return false
+      if (targetColIdx < 0 || targetColIdx >= latestColumns.length) return false
 
       const targetRow = displayRows[targetRowIdx]?.original
       const targetCol = latestColumns[targetColIdx]
-      if (targetRow && targetCol) focusCell(targetRow.id, targetCol.id)
+      if (!targetRow || !targetCol) return false
+      activateCell(targetRow.id, targetCol.id, { edit: true, selectText: true })
+      return true
     },
-    [focusCell]
+    [activateCell]
   )
+
+  const handleCellCommit = useCallback(() => {
+    const pending = pendingPointerCellRef.current
+    if (!pending) return
+    pendingPointerCellRef.current = null
+    window.requestAnimationFrame(() => {
+      activateCell(pending.rowId, pending.colId, { edit: true, selectText: true })
+    })
+  }, [activateCell])
+
+  const handlePointerDownCapture = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null
+    const cell = target?.closest('[data-editable-cell="true"][data-cell-row][data-cell-col]') as HTMLElement | null
+    if (!cell) {
+      pendingPointerCellRef.current = null
+      return
+    }
+
+    const rowId = cell.getAttribute('data-cell-row')
+    const colId = cell.getAttribute('data-cell-col')
+    if (!rowId || !colId) {
+      pendingPointerCellRef.current = null
+      return
+    }
+
+    if (editingCell && editingCell.rowId === rowId && editingCell.colId === colId) {
+      pendingPointerCellRef.current = null
+      return
+    }
+
+    pendingPointerCellRef.current = { rowId, colId }
+  }, [editingCell])
 
   // ── TSV Paste 처리 ───────────────────────────────────────────────────
 
@@ -613,6 +657,7 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
               onChange={(value) => updateCell(row.original.id, col.id, value)}
               onNavigate={(dir) => navigateFrom(row.original.id, col.id, dir)}
               onPaste={(text) => handlePaste(text, row.original.id, col.id)}
+              onAfterCommit={handleCellCommit}
             />
           ),
           minSize: getColMinWidth(col.type),
@@ -644,7 +689,7 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
           ]
         : []),
     ],
-    [columns, editingCell, hasExpandRow, updateColumn, deleteColumn, updateCell, navigateFrom, handlePaste]
+    [columns, editingCell, hasExpandRow, updateColumn, deleteColumn, updateCell, navigateFrom, handlePaste, handleCellCommit]
   )
 
   // ── TanStack 인스턴스 ─────────────────────────────────────────────────
@@ -714,6 +759,7 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
           /* ── 테이블 ── */
           <div
             ref={tableContainerRef}
+            onPointerDownCapture={handlePointerDownCapture}
             className={compact ? 'h-full overflow-auto bg-white' : 'h-full overflow-auto rounded-lg bg-white'}
             style={{ border: compact ? 'none' : '1px solid #e9e9e7' }}
           >
