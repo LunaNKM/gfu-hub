@@ -5,21 +5,19 @@ import {
   queryCollectionByField,
   createDocument,
 } from '@/lib/server/firestoreRest'
-import { Campaign, CampaignSection } from '@/types'
+import { Campaign, CampaignSection, CampaignCrmSyncType } from '@/types'
+import { createDefaultTableContent } from '@/components/campaigns/workspace/dataTableTemplates'
 
 function sortSections(sections: CampaignSection[]): CampaignSection[] {
   return [...sections].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
 }
 
-const DEFAULT_DATA_TABLE_COLUMNS = [
-  { id: 'col_account',  name: '계정',   type: 'text',   role: 'dimension' },
-  { id: 'col_platform', name: '플랫폼', type: 'select', role: 'platform', options: ['Instagram', 'TikTok', 'YouTube', 'X'] },
-  { id: 'col_followers',name: '팔로워', type: 'number', role: 'metric' },
-]
-
-function defaultContent(type: string) {
+function defaultContent(
+  type: string,
+  params?: { title?: string; crmSyncType?: CampaignCrmSyncType }
+) {
   if (type === 'document') return { blocks: [] }
-  if (type === 'data_table') return { columns: DEFAULT_DATA_TABLE_COLUMNS, rows: [] }
+  if (type === 'data_table') return createDefaultTableContent(params ?? {})
   return { widgets: [] }
 }
 
@@ -28,12 +26,12 @@ async function createDefaultSections(
   campaignId: string,
   userId: string
 ): Promise<CampaignSection[]> {
-  const defaults: { title: string; type: string; crmSyncType?: string }[] = [
-    { title: '전략 개요', type: 'document' },
-    { title: '후보자 리스트', type: 'data_table' },
+  const defaults: { title: string; type: string; crmSyncType?: CampaignCrmSyncType }[] = [
+    { title: '전략 개요',       type: 'document' },
+    { title: '후보자 리스트',   type: 'data_table' },
     { title: '확정 인원 리스트', type: 'data_table', crmSyncType: 'confirmed_influencers' },
     { title: '인플루언서 성과', type: 'data_table', crmSyncType: 'influencer_performance' },
-    { title: '대시보드', type: 'dashboard' },
+    { title: '대시보드',        type: 'dashboard' },
   ]
 
   const created: CampaignSection[] = []
@@ -48,7 +46,10 @@ async function createDefaultSections(
       internalVisible: true,
       clientShareEnabled: false,
       clientEditable: false,
-      content: defaultContent(def.type),
+      content: defaultContent(def.type, {
+        title: def.title,
+        crmSyncType: def.crmSyncType,
+      }),
       createdAt: now,
       updatedAt: now,
       createdBy: userId,

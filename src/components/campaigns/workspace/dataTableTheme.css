@@ -1,0 +1,69 @@
+/* ── GFU 캠페인 데이터 테이블 AG Grid 테마 ─────────────────────── */
+
+.campaign-data-grid.ag-theme-quartz {
+  --ag-font-family: inherit;
+  --ag-font-size: 13px;
+  --ag-foreground-color: #1f2937;
+  --ag-background-color: #ffffff;
+  --ag-header-background-color: #f8fafc;
+  --ag-header-foreground-color: #6b7280;
+  --ag-border-color: #eef2f7;
+  --ag-row-border-color: #eef2f7;
+  --ag-row-hover-color: #f9fafb;
+  --ag-selected-row-background-color: #eff6ff;
+  --ag-range-selection-border-color: #3b82f6;
+  --ag-header-height: 38px;
+  --ag-row-height: 40px;
+  --ag-cell-horizontal-padding: 12px;
+  --ag-header-column-separator-display: none;
+  --ag-column-hover-color: transparent;
+  --ag-input-focus-border-color: #3b82f6;
+  --ag-checkbox-checked-color: #3b82f6;
+  --ag-grid-size: 4px;
+
+  border-radius: 8px;
+  border: 1px solid #eef2f7;
+  overflow: hidden;
+}
+
+/* 헤더 */
+.campaign-data-grid .ag-header-cell-label {
+  font-size: 12px;
+  font-weight: 500;
+  gap: 4px;
+}
+
+/* 필터 아이콘: hover시만 표시 */
+.campaign-data-grid .ag-header-cell .ag-header-cell-menu-button {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.campaign-data-grid .ag-header-cell:hover .ag-header-cell-menu-button {
+  opacity: 1;
+}
+
+/* 셀 세로 정렬 */
+.campaign-data-grid .ag-cell {
+  display: flex;
+  align-items: center;
+}
+
+/* 외곽 테두리 제거 (컨테이너에서 처리) */
+.campaign-data-grid .ag-root-wrapper {
+  border: none;
+}
+
+/* 헤더 하단 구분선 */
+.campaign-data-grid .ag-header {
+  border-bottom: 1px solid #eef2f7;
+}
+
+/* 행 그룹 체크박스 정렬 */
+.campaign-data-grid .ag-cell-wrapper.ag-row-group {
+  align-items: center;
+}
+
+/* 포커스 셀 — 강조 최소화 */
+.campaign-data-grid .ag-cell-focus:not(.ag-cell-range-selected) {
+  border-color: #3b82f6 !important;
+}

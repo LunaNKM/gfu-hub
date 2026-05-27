@@ -5,10 +5,11 @@ import {
   createDocument,
 } from '@/lib/server/firestoreRest'
 import { CampaignSection } from '@/types'
+import { createDefaultTableContent } from '@/components/campaigns/workspace/dataTableTemplates'
 
-function defaultContent(type: string) {
+function defaultContent(type: string, title?: string) {
   if (type === 'document') return { blocks: [] }
-  if (type === 'data_table') return { columns: [], rows: [] }
+  if (type === 'data_table') return createDefaultTableContent({ title })
   return { widgets: [] }
 }
 
@@ -43,16 +44,17 @@ export async function POST(
     )
     const maxOrder = existing.reduce((m, s) => Math.max(m, s.order ?? 0), 0)
 
+    const sectionTitle = title ?? defaultTitle(type)
     const now = new Date().toISOString()
     const data: Record<string, unknown> = {
       campaignId: id,
-      title: title ?? defaultTitle(type),
+      title: sectionTitle,
       type,
       order: maxOrder + 1000,
       internalVisible: true,
       clientShareEnabled: false,
       clientEditable: false,
-      content: defaultContent(type),
+      content: defaultContent(type, sectionTitle),
       createdAt: now,
       updatedAt: now,
       createdBy: auth.uid,

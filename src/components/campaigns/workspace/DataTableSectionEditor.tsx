@@ -4,54 +4,41 @@ import React, { useState, useCallback, useMemo, useRef } from 'react'
 import { AgGridReact } from 'ag-grid-react'
 import 'ag-grid-community/styles/ag-grid.css'
 import 'ag-grid-community/styles/ag-theme-quartz.css'
-import './workspace.css'
+import './dataTableTheme.css'
 import {
   ModuleRegistry,
   AllCommunityModule,
   ColDef,
-  GridReadyEvent,
   CellValueChangedEvent,
   SelectionChangedEvent,
 } from 'ag-grid-community'
 import {
-  Plus, Trash2, ChevronDown, SlidersHorizontal,
-  Type, Hash, CircleDollarSign, Percent, Calendar,
-  List, CheckSquare, Link, TableProperties,
+  Plus,
+  Type,
+  Hash,
+  CircleDollarSign,
+  Percent,
+  Calendar,
+  List,
+  CheckSquare,
+  Link,
+  TableProperties,
 } from 'lucide-react'
-import { clsx } from 'clsx'
 import {
   CampaignDataTableContent,
   CampaignDataColumn,
   CampaignDataRow,
   CampaignColumnType,
-  CampaignColumnRole,
 } from '@/types'
 import { normalizeCellValue, tagColor } from './workspaceUtils'
+import { createEmptyRow, createSampleRows } from './dataTableTemplates'
+import { DataTableToolbar } from './DataTableToolbar'
+import { DataTableColumnDrawer } from './DataTableColumnDrawer'
+import { DataTableEmptyState } from './DataTableEmptyState'
 
 ModuleRegistry.registerModules([AllCommunityModule])
 
-// ── 컬럼 타입 메타 ───────────────────────────────────────────────
-
-const COLUMN_TYPES: { value: CampaignColumnType; label: string }[] = [
-  { value: 'text',     label: '텍스트' },
-  { value: 'number',   label: '숫자' },
-  { value: 'currency', label: '금액' },
-  { value: 'percent',  label: '퍼센트' },
-  { value: 'date',     label: '날짜' },
-  { value: 'select',   label: '선택' },
-  { value: 'checkbox', label: '체크박스' },
-  { value: 'url',      label: 'URL' },
-]
-
-const COLUMN_ROLES: { value: CampaignColumnRole | ''; label: string }[] = [
-  { value: '',            label: '없음' },
-  { value: 'dimension',   label: '차원' },
-  { value: 'metric',      label: '지표' },
-  { value: 'status',      label: '상태' },
-  { value: 'platform',    label: '플랫폼' },
-  { value: 'cost',        label: '비용' },
-  { value: 'performance', label: '성과' },
-]
+// ── 타입 아이콘 매핑 ─────────────────────────────────────────────
 
 const TYPE_ICONS: Record<CampaignColumnType, React.ElementType> = {
   text:     Type,
@@ -64,7 +51,7 @@ const TYPE_ICONS: Record<CampaignColumnType, React.ElementType> = {
   url:      Link,
 }
 
-// ── AG Grid 커스텀 헤더 컴포넌트 ──────────────────────────────────
+// ── AG Grid 커스텀 헤더 컴포넌트 ─────────────────────────────────
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function TypedHeader(params: any) {
@@ -89,7 +76,7 @@ function TypedHeader(params: any) {
   )
 }
 
-// ── AG Grid 태그 셀 렌더러 ────────────────────────────────────────
+// ── 태그 셀 렌더러 ────────────────────────────────────────────────
 
 function TagCellRenderer(params: any) {
   const val = params.value
@@ -186,7 +173,7 @@ interface Props {
 export function DataTableSectionEditor({ content, onChange }: Props) {
   const { columns, rows } = content
   const gridRef = useRef<AgGridReact<RowData>>(null)
-  const [showColPanel, setShowColPanel] = useState(false)
+  const [showColumnDrawer, setShowColumnDrawer] = useState(false)
   const [selectedCount, setSelectedCount] = useState(0)
 
   const agColumns = useMemo(() => colsToAgDefs(columns), [columns])
@@ -200,8 +187,6 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
     return agDataToRows(agRows, columns)
   }, [columns, rows])
 
-  const onGridReady = useCallback((_params: GridReadyEvent) => {}, [])
-
   const onCellValueChanged = useCallback(
     (_event: CellValueChangedEvent<RowData>) => {
       onChange({ columns, rows: getCurrentRows() })
@@ -214,10 +199,13 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
   }, [])
 
   const addRow = useCallback(() => {
-    const cells: CampaignDataRow['cells'] = {}
-    for (const col of columns) cells[col.id] = null
-    const newRow: CampaignDataRow = { id: `row_${Date.now()}`, cells }
+    const newRow = createEmptyRow(columns)
     onChange({ columns, rows: [...getCurrentRows(), newRow] })
+  }, [columns, getCurrentRows, onChange])
+
+  const addSampleRows = useCallback(() => {
+    const samples = createSampleRows(columns)
+    onChange({ columns, rows: [...getCurrentRows(), ...samples] })
   }, [columns, getCurrentRows, onChange])
 
   const deleteSelectedRows = useCallback(() => {
@@ -265,138 +253,50 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
     [columns, getCurrentRows, onChange]
   )
 
-  // ── 툴바 버튼 공통 스타일 ────────────────────────────────────
-  const ghostBtn = 'flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 px-2.5 py-1.5 border border-gray-200 rounded-md bg-white hover:bg-gray-50 transition-colors'
-  const primaryBtn = 'flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 px-2.5 py-1.5 border border-blue-200 rounded-md bg-blue-50 hover:bg-blue-100 transition-colors'
-
   return (
     <div className="flex flex-col h-full">
+      {/* 툴바 */}
+      <DataTableToolbar
+        rowCount={rows.length}
+        columnCount={columns.length}
+        selectedCount={selectedCount}
+        onAddRow={addRow}
+        onAddColumn={addColumn}
+        onOpenColumnDrawer={() => setShowColumnDrawer(true)}
+        onDeleteSelected={deleteSelectedRows}
+      />
 
-      {/* ── 툴바 ── */}
-      <div className="border-b border-gray-100 bg-white shrink-0 px-3 py-2 flex items-center gap-2">
-        {/* 컬럼 관리 토글 */}
-        <button
-          onClick={() => setShowColPanel((v) => !v)}
-          className={clsx(
-            ghostBtn,
-            showColPanel && 'bg-gray-100 text-gray-700 border-gray-300'
-          )}
-        >
-          <SlidersHorizontal size={12} />
-          컬럼 관리
-          <ChevronDown
-            size={11}
-            className={clsx('transition-transform', showColPanel && 'rotate-180')}
-          />
-        </button>
-
-        <button onClick={addColumn} className={ghostBtn}>
-          <Plus size={12} /> 컬럼 추가
-        </button>
-
-        <button onClick={addRow} className={primaryBtn}>
-          <Plus size={12} /> 행 추가
-        </button>
-
-        <button
-          onClick={deleteSelectedRows}
-          disabled={selectedCount === 0}
-          className={clsx(
-            'flex items-center gap-1.5 text-xs px-2.5 py-1.5 border rounded-md transition-colors',
-            selectedCount > 0
-              ? 'text-red-500 hover:text-red-700 border-red-200 bg-red-50 hover:bg-red-100'
-              : 'text-gray-300 border-gray-100 bg-white cursor-default'
-          )}
-        >
-          <Trash2 size={12} />
-          {selectedCount > 0 ? `${selectedCount}행 삭제` : '행 삭제'}
-        </button>
-
-        {/* 우측: 행 개수 */}
-        <div className="ml-auto text-xs text-gray-400">
-          {rows.length > 0 && `${rows.length}개 행`}
-        </div>
-      </div>
-
-      {/* ── 컬럼 관리 패널 ── */}
-      {showColPanel && columns.length > 0 && (
-        <div className="border-b border-gray-100 bg-gray-50 px-3 py-2.5 overflow-x-auto shrink-0">
-          <div className="flex gap-2.5 min-w-max">
-            {columns.map((col) => (
-              <div
-                key={col.id}
-                className="bg-white border border-gray-200 rounded-lg p-2.5 min-w-44 shadow-sm"
-              >
-                <input
-                  value={col.name}
-                  onChange={(e) => updateColumn(col.id, { name: e.target.value })}
-                  className="w-full text-xs font-medium text-gray-800 border-b border-gray-100 pb-1.5 mb-2 outline-none focus:border-blue-400 bg-transparent"
-                />
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <select
-                    value={col.type}
-                    onChange={(e) =>
-                      updateColumn(col.id, { type: e.target.value as CampaignColumnType })
-                    }
-                    className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white outline-none text-gray-600 focus:border-blue-400"
-                  >
-                    {COLUMN_TYPES.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={col.role ?? ''}
-                    onChange={(e) =>
-                      updateColumn(col.id, {
-                        role: (e.target.value as CampaignColumnRole) || undefined,
-                      })
-                    }
-                    className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white outline-none text-gray-600 focus:border-blue-400"
-                  >
-                    {COLUMN_ROLES.map((r) => (
-                      <option key={r.value} value={r.value}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => deleteColumn(col.id)}
-                    className="text-gray-300 hover:text-red-500 transition-colors p-0.5"
-                    title="컬럼 삭제"
-                  >
-                    <Trash2 size={11} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── AG Grid / 빈 상태 ── */}
-      <div className="flex-1 ag-theme-quartz gfu-grid overflow-hidden m-3">
+      {/* 본문 */}
+      <div className="flex-1 overflow-hidden p-3">
         {columns.length === 0 ? (
+          /* 컬럼 없음 상태 */
           <div className="flex flex-col items-center justify-center h-full gap-4 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50/50">
             <div className="flex flex-col items-center gap-2 text-center">
               <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
                 <TableProperties size={18} className="text-gray-400" />
               </div>
-              <p className="text-sm font-medium text-gray-500">아직 데이터가 없어요</p>
-              <p className="text-xs text-gray-400">컬럼을 추가해서 테이블을 시작하세요</p>
+              <p className="text-sm font-medium text-gray-500">컬럼을 먼저 추가하세요</p>
+              <p className="text-xs text-gray-400">
+                컬럼 설정에서 테이블 구조를 만들어보세요.
+              </p>
             </div>
-            <button onClick={addColumn} className={primaryBtn}>
+            <button
+              onClick={() => setShowColumnDrawer(true)}
+              className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 px-3 py-1.5 border border-blue-200 rounded-md bg-blue-50 hover:bg-blue-100 transition-colors"
+            >
               <Plus size={13} /> 컬럼 추가
             </button>
           </div>
+        ) : rows.length === 0 ? (
+          /* 행 없음 상태 */
+          <DataTableEmptyState onAddRow={addRow} onAddSampleRows={addSampleRows} />
         ) : (
-          <div style={{ height: '100%', width: '100%' }}>
+          /* AG Grid */
+          <div className="ag-theme-quartz campaign-data-grid h-full w-full">
             <AgGridReact<RowData>
               ref={gridRef}
               rowData={agData}
               columnDefs={agColumns}
-              onGridReady={onGridReady}
               onCellValueChanged={onCellValueChanged}
               onSelectionChanged={onSelectionChanged}
               rowSelection="multiple"
@@ -413,6 +313,16 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
           </div>
         )}
       </div>
+
+      {/* 컬럼 설정 Drawer */}
+      <DataTableColumnDrawer
+        open={showColumnDrawer}
+        columns={columns}
+        onClose={() => setShowColumnDrawer(false)}
+        onUpdate={updateColumn}
+        onDelete={deleteColumn}
+        onAdd={addColumn}
+      />
     </div>
   )
 }
