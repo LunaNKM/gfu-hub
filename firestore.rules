@@ -101,6 +101,14 @@ service cloud.firestore {
       allow read, write: if isGfutures() || isAuthenticated();
     }
 
+    match /campaignBlocks/{blockId} {
+      allow read, write: if isGfutures() || isAuthenticated();
+    }
+
+    match /campaignDatabases/{databaseId} {
+      allow read, write: if isGfutures() || isAuthenticated();
+    }
+
     // ── 캠페인별 인플루언서 점수 ─────────────────────────────
     match /influencerScores/{scoreId} {
       allow read, write: if isGfutures();
