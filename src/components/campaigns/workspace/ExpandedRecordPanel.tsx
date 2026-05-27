@@ -1,7 +1,20 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
-import { X, AlignLeft, Calendar, CheckSquare, ChevronDownCircle, CircleDollarSign, Hash, Link2, Percent, Star, Tags, Type } from 'lucide-react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  X,
+  AlignLeft,
+  Calendar,
+  CheckSquare,
+  ChevronDownCircle,
+  CircleDollarSign,
+  Hash,
+  Link2,
+  Percent,
+  Star,
+  Tags,
+  Type,
+} from 'lucide-react'
 import {
   CampaignDataColumn,
   CampaignDataRow,
@@ -27,6 +40,42 @@ const TYPE_ICON: Record<CampaignColumnType, React.ReactNode> = {
   rating:       <Star size={13} />,
 }
 
+// ── 별점 필드 (hooks 규칙: 별도 컴포넌트로 분리) ─────────────────────
+
+function RatingField({
+  value,
+  column,
+  onChange,
+}: {
+  value: CampaignCellValue
+  column: CampaignDataColumn
+  onChange: (value: CampaignCellValue) => void
+}) {
+  const max = column.config?.maxRating ?? 5
+  const numVal = typeof value === 'number' ? value : 0
+  const [hover, setHover] = useState(0)
+  return (
+    <div className="flex items-center gap-1 py-1">
+      {Array.from({ length: max }, (_, i) => {
+        const starVal = i + 1
+        const filled = (hover || numVal) >= starVal
+        return (
+          <button
+            key={i}
+            type="button"
+            className={`text-xl transition-colors ${filled ? 'text-amber-400' : 'text-gray-200 hover:text-amber-300'}`}
+            onMouseEnter={() => setHover(starVal)}
+            onMouseLeave={() => setHover(0)}
+            onClick={() => onChange(numVal === starVal ? 0 : starVal)}
+          >
+            ★
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── 필드 에디터 ──────────────────────────────────────────────────────
 
 function FieldEditor({
@@ -38,34 +87,10 @@ function FieldEditor({
   value: CampaignCellValue
   onChange: (value: CampaignCellValue) => void
 }) {
-  // 별점
   if (column.type === 'rating') {
-    const max = column.config?.maxRating ?? 5
-    const numVal = typeof value === 'number' ? value : 0
-    const [hover, setHover] = useState(0)
-    return (
-      <div className="flex items-center gap-1 py-1">
-        {Array.from({ length: max }, (_, i) => {
-          const starVal = i + 1
-          const filled = (hover || numVal) >= starVal
-          return (
-            <button
-              key={i}
-              type="button"
-              className={`text-xl transition-colors ${filled ? 'text-amber-400' : 'text-gray-200 hover:text-amber-300'}`}
-              onMouseEnter={() => setHover(starVal)}
-              onMouseLeave={() => setHover(0)}
-              onClick={() => onChange(numVal === starVal ? 0 : starVal)}
-            >
-              ★
-            </button>
-          )
-        })}
-      </div>
-    )
+    return <RatingField value={value} column={column} onChange={onChange} />
   }
 
-  // 체크박스
   if (column.type === 'checkbox') {
     return (
       <label className="flex items-center gap-2 py-1 cursor-pointer">
@@ -80,7 +105,6 @@ function FieldEditor({
     )
   }
 
-  // 단일 셀렉트
   if (column.type === 'select') {
     const strVal = value ? String(value) : ''
     return (
@@ -90,19 +114,15 @@ function FieldEditor({
         className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 bg-white"
       >
         <option value="">-</option>
-        {column.options?.map((opt) => {
-          const color = getColor(opt.color)
-          return (
-            <option key={opt.value} value={opt.value}>
-              {opt.value}
-            </option>
-          )
-        })}
+        {column.options?.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.value}
+          </option>
+        ))}
       </select>
     )
   }
 
-  // 멀티 셀렉트
   if (column.type === 'multi_select') {
     const values = Array.isArray(value) ? value : (value ? [String(value)] : [])
     const toggle = (v: string) => {
@@ -147,7 +167,6 @@ function FieldEditor({
     )
   }
 
-  // 긴 텍스트
   if (column.type === 'long_text') {
     return (
       <textarea
@@ -160,7 +179,6 @@ function FieldEditor({
     )
   }
 
-  // URL
   if (column.type === 'url') {
     const strVal = String(value ?? '')
     return (
@@ -186,7 +204,6 @@ function FieldEditor({
     )
   }
 
-  // 날짜
   if (column.type === 'date') {
     return (
       <input
@@ -198,7 +215,6 @@ function FieldEditor({
     )
   }
 
-  // 숫자 / 금액 / 퍼센트
   if (column.type === 'number' || column.type === 'currency' || column.type === 'percent') {
     const suffix = column.type === 'percent' ? '%' : column.type === 'currency' ? '원' : ''
     return (
@@ -215,7 +231,6 @@ function FieldEditor({
     )
   }
 
-  // 기본 텍스트
   return (
     <input
       type="text"
@@ -240,46 +255,39 @@ export function ExpandedRecordPanel({ row, columns, onCellChange, onClose }: Exp
   const panelRef = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
 
-  // mount 후 슬라이드인 트리거
   useEffect(() => {
     const id = window.requestAnimationFrame(() => setVisible(true))
     return () => window.cancelAnimationFrame(id)
   }, [])
 
-  // ESC 닫기
+  const handleClose = useCallback(() => {
+    setVisible(false)
+    window.setTimeout(onClose, 200)
+  }, [onClose])
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') handleClose()
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [])
+  }, [handleClose])
 
-  const handleClose = () => {
-    setVisible(false)
-    window.setTimeout(onClose, 200) // 애니메이션 후 언마운트
-  }
-
-  // 첫 번째 dimension 컬럼의 값을 레코드 제목으로
   const titleCol = columns.find((c) => c.role === 'dimension') ?? columns[0]
   const title = titleCol ? String(row.cells[titleCol.id] ?? '') || '(제목 없음)' : '레코드'
 
   return (
     <>
-      {/* 오버레이 */}
       <div
         className="fixed inset-0 z-40 bg-black/10 transition-opacity duration-200"
         style={{ opacity: visible ? 1 : 0 }}
         onClick={handleClose}
       />
-
-      {/* 패널 */}
       <div
         ref={panelRef}
         className="fixed right-0 top-0 z-50 flex h-full w-[440px] max-w-full flex-col border-l border-gray-200 bg-white shadow-xl transition-transform duration-200"
         style={{ transform: visible ? 'translateX(0)' : 'translateX(100%)' }}
       >
-        {/* 헤더 */}
         <div className="flex shrink-0 items-center gap-3 border-b border-gray-100 px-5 py-4">
           <div className="flex-1 min-w-0">
             <p className="truncate text-sm font-semibold text-gray-900">{title}</p>
@@ -294,7 +302,6 @@ export function ExpandedRecordPanel({ row, columns, onCellChange, onClose }: Exp
           </button>
         </div>
 
-        {/* 필드 목록 */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
           {columns.map((col) => (
             <div key={col.id} className="space-y-1.5">
