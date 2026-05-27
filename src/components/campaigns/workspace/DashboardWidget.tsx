@@ -26,13 +26,14 @@ export function DashboardWidget({ widget, dataSections, onDelete }: Props) {
   const columns = tableContent?.columns ?? []
   const rows = tableContent?.rows ?? []
 
-  const hasSource = !!sourceSection && !!widget.dimensionColumnId && !!widget.metricColumnId
+  const hasMetricSource = !!sourceSection && !!widget.metricColumnId
+  const hasChartSource = hasMetricSource && !!widget.dimensionColumnId
 
-  const chartData = hasSource
+  const chartData = hasChartSource
     ? buildChartData(rows, columns, widget.dimensionColumnId, widget.metricColumnId, widget.aggregation)
     : []
 
-  const kpiValue = hasSource && widget.type === 'kpi'
+  const kpiValue = hasMetricSource && widget.type === 'kpi'
     ? aggregateSingle(rows, widget.metricColumnId!, widget.aggregation)
     : null
 
@@ -43,9 +44,8 @@ export function DashboardWidget({ widget, dataSections, onDelete }: Props) {
   )
 
   function renderChart() {
-    if (!hasSource || chartData.length === 0) return placeholder
-
     if (widget.type === 'kpi') {
+      if (!hasMetricSource) return placeholder
       return (
         <div className="flex items-center justify-center h-32">
           <div className="text-center">
@@ -55,6 +55,8 @@ export function DashboardWidget({ widget, dataSections, onDelete }: Props) {
         </div>
       )
     }
+
+    if (!hasChartSource || chartData.length === 0) return placeholder
 
     if (widget.type === 'bar') {
       return (

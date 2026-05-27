@@ -18,7 +18,6 @@ interface Props {
 
 export function CampaignWorkspace({ campaignId }: Props) {
   const { user } = useAuth()
-  const token = user?.uid ?? ''
 
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [sections, setSections] = useState<CampaignSection[]>([])
@@ -27,14 +26,16 @@ export function CampaignWorkspace({ campaignId }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const pendingPatches = useRef<Record<string, Partial<CampaignSection>>>({})
 
   const activeSection = sections.find((s) => s.id === activeSectionId) ?? null
 
   // 워크스페이스 초기 로드
   const load = useCallback(async () => {
-    if (!token) return
+    if (!user) return
     try {
+      const token = await user.getIdToken()
       const res = await fetch(`/api/campaigns/${campaignId}/workspace`, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -48,24 +49,32 @@ export function CampaignWorkspace({ campaignId }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [campaignId, token])
+  }, [campaignId, user])
 
   useEffect(() => { load() }, [load])
 
   // debounce 저장
   const scheduleSave = useCallback(
     (sectionId: string, patch: Partial<CampaignSection>) => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
+      pendingPatches.current[sectionId] = {
+        ...(pendingPatches.current[sectionId] ?? {}),
+        ...patch,
+      }
+      if (debounceRefs.current[sectionId]) clearTimeout(debounceRefs.current[sectionId])
       setSaveStatus('saving')
-      debounceRef.current = setTimeout(async () => {
+      debounceRefs.current[sectionId] = setTimeout(async () => {
         try {
+          if (!user) throw new Error('로그인이 필요합니다.')
+          const token = await user.getIdToken()
+          const body = pendingPatches.current[sectionId] ?? patch
+          delete pendingPatches.current[sectionId]
           const res = await fetch(`/api/campaigns/${campaignId}/sections/${sectionId}`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify(patch),
+            body: JSON.stringify(body),
           })
           if (!res.ok) throw new Error()
           setSaveStatus('saved')
@@ -75,7 +84,7 @@ export function CampaignWorkspace({ campaignId }: Props) {
         }
       }, 800)
     },
-    [campaignId, token]
+    [campaignId, user]
   )
 
   // 섹션 로컬 업데이트 + 저장 예약
@@ -92,8 +101,9 @@ export function CampaignWorkspace({ campaignId }: Props) {
   // 섹션 추가
   const addSection = useCallback(
     async (type: CampaignSectionType) => {
-      if (!token) return
+      if (!user) return
       try {
+        const token = await user.getIdToken()
         const res = await fetch(`/api/campaigns/${campaignId}/sections`, {
           method: 'POST',
           headers: {
@@ -111,14 +121,15 @@ export function CampaignWorkspace({ campaignId }: Props) {
         console.error('섹션 추가 실패:', e)
       }
     },
-    [campaignId, token]
+    [campaignId, user]
   )
 
   // 섹션 삭제
   const deleteSection = useCallback(
     async (sectionId: string) => {
-      if (!token) return
+      if (!user) return
       try {
+        const token = await user.getIdToken()
         const res = await fetch(`/api/campaigns/${campaignId}/sections/${sectionId}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` },
@@ -135,7 +146,7 @@ export function CampaignWorkspace({ campaignId }: Props) {
         console.error('섹션 삭제 실패:', e)
       }
     },
-    [campaignId, token, activeSectionId]
+    [campaignId, user, activeSectionId]
   )
 
   // 섹션 순서 변경
@@ -143,6 +154,8 @@ export function CampaignWorkspace({ campaignId }: Props) {
     async (newSections: CampaignSection[]) => {
       setSections(newSections)
       try {
+        if (!user) throw new Error('로그인이 필요합니다.')
+        const token = await user.getIdToken()
         await fetch(`/api/campaigns/${campaignId}/sections/reorder`, {
           method: 'POST',
           headers: {
@@ -155,7 +168,7 @@ export function CampaignWorkspace({ campaignId }: Props) {
         console.error('순서 변경 실패:', e)
       }
     },
-    [campaignId, token]
+    [campaignId, user]
   )
 
   if (loading) {

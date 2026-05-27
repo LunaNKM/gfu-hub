@@ -49,7 +49,7 @@ interface RowData {
 }
 
 function colsToAgDefs(columns: CampaignDataColumn[]): ColDef[] {
-  return columns.map((col) => ({
+  return columns.map((col, index) => ({
     field: col.id,
     headerName: col.name,
     editable: true,
@@ -57,6 +57,12 @@ function colsToAgDefs(columns: CampaignDataColumn[]): ColDef[] {
     filter: true,
     resizable: true,
     minWidth: 100,
+    ...(index === 0
+      ? {
+          checkboxSelection: true,
+          headerCheckboxSelection: true,
+        }
+      : {}),
     ...(col.type === 'checkbox'
       ? { cellDataType: 'boolean', cellRenderer: 'agCheckboxCellRenderer', cellEditor: 'agCheckboxCellEditor' }
       : {}),

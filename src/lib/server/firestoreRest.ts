@@ -82,6 +82,19 @@ async function firestoreFetch(token: string, url: string, init?: RequestInit) {
   return data
 }
 
+function isFirestoreNotFound(error: unknown): boolean {
+  return error instanceof Error && /not found|404/i.test(error.message)
+}
+
+function updateMaskQuery(data: Record<string, unknown>): string {
+  const params = new URLSearchParams()
+  for (const key of Object.keys(data).filter((field) => data[field] !== undefined)) {
+    params.append('updateMask.fieldPaths', key)
+  }
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+
 export async function queryCollectionByField<T extends object>(
   token: string,
   collectionId: string,
@@ -139,10 +152,14 @@ export async function patchDocument(
   documentId: string,
   data: Record<string, unknown>
 ): Promise<void> {
-  await firestoreFetch(token, `${BASE_URL}/${collectionId}/${encodeURIComponent(documentId)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ fields: encodeFields(data) }),
-  })
+  await firestoreFetch(
+    token,
+    `${BASE_URL}/${collectionId}/${encodeURIComponent(documentId)}${updateMaskQuery(data)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ fields: encodeFields(data) }),
+    }
+  )
 }
 
 export async function deleteDocument(
@@ -167,8 +184,9 @@ export async function getDocument<T extends object>(
     )
     if (!data.name) return null
     return decodeDocument(data) as T
-  } catch {
-    return null
+  } catch (error) {
+    if (isFirestoreNotFound(error)) return null
+    throw error
   }
 }
 

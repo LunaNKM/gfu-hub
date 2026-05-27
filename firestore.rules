@@ -97,9 +97,8 @@ service cloud.firestore {
     }
 
     // ── 캠페인 워크스페이스 섹션 ─────────────────────────────
-    // 서버(API 라우트)에서도 접근 가능하도록 request.auth == null 허용
     match /campaignSections/{sectionId} {
-      allow read, write: if isGfutures() || request.auth == null;
+      allow read, write: if isGfutures();
     }
 
     // ── 캠페인별 인플루언서 점수 ─────────────────────────────
