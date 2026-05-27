@@ -6,6 +6,7 @@ import {
   CampaignDataColumn,
   CampaignDataRow,
   CampaignDashboardAggregation,
+  CampaignCellValue,
 } from '@/types'
 
 export function createDefaultContent(
@@ -19,17 +20,31 @@ export function createDefaultContent(
 export function normalizeCellValue(
   value: unknown,
   columnType: string
-): string | number | boolean | null {
+): CampaignCellValue {
   if (value === null || value === undefined || value === '') return null
+
+  if (columnType === 'multi_select') {
+    if (Array.isArray(value)) return value.map(String).filter(Boolean)
+    // TSV 붙여넣기: 쉼표 분리
+    return String(value).split(',').map((s) => s.trim()).filter(Boolean)
+  }
+
+  if (columnType === 'rating') {
+    const n = Number(value)
+    return isNaN(n) ? null : Math.max(0, Math.round(n))
+  }
+
   if (columnType === 'number' || columnType === 'currency' || columnType === 'percent') {
     const n = Number(String(value).replace(/[^0-9.\-]/g, ''))
     return isNaN(n) ? null : n
   }
+
   if (columnType === 'checkbox') {
     if (typeof value === 'boolean') return value
     const s = String(value).toLowerCase()
     return s === 'true' || s === '1' || s === 'yes'
   }
+
   return String(value)
 }
 

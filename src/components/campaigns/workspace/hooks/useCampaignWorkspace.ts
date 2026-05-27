@@ -13,6 +13,7 @@ import {
   CampaignSectionType,
 } from '@/types'
 import { buildCampaignOverview } from '@/lib/campaigns/overview'
+import { normalizeColumn } from '@/lib/campaigns/normalizeColumn'
 import { useDebouncedResourceSave } from './useDebouncedResourceSave'
 
 export type ResourceSaveStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error'
@@ -80,9 +81,33 @@ export function useCampaignWorkspace(campaignId: string, user: User | null | und
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? '워크스페이스를 불러올 수 없습니다.')
       setCampaign(data.campaign)
-      setSections(data.sections ?? [])
+
+      // 기존 string[] options → CampaignSelectOption[] 런타임 정규화
+      const rawDatabases = (data.databases ?? []).map((db: CampaignDatabase) => ({
+        ...db,
+        columns: (db.columns ?? []).map(normalizeColumn),
+      }))
+      const rawSections = (data.sections ?? []).map((section: CampaignSection) => {
+        if (
+          section.type === 'data_table' &&
+          section.content &&
+          typeof section.content === 'object' &&
+          'columns' in section.content
+        ) {
+          return {
+            ...section,
+            content: {
+              ...section.content,
+              columns: (section.content as { columns: unknown[] }).columns.map(normalizeColumn),
+            },
+          }
+        }
+        return section
+      })
+
+      setSections(rawSections)
       setBlocks(data.blocks ?? [])
-      setDatabases(data.databases ?? [])
+      setDatabases(rawDatabases)
       setOverview(data.overview ?? null)
       setSaveState((prev) => ({ ...prev, global: 'idle' }))
     } catch (err) {

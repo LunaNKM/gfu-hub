@@ -6,6 +6,7 @@ import {
   CampaignDataTableContent,
   CampaignCrmSyncType,
 } from '@/types'
+import { autoColor } from '@/lib/palette'
 
 // ── 컬럼 생성 헬퍼 ────────────────────────────────────────────────
 
@@ -18,14 +19,32 @@ function col(
 ): CampaignDataColumn {
   const c: CampaignDataColumn = { id, name, type }
   if (role) c.role = role
-  if (options) c.options = options
+  if (options) c.options = options.map((v) => ({ value: v, color: autoColor(v) }))
   return c
+}
+
+// ── 비즈니스 타입별 기본 색상 ─────────────────────────────────────
+
+const BUSINESS_TYPE_COLORS: Record<CampaignBusinessType, string> = {
+  strategy_overview:       'slate',
+  influencer_candidates:   'indigo',
+  confirmed_influencers:   'green',
+  influencer_performance:  'orange',
+  reels_feed_plan:         'sky',
+  orientation_sheet:       'teal',
+  ad_budget:               'yellow',
+  ad_execution_plan:       'gold',
+  schedule:                'cyan',
+  content_review:          'purple',
+  result_report:           'pink',
+  meta_analytics:          'blue',
+  other:                   'gray',
 }
 
 // ── 빈 행 생성 ────────────────────────────────────────────────────
 
 export function createEmptyDbRow(columns: CampaignDataColumn[]): CampaignDataRow {
-  const cells: Record<string, string | number | boolean | null> = {}
+  const cells: CampaignDataRow['cells'] = {}
   columns.forEach((c) => { cells[c.id] = null })
   return { id: `row_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, cells }
 }
@@ -208,6 +227,7 @@ export function createDefaultDatabase(params: {
     order,
     columns,
     rows: [],
+    color: BUSINESS_TYPE_COLORS[businessType] ?? 'gray',
     clientVisible: false,
     clientEditable: false,
     createdAt: now,

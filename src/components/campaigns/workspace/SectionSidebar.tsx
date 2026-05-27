@@ -33,6 +33,7 @@ import type {
   CampaignSection,
   CampaignSectionType,
 } from '@/types'
+import { getColor } from '@/lib/palette'
 
 export type ActiveView =
   | { type: 'overview' }
@@ -296,17 +297,32 @@ function SortableSectionItem({ section, isActive, onClick }: { section: Campaign
 }
 
 function DatabaseItem({ database, isActive, onClick }: { database: CampaignDatabase; isActive: boolean; onClick: () => void }) {
+  const palette = database.color ? getColor(database.color) : null
+  const activeBg = palette ? palette.bgSoft : '#ecfdf5'
+  const activeText = palette ? palette.text : '#065f46'
+  const activeBorder = palette ? palette.bg : '#10b981'
+  const activeIcon = palette ? palette.bg : '#10b981'
+
   return (
     <div
-      className={clsx(
-        'flex cursor-pointer select-none items-center gap-2 border-l-2 py-1.5 pl-[10px] pr-3 transition-colors',
-        isActive ? 'border-emerald-500 bg-emerald-50 text-emerald-900' : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-800'
-      )}
+      className="flex cursor-pointer select-none items-center gap-2 border-l-2 py-1.5 pl-[10px] pr-3 transition-colors"
+      style={isActive
+        ? { borderLeftColor: activeBorder, background: activeBg, color: activeText }
+        : { borderLeftColor: 'transparent', color: '#4b5563' }
+      }
+      onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLDivElement).style.background = '#f9fafb' }}
+      onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLDivElement).style.background = '' }}
       onClick={onClick}
     >
-      <Database size={13} className={clsx('shrink-0', isActive ? 'text-emerald-500' : 'text-gray-400')} />
+      <Database
+        size={13}
+        className="shrink-0"
+        style={{ color: isActive ? activeIcon : (palette?.bg ?? '#9ca3af') }}
+      />
       <span className="flex-1 truncate text-xs font-medium">{database.title}</span>
-      <span className={clsx('shrink-0 text-[10px]', isActive ? 'text-emerald-400' : 'text-gray-300')}>{database.rows.length}행</span>
+      <span className="shrink-0 text-[10px]" style={{ color: isActive ? activeText : '#d1d5db' }}>
+        {database.rows.length}행
+      </span>
     </div>
   )
 }

@@ -1,20 +1,150 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
-import { CampaignDataColumn } from '@/types'
-import { normalizeCellValue, tagColor } from './workspaceUtils'
+import { CampaignDataColumn, CampaignCellValue } from '@/types'
+import { normalizeCellValue } from './workspaceUtils'
+import { getColor, autoColor } from '@/lib/palette'
 
 export type NavigateDir = 'up' | 'down' | 'left' | 'right' | 'tab'
 
 interface EditableCellProps {
-  value: string | number | boolean | null
+  value: CampaignCellValue
   column: CampaignDataColumn
   rowId: string
   colId: string
-  onChange: (value: string | number | boolean | null) => void
+  onChange: (value: CampaignCellValue) => void
   onNavigate?: (dir: NavigateDir) => void
   onPaste?: (text: string) => void
 }
+
+// ── 별점 컴포넌트 ─────────────────────────────────────────────────
+
+function RatingCell({ value, column, onChange }: {
+  value: CampaignCellValue
+  column: CampaignDataColumn
+  onChange: (value: CampaignCellValue) => void
+}) {
+  const max = column.config?.maxRating ?? 5
+  const numVal = typeof value === 'number' ? value : 0
+  const [hoverVal, setHoverVal] = useState(0)
+
+  return (
+    <div className="flex h-full w-full items-center gap-0.5 px-1">
+      {Array.from({ length: max }, (_, i) => {
+        const starVal = i + 1
+        const filled = (hoverVal || numVal) >= starVal
+        return (
+          <button
+            key={i}
+            type="button"
+            className={`text-base leading-none transition-colors ${filled ? 'text-amber-400' : 'text-gray-200 hover:text-amber-300'}`}
+            onMouseEnter={() => setHoverVal(starVal)}
+            onMouseLeave={() => setHoverVal(0)}
+            onClick={() => onChange(numVal === starVal ? 0 : starVal)}
+            aria-label={`${starVal}점`}
+          >
+            ★
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── 멀티셀렉트 드롭다운 ───────────────────────────────────────────
+
+function MultiSelectDropdown({ value, column, onChange, onClose }: {
+  value: string[]
+  column: CampaignDataColumn
+  onChange: (value: CampaignCellValue) => void
+  onClose: () => void
+}) {
+  const [newOption, setNewOption] = useState('')
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) onClose()
+    }
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    document.addEventListener('keydown', keyHandler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('keydown', keyHandler)
+    }
+  }, [onClose])
+
+  const toggle = (optValue: string) => {
+    const next = value.includes(optValue)
+      ? value.filter((v) => v !== optValue)
+      : [...value, optValue]
+    onChange(next)
+  }
+
+  const addNewOption = () => {
+    const trimmed = newOption.trim()
+    if (!trimmed) return
+    if (!value.includes(trimmed)) onChange([...value, trimmed])
+    setNewOption('')
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="absolute z-[1000] mt-1 min-w-[160px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+      style={{ top: '100%', left: 0 }}
+    >
+      {(column.options ?? []).length > 0 && (
+        <div className="max-h-40 overflow-y-auto">
+          {(column.options ?? []).map((opt) => {
+            const color = getColor(opt.color)
+            const selected = value.includes(opt.value)
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => toggle(opt.value)}
+                className="flex w-full items-center gap-2 px-3 py-1.5 hover:bg-gray-50"
+              >
+                <span
+                  className="h-3.5 w-3.5 shrink-0 rounded-sm border"
+                  style={{
+                    background: selected ? color.bg : 'white',
+                    borderColor: selected ? color.bg : '#d1d5db',
+                  }}
+                />
+                <span
+                  className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                  style={{ background: color.bgSoft, color: color.text, border: `1px solid ${color.border}` }}
+                >
+                  {opt.value}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+      <div className="border-t border-gray-100 px-2 py-1.5">
+        <input
+          autoFocus={column.options?.length === 0}
+          value={newOption}
+          onChange={(e) => setNewOption(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); addNewOption() }
+            if (e.key === 'Escape') onClose()
+          }}
+          placeholder="새 옵션 추가..."
+          className="w-full rounded px-2 py-1 text-xs outline-none border border-gray-200 focus:border-blue-400"
+        />
+      </div>
+    </div>
+  )
+}
+
+// ── 메인 컴포넌트 ─────────────────────────────────────────────────
 
 export function EditableCell({
   value,
@@ -27,7 +157,7 @@ export function EditableCell({
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
-  const inputRef = useRef<HTMLInputElement | HTMLSelectElement>(null)
+  const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(null)
 
   useEffect(() => {
     if (editing) {
@@ -37,7 +167,7 @@ export function EditableCell({
   }, [editing])
 
   const startEdit = () => {
-    setDraft(value == null ? '' : String(value))
+    setDraft(value == null ? '' : Array.isArray(value) ? value.join(', ') : String(value))
     setEditing(true)
   }
 
@@ -52,6 +182,28 @@ export function EditableCell({
     window.setTimeout(() => onNavigate?.(dir), 0)
   }
 
+  const baseViewProps = {
+    tabIndex: 0,
+    'data-cell-row': rowId,
+    'data-cell-col': colId,
+    className: 'flex h-full w-full cursor-text items-center overflow-hidden rounded-sm outline-none focus:ring-1 focus:ring-blue-400 focus:ring-inset',
+    onPaste: (event: React.ClipboardEvent) => {
+      const text = event.clipboardData?.getData('text')
+      if (text && onPaste) { event.preventDefault(); onPaste(text) }
+    },
+    onKeyDown: (event: React.KeyboardEvent) => {
+      if (event.key === 'Enter' || event.key === 'F2') { event.preventDefault(); startEdit() }
+      else if (event.key === 'Tab') { event.preventDefault(); onNavigate?.(event.shiftKey ? 'left' : 'tab') }
+      else if (event.key === 'ArrowUp') { event.preventDefault(); onNavigate?.('up') }
+      else if (event.key === 'ArrowDown') { event.preventDefault(); onNavigate?.('down') }
+      else if (event.key === 'ArrowLeft') { event.preventDefault(); onNavigate?.('left') }
+      else if (event.key === 'ArrowRight') { event.preventDefault(); onNavigate?.('right') }
+    },
+    role: 'gridcell' as const,
+    'aria-label': `${column.name} 셀`,
+  }
+
+  // ── 체크박스 ───────────────────────────────────────────────────
   if (column.type === 'checkbox') {
     return (
       <div className="flex h-full w-full items-center justify-center">
@@ -66,54 +218,74 @@ export function EditableCell({
     )
   }
 
-  if (!editing) {
+  // ── 별점 ──────────────────────────────────────────────────────
+  if (column.type === 'rating') {
+    return <RatingCell value={value} column={column} onChange={onChange} />
+  }
+
+  // ── 멀티셀렉트 ─────────────────────────────────────────────────
+  if (column.type === 'multi_select') {
+    const values = Array.isArray(value) ? value : (value ? [String(value)] : [])
+
+    if (!editing) {
+      return (
+        <div
+          {...baseViewProps}
+          className="flex h-full w-full cursor-pointer items-center gap-1 overflow-hidden rounded-sm px-1 outline-none focus:ring-1 focus:ring-blue-400 focus:ring-inset"
+          onMouseDown={(e) => { e.preventDefault(); startEdit() }}
+        >
+          {values.length === 0 && <span className="pointer-events-none select-none text-gray-300 text-xs">-</span>}
+          {values.slice(0, 2).map((v) => {
+            const opt = column.options?.find((o) => o.value === v)
+            const color = opt?.color ? getColor(opt.color) : getColor(autoColor(v))
+            return (
+              <span
+                key={v}
+                className="shrink-0 truncate rounded-full text-[11px] font-medium leading-none"
+                style={{
+                  background: color.bgSoft,
+                  color: color.text,
+                  border: `1px solid ${color.border}`,
+                  padding: '2px 8px',
+                  maxWidth: 90,
+                }}
+              >
+                {v}
+              </span>
+            )
+          })}
+          {values.length > 2 && (
+            <span className="shrink-0 text-[10px] text-gray-400">+{values.length - 2}</span>
+          )}
+        </div>
+      )
+    }
+
     return (
-      <div
-        tabIndex={0}
-        data-cell-row={rowId}
-        data-cell-col={colId}
-        className="flex h-full w-full cursor-text items-center overflow-hidden rounded-sm outline-none focus:ring-1 focus:ring-blue-400 focus:ring-inset"
-        onMouseDown={(event) => {
-          event.preventDefault()
-          startEdit()
-        }}
-        onPaste={(event) => {
-          const text = event.clipboardData?.getData('text')
-          if (text && onPaste) {
-            event.preventDefault()
-            onPaste(text)
-          }
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === 'F2') {
-            event.preventDefault()
-            startEdit()
-          } else if (event.key === 'Tab') {
-            event.preventDefault()
-            onNavigate?.(event.shiftKey ? 'left' : 'tab')
-          } else if (event.key === 'ArrowUp') {
-            event.preventDefault()
-            onNavigate?.('up')
-          } else if (event.key === 'ArrowDown') {
-            event.preventDefault()
-            onNavigate?.('down')
-          } else if (event.key === 'ArrowLeft') {
-            event.preventDefault()
-            onNavigate?.('left')
-          } else if (event.key === 'ArrowRight') {
-            event.preventDefault()
-            onNavigate?.('right')
-          }
-        }}
-        role="gridcell"
-        aria-label={`${column.name} 셀`}
-      >
-        <DisplayValue value={value} column={column} />
+      <div className="relative h-full w-full">
+        <MultiSelectDropdown
+          value={values}
+          column={column}
+          onChange={(next) => { onChange(next); setEditing(false) }}
+          onClose={() => setEditing(false)}
+        />
       </div>
     )
   }
 
+  // ── 단일 셀렉트 ───────────────────────────────────────────────
   if (column.type === 'select') {
+    if (!editing) {
+      return (
+        <div
+          {...baseViewProps}
+          onMouseDown={(event) => { event.preventDefault(); startEdit() }}
+        >
+          <DisplayValue value={value} column={column} />
+        </div>
+      )
+    }
+
     return (
       <select
         ref={inputRef as React.RefObject<HTMLSelectElement>}
@@ -122,23 +294,62 @@ export function EditableCell({
         onBlur={() => commit()}
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault()
-            commitAndNavigate('down')
-          } else if (event.key === 'Tab') {
-            event.preventDefault()
-            commitAndNavigate(event.shiftKey ? 'left' : 'tab')
-          } else if (event.key === 'Escape') {
-            setEditing(false)
-          }
+          if (event.key === 'Enter') { event.preventDefault(); commitAndNavigate('down') }
+          else if (event.key === 'Tab') { event.preventDefault(); commitAndNavigate(event.shiftKey ? 'left' : 'tab') }
+          else if (event.key === 'Escape') setEditing(false)
         }}
         className="h-full w-full border-0 bg-transparent text-xs outline-none"
       >
         <option value="">-</option>
         {column.options?.map((option) => (
-          <option key={option} value={option}>{option}</option>
+          <option key={option.value} value={option.value}>{option.value}</option>
         ))}
       </select>
+    )
+  }
+
+  // ── 롱텍스트 ─────────────────────────────────────────────────
+  if (column.type === 'long_text') {
+    if (!editing) {
+      return (
+        <div
+          {...baseViewProps}
+          onMouseDown={(event) => { event.preventDefault(); startEdit() }}
+        >
+          <span className="truncate text-xs text-gray-800">{String(value ?? '')}</span>
+        </div>
+      )
+    }
+
+    return (
+      <textarea
+        ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => commit()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { setEditing(false); return }
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitAndNavigate('down'); return }
+          if (e.key === 'Tab') { e.preventDefault(); commitAndNavigate(e.shiftKey ? 'left' : 'tab') }
+        }}
+        rows={3}
+        className="h-full w-full min-w-0 border-0 bg-transparent px-0 text-xs outline-none focus:ring-0 resize-none"
+        style={{ minHeight: 72 }}
+      />
+    )
+  }
+
+  // ── 기본 텍스트/숫자/날짜 ─────────────────────────────────────
+  if (!editing) {
+    return (
+      <div
+        {...baseViewProps}
+        onMouseDown={(event) => { event.preventDefault(); startEdit() }}
+      >
+        <DisplayValue value={value} column={column} />
+      </div>
     )
   }
 
@@ -158,28 +369,18 @@ export function EditableCell({
       onBlur={() => commit()}
       onMouseDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault()
-          commitAndNavigate('down')
-        } else if (event.key === 'Tab') {
-          event.preventDefault()
-          commitAndNavigate(event.shiftKey ? 'left' : 'tab')
-        } else if (event.key === 'Escape') {
-          setEditing(false)
-        }
+        if (event.key === 'Enter') { event.preventDefault(); commitAndNavigate('down') }
+        else if (event.key === 'Tab') { event.preventDefault(); commitAndNavigate(event.shiftKey ? 'left' : 'tab') }
+        else if (event.key === 'Escape') setEditing(false)
       }}
       className="h-full w-full min-w-0 border-0 bg-transparent px-0 text-xs outline-none focus:ring-0"
     />
   )
 }
 
-function DisplayValue({
-  value,
-  column,
-}: {
-  value: string | number | boolean | null
-  column: CampaignDataColumn
-}) {
+// ── DisplayValue ─────────────────────────────────────────────────
+
+function DisplayValue({ value, column }: { value: CampaignCellValue; column: CampaignDataColumn }) {
   if (value === null || value === undefined || value === '') {
     return <span className="pointer-events-none select-none text-gray-300">-</span>
   }
@@ -196,21 +397,16 @@ function DisplayValue({
   }
   if (column.type === 'select') {
     const text = String(value)
-    const { bg, text: textColor } = tagColor(text)
+    const opt = column.options?.find((o) => o.value === text)
+    const color = opt?.color ? getColor(opt.color) : getColor(autoColor(text))
     return (
       <span
+        className="inline-block max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full text-[11px] font-medium"
         style={{
-          backgroundColor: bg,
-          color: textColor,
+          background: color.bgSoft,
+          color: color.text,
+          border: `1px solid ${color.border}`,
           padding: '1px 8px',
-          borderRadius: 999,
-          fontSize: 11,
-          fontWeight: 500,
-          display: 'inline-block',
-          maxWidth: '100%',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
         }}
       >
         {text}

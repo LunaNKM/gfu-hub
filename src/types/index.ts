@@ -429,6 +429,7 @@ export interface CampaignDatabase {
   // Legacy-compatible inline rows. Long term rows should live as CampaignDatabaseRow documents.
   rows: CampaignDataRow[]
   rowCount?: number
+  color?: string  // palette id
   clientVisible: boolean
   clientEditable: boolean
   createdAt: Date | string
@@ -459,13 +460,16 @@ export interface CampaignOverview {
 
 export type CampaignColumnType =
   | 'text'
+  | 'long_text'
   | 'number'
   | 'currency'
   | 'percent'
   | 'date'
   | 'select'
+  | 'multi_select'
   | 'checkbox'
   | 'url'
+  | 'rating'
 
 export type CampaignColumnRole =
   | 'dimension'
@@ -479,17 +483,28 @@ export type CampaignCrmSyncType =
   | 'confirmed_influencers'
   | 'influencer_performance'
 
+export interface CampaignSelectOption {
+  value: string
+  color: string  // palette id
+}
+
 export interface CampaignDataColumn {
   id: string
   name: string
   type: CampaignColumnType
   role?: CampaignColumnRole
-  options?: string[]
+  options?: CampaignSelectOption[]  // select / multi_select
+  config?: {
+    maxRating?: number  // rating 컬럼 (기본 5)
+  }
 }
+
+// string[] = multi_select 값
+export type CampaignCellValue = string | number | boolean | string[] | null
 
 export interface CampaignDataRow {
   id: string
-  cells: Record<string, string | number | boolean | null>
+  cells: Record<string, CampaignCellValue>
 }
 
 export interface CampaignDocumentContent {
@@ -536,6 +551,7 @@ export interface CampaignSection {
   title: string
   type: CampaignSectionType
   order: number
+  color?: string  // palette id
   internalVisible: boolean
   clientShareEnabled: boolean
   clientEditable: boolean

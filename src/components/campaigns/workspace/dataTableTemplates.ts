@@ -17,7 +17,10 @@ export function createSampleRows(columns: CampaignDataColumn[]): CampaignDataRow
     else if (column.type === 'date') cells[column.id] = today
     else if (column.type === 'checkbox') cells[column.id] = false
     else if (column.type === 'url') cells[column.id] = ''
-    else if (column.type === 'select') cells[column.id] = column.options?.[0] ?? ''
+    else if (column.type === 'select') cells[column.id] = column.options?.[0]?.value ?? ''
+    else if (column.type === 'multi_select') cells[column.id] = column.options?.[0] ? [column.options[0].value] : []
+    else if (column.type === 'rating') cells[column.id] = 3
+    else if (column.type === 'long_text') cells[column.id] = ''
     else cells[column.id] = null
   }
 

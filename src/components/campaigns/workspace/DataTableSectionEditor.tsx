@@ -15,15 +15,31 @@ import {
   type Table,
   type Row,
 } from '@tanstack/react-table'
-import { Plus, TableProperties } from 'lucide-react'
+import {
+  AlignLeft,
+  Calendar,
+  CheckSquare,
+  ChevronDownCircle,
+  CircleDollarSign,
+  Hash,
+  Link2,
+  Percent,
+  Plus,
+  Star,
+  TableProperties,
+  Tags,
+  Type,
+} from 'lucide-react'
 import {
   CampaignDataTableContent,
   CampaignDataColumn,
   CampaignDataRow,
   CampaignColumnType,
   CampaignColumnRole,
+  CampaignCellValue,
 } from '@/types'
 import { normalizeCellValue } from './workspaceUtils'
+import { getColor } from '@/lib/palette'
 import { createEmptyRow, createSampleRows } from './dataTableTemplates'
 import { DataTableToolbar } from './DataTableToolbar'
 import { DataTableColumnDrawer } from './DataTableColumnDrawer'
@@ -32,26 +48,32 @@ import { EditableCell, type NavigateDir } from './EditableCell'
 
 // ── 상수 ─────────────────────────────────────────────────────────────────
 
-const TYPE_BADGE: Record<CampaignColumnType, string> = {
-  text:     'T',
-  number:   '#',
-  currency: '#',
-  percent:  '%',
-  date:     'D',
-  select:   'S',
-  checkbox: '✓',
-  url:      '↗',
+const TYPE_ICON: Record<CampaignColumnType, React.ReactNode> = {
+  text:         <Type size={11} />,
+  long_text:    <AlignLeft size={11} />,
+  number:       <Hash size={11} />,
+  currency:     <CircleDollarSign size={11} />,
+  percent:      <Percent size={11} />,
+  date:         <Calendar size={11} />,
+  select:       <ChevronDownCircle size={11} />,
+  multi_select: <Tags size={11} />,
+  checkbox:     <CheckSquare size={11} />,
+  url:          <Link2 size={11} />,
+  rating:       <Star size={11} />,
 }
 
 const COLUMN_TYPES: { value: CampaignColumnType; label: string }[] = [
-  { value: 'text',     label: '텍스트' },
-  { value: 'number',   label: '숫자' },
-  { value: 'currency', label: '금액' },
-  { value: 'percent',  label: '퍼센트' },
-  { value: 'date',     label: '날짜' },
-  { value: 'select',   label: '선택' },
-  { value: 'checkbox', label: '체크박스' },
-  { value: 'url',      label: 'URL' },
+  { value: 'text',         label: '텍스트' },
+  { value: 'long_text',    label: '긴 텍스트' },
+  { value: 'number',       label: '숫자' },
+  { value: 'currency',     label: '금액' },
+  { value: 'percent',      label: '퍼센트' },
+  { value: 'date',         label: '날짜' },
+  { value: 'select',       label: '선택' },
+  { value: 'multi_select', label: '다중 선택' },
+  { value: 'checkbox',     label: '체크박스' },
+  { value: 'url',          label: 'URL' },
+  { value: 'rating',       label: '별점' },
 ]
 
 const COLUMN_ROLES: { value: CampaignColumnRole | ''; label: string }[] = [
@@ -64,15 +86,46 @@ const COLUMN_ROLES: { value: CampaignColumnRole | ''; label: string }[] = [
   { value: 'performance', label: '성과' },
 ]
 
+// ── 행 좌측 accent 컬러 ──────────────────────────────────────────────────
+
+function getRowAccentColor(row: CampaignDataRow, columns: CampaignDataColumn[]): string | null {
+  // 우선순위 1: role='status'인 select/multi_select 컬럼
+  const statusCol = columns.find(
+    (c) => c.role === 'status' && (c.type === 'select' || c.type === 'multi_select')
+  )
+  if (statusCol) {
+    const val = row.cells[statusCol.id]
+    const strVal = Array.isArray(val) ? val[0] : (val ? String(val) : null)
+    if (strVal) {
+      const opt = statusCol.options?.find((o) => o.value === strVal)
+      if (opt?.color) return getColor(opt.color).bg
+    }
+  }
+  // 우선순위 2: 첫 번째 multi_select 컬럼의 첫 값
+  const msCol = columns.find((c) => c.type === 'multi_select')
+  if (msCol) {
+    const val = row.cells[msCol.id]
+    const firstVal = Array.isArray(val) ? val[0] : null
+    if (firstVal) {
+      const opt = msCol.options?.find((o) => o.value === firstVal)
+      if (opt?.color) return getColor(opt.color).bg
+    }
+  }
+  return null
+}
+
 function getColMinWidth(type: CampaignColumnType): number {
   switch (type) {
-    case 'checkbox': return 72
-    case 'date':     return 130
-    case 'currency': return 130
+    case 'checkbox':     return 72
+    case 'rating':       return 120
+    case 'date':         return 130
+    case 'currency':     return 130
     case 'number':
-    case 'percent':  return 110
-    case 'url':      return 200
-    default:         return 150
+    case 'percent':      return 110
+    case 'url':          return 200
+    case 'long_text':    return 200
+    case 'multi_select': return 180
+    default:             return 150
   }
 }
 
@@ -169,8 +222,8 @@ function TypedColumnHeader({
 
   return (
     <div className="flex items-center gap-1 w-full h-full overflow-hidden group/colhdr select-none">
-      <span className="shrink-0 text-[10px] font-mono text-gray-400 w-4 text-center" title={col.type}>
-        {TYPE_BADGE[col.type] ?? 'T'}
+      <span className="shrink-0 text-gray-400 flex items-center justify-center w-4" title={col.type}>
+        {TYPE_ICON[col.type] ?? <Type size={11} />}
       </span>
 
       {isRenaming ? (
@@ -385,7 +438,7 @@ export function DataTableSectionEditor({ content, onChange, compact = false }: P
   // ── 컬럼 / 행 콜백 ───────────────────────────────────────────────────
 
   const updateCell = useCallback(
-    (rowId: string, colId: string, value: string | number | boolean | null) => {
+    (rowId: string, colId: string, value: CampaignCellValue) => {
       const { columns: latestColumns, rows: latestRows, onChange: latestOnChange } = latestRef.current
       const newRows = latestRows.map((r) =>
         r.id === rowId ? { ...r, cells: { ...r.cells, [colId]: value } } : r
@@ -450,6 +503,21 @@ export function DataTableSectionEditor({ content, onChange, compact = false }: P
   const tableColumns = useMemo<ColumnDef<CampaignDataRow>[]>(
     () => [
       {
+        id: '_accent',
+        header: () => null,
+        cell: ({ row }: { row: Row<CampaignDataRow> }) => {
+          const color = getRowAccentColor(row.original, latestRef.current.columns)
+          return (
+            <div
+              style={{ width: 4, height: 40, background: color ?? 'transparent', flexShrink: 0 }}
+            />
+          )
+        },
+        size: 4,
+        minSize: 4,
+        enableSorting: false,
+      } as ColumnDef<CampaignDataRow>,
+      {
         id: '_select',
         header: ({ table }: { table: Table<CampaignDataRow> }) => <HeaderCheckbox table={table} />,
         cell: ({ row }: { row: Row<CampaignDataRow> }) => (
@@ -479,7 +547,7 @@ export function DataTableSectionEditor({ content, onChange, compact = false }: P
           ),
           cell: ({ row, getValue }) => (
             <EditableCell
-              value={getValue() as string | number | boolean | null}
+              value={getValue() as CampaignCellValue}
               column={col}
               rowId={row.original.id}
               colId={col.id}
@@ -571,33 +639,37 @@ export function DataTableSectionEditor({ content, onChange, compact = false }: P
               <thead style={{ background: '#f7f7f5', position: 'sticky', top: 0, zIndex: 10 }}>
                 {table.getHeaderGroups().map((hg) => (
                   <tr key={hg.id}>
-                    {hg.headers.map((header, i) => (
-                      <th
-                        key={header.id}
-                        style={{
-                          minWidth: header.id === '_select' ? 44 : getColMinWidth(
-                            columns.find((c) => c.id === header.id)?.type ?? 'text'
-                          ),
-                          width: header.id === '_select' ? 44 : undefined,
-                          height: 36,
-                          padding: header.id === '_select' ? '0' : '0 12px',
-                          textAlign: 'left',
-                          borderBottom: '1px solid #e9e9e7',
-                          borderRight: i < hg.headers.length - 1 ? '1px solid #e9e9e7' : 'none',
-                          verticalAlign: 'middle',
-                          overflow: 'hidden',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {header.id === '_select' ? (
-                          <div className="flex items-center justify-center h-full">
-                            {flexRender(header.column.columnDef.header, header.getContext())}
-                          </div>
-                        ) : (
-                          flexRender(header.column.columnDef.header, header.getContext())
-                        )}
-                      </th>
-                    ))}
+                    {hg.headers.map((header, i) => {
+                      const isAccent = header.id === '_accent'
+                      const isSelect = header.id === '_select'
+                      return (
+                        <th
+                          key={header.id}
+                          style={{
+                            minWidth: isAccent ? 4 : isSelect ? 44 : getColMinWidth(
+                              columns.find((c) => c.id === header.id)?.type ?? 'text'
+                            ),
+                            width: isAccent ? 4 : isSelect ? 44 : undefined,
+                            height: 36,
+                            padding: isAccent ? '0' : isSelect ? '0' : '0 12px',
+                            textAlign: 'left',
+                            borderBottom: '1px solid #e9e9e7',
+                            borderRight: !isAccent && i < hg.headers.length - 1 ? '1px solid #e9e9e7' : 'none',
+                            verticalAlign: 'middle',
+                            overflow: 'hidden',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {isAccent ? null : isSelect ? (
+                            <div className="flex items-center justify-center h-full">
+                              {flexRender(header.column.columnDef.header, header.getContext())}
+                            </div>
+                          ) : (
+                            flexRender(header.column.columnDef.header, header.getContext())
+                          )}
+                        </th>
+                      )
+                    })}
                   </tr>
                 ))}
               </thead>
@@ -609,36 +681,43 @@ export function DataTableSectionEditor({ content, onChange, compact = false }: P
                     style={{ background: row.getIsSelected() ? '#f4f8ff' : '#ffffff' }}
                     className="transition-colors duration-75 hover:bg-[#f7f7f5]"
                   >
-                    {row.getVisibleCells().map((cell, cellIdx) => (
-                      <td
-                        key={cell.id}
-                        style={{
-                          height: 40,
-                          padding: cell.column.id === '_select' ? '0' : '0 12px',
-                          borderBottom:
-                            rowIdx < table.getRowModel().rows.length - 1
-                              ? '1px solid #e9e9e7'
-                              : 'none',
-                          borderRight:
-                            cellIdx < row.getVisibleCells().length - 1
-                              ? '1px solid #e9e9e7'
-                              : 'none',
-                          verticalAlign: 'middle',
-                          overflow: 'hidden',
-                          minWidth: cell.column.id === '_select' ? 44 : getColMinWidth(
-                            columns.find((c) => c.id === cell.column.id)?.type ?? 'text'
-                          ),
-                        }}
-                      >
-                        {cell.column.id === '_select' ? (
-                          <div className="flex items-center justify-center h-full">
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </div>
-                        ) : (
-                          flexRender(cell.column.columnDef.cell, cell.getContext())
-                        )}
-                      </td>
-                    ))}
+                    {row.getVisibleCells().map((cell, cellIdx) => {
+                      const isAccent = cell.column.id === '_accent'
+                      const isSelect = cell.column.id === '_select'
+                      return (
+                        <td
+                          key={cell.id}
+                          style={{
+                            height: 40,
+                            padding: isAccent ? '0' : isSelect ? '0' : '0 12px',
+                            borderBottom:
+                              rowIdx < table.getRowModel().rows.length - 1
+                                ? '1px solid #e9e9e7'
+                                : 'none',
+                            borderRight:
+                              !isAccent && cellIdx < row.getVisibleCells().length - 1
+                                ? '1px solid #e9e9e7'
+                                : 'none',
+                            verticalAlign: 'middle',
+                            overflow: 'hidden',
+                            minWidth: isAccent ? 4 : isSelect ? 44 : getColMinWidth(
+                              columns.find((c) => c.id === cell.column.id)?.type ?? 'text'
+                            ),
+                            width: isAccent ? 4 : isSelect ? 44 : undefined,
+                          }}
+                        >
+                          {isAccent ? (
+                            flexRender(cell.column.columnDef.cell, cell.getContext())
+                          ) : isSelect ? (
+                            <div className="flex items-center justify-center h-full">
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </div>
+                          ) : (
+                            flexRender(cell.column.columnDef.cell, cell.getContext())
+                          )}
+                        </td>
+                      )
+                    })}
                   </tr>
                 ))}
               </tbody>
