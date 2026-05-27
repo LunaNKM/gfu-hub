@@ -132,6 +132,14 @@ export function CampaignWorkspace({ campaignId }: Props) {
               key={activeDatabase.id}
               database={activeDatabase}
               onChange={(patch) => workspace.updateDatabase(activeDatabase.id, patch)}
+              onCellChange={(rowId, colId, value) =>
+                workspace.updateDatabaseRow(activeDatabase.id, rowId, colId, value)
+              }
+              onRowAdd={() => workspace.addDatabaseRow(activeDatabase.id)}
+              onRowsDelete={(rowIds) => workspace.deleteDatabaseRows(activeDatabase.id, rowIds)}
+              onColumnsChange={(columns) =>
+                workspace.updateDatabaseColumns(activeDatabase.id, columns)
+              }
             />
           )}
 

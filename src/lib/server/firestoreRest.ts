@@ -190,6 +190,45 @@ export async function getDocument<T extends object>(
   }
 }
 
+// ── 배치 쓰기 (commit) ────────────────────────────────────────────
+
+type CommitWrite =
+  | { type: 'upsert'; collection: string; documentId: string; data: Record<string, unknown> }
+  | { type: 'patch'; collection: string; documentId: string; data: Record<string, unknown> }
+  | { type: 'delete'; collection: string; documentId: string }
+
+export async function commitWrites(token: string, writes: CommitWrite[]): Promise<void> {
+  if (writes.length === 0) return
+  const body = {
+    writes: writes.map((w) => {
+      if (w.type === 'delete') {
+        return { delete: `${BASE_URL}/${w.collection}/${encodeURIComponent(w.documentId)}` }
+      }
+      const fields = encodeFields(w.data)
+      if (w.type === 'upsert') {
+        return {
+          update: {
+            name: `${BASE_URL}/${w.collection}/${encodeURIComponent(w.documentId)}`,
+            fields,
+          },
+        }
+      }
+      // patch
+      return {
+        update: {
+          name: `${BASE_URL}/${w.collection}/${encodeURIComponent(w.documentId)}`,
+          fields,
+        },
+        updateMask: { fieldPaths: Object.keys(w.data) },
+      }
+    }),
+  }
+  await firestoreFetch(token, `${BASE_URL}:commit`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 export async function queryCollectionOrdered<T extends object>(
   token: string,
   collectionId: string,

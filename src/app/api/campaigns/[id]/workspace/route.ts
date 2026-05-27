@@ -4,8 +4,11 @@ import {
   getDocument,
   queryCollectionByField,
   createDocument,
+  commitWrites,
+  patchDocument,
 } from '@/lib/server/firestoreRest'
-import { Campaign, CampaignSection, CampaignBlock, CampaignDatabase, CampaignCrmSyncType } from '@/types'
+import { Campaign, CampaignSection, CampaignBlock, CampaignDatabase, CampaignCrmSyncType, CampaignDataRow } from '@/types'
+import { CampaignDatabaseRow } from '@/types/campaignDatabase'
 import {
   createDefaultDatabase,
   createDefaultTableContent,
@@ -155,6 +158,74 @@ export async function GET(
     if (databases.length === 0) {
       databases = await createDefaultDatabases(auth.token, id, auth.uid)
     }
+
+    // campaignDatabaseRows 전체 조회 (campaignId 기준 한 번에)
+    const allDbRows = await queryCollectionByField<CampaignDatabaseRow>(
+      auth.token,
+      'campaignDatabaseRows',
+      'campaignId',
+      id
+    )
+
+    // databaseId → rows 맵
+    const rowsByDbId = new Map<string, CampaignDatabaseRow[]>()
+    for (const row of allDbRows) {
+      const arr = rowsByDbId.get(row.databaseId) ?? []
+      arr.push(row)
+      rowsByDbId.set(row.databaseId, arr)
+    }
+
+    // 인라인 rows 마이그레이션 (idempotent: row.id를 doc ID로 사용)
+    for (const db of databases) {
+      const subcollectionRows = rowsByDbId.get(db.id) ?? []
+      const inlineRows: CampaignDataRow[] = Array.isArray(db.rows) ? db.rows : []
+
+      if (subcollectionRows.length === 0 && inlineRows.length > 0) {
+        const now = new Date().toISOString()
+        const writes = inlineRows.map((row, index) => ({
+          type: 'upsert' as const,
+          collection: 'campaignDatabaseRows',
+          documentId: row.id,
+          data: {
+            campaignId: id,
+            databaseId: db.id,
+            cells: row.cells,
+            order: (index + 1) * 1000,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }))
+        await commitWrites(auth.token, writes)
+
+        // 마이그레이션 완료 표시 및 inline rows 제거
+        await patchDocument(auth.token, 'campaignDatabases', db.id, {
+          rows: [],
+          rowsMigratedAt: now,
+          updatedAt: now,
+          updatedBy: auth.uid,
+        })
+
+        // 메모리상 subcollectionRows 채우기
+        const migrated: CampaignDatabaseRow[] = inlineRows.map((row, index) => ({
+          id: row.id,
+          campaignId: id,
+          databaseId: db.id,
+          cells: row.cells,
+          order: (index + 1) * 1000,
+          createdAt: now,
+          updatedAt: now,
+        }))
+        rowsByDbId.set(db.id, migrated)
+      }
+    }
+
+    // databases에 rows 주입 (subcollection rows → CampaignDataRow 형태로 변환)
+    databases = databases.map((db) => {
+      const rows = (rowsByDbId.get(db.id) ?? [])
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((r): CampaignDataRow => ({ id: r.id, cells: r.cells }))
+      return { ...db, rows }
+    })
 
     // overview 계산
     const overview = buildCampaignOverview(databases)

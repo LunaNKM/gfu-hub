@@ -9,8 +9,8 @@ const PATCHABLE_FIELDS = [
   'businessType',
   'order',
   'columns',
-  'rows',
   'rowCount',
+  'color',
   'clientVisible',
   'clientEditable',
 ] as const

@@ -7,6 +7,9 @@ import {
   CampaignBlock,
   CampaignBlockType,
   CampaignBusinessType,
+  CampaignCellValue,
+  CampaignDataColumn,
+  CampaignDataRow,
   CampaignDatabase,
   CampaignOverview,
   CampaignSection,
@@ -315,6 +318,145 @@ export function useCampaignWorkspace(campaignId: string, user: User | null | und
     [campaignId, user]
   )
 
+  // ── 데이터베이스 행 핸들러 (PART A: 행 분리) ──────────────────────────
+
+  const updateDatabaseRow = useCallback(
+    (databaseId: string, rowId: string, colId: string, value: CampaignCellValue) => {
+      // 낙관적 로컬 업데이트
+      setDatabases((prev) => {
+        const next = prev.map((db) => {
+          if (db.id !== databaseId) return db
+          const rows = db.rows.map((row) =>
+            row.id === rowId ? { ...row, cells: { ...row.cells, [colId]: value } } : row
+          )
+          return { ...db, rows }
+        })
+        setOverview(buildCampaignOverview(next))
+        return next
+      })
+      setResourceStatus('databases', databaseId, 'saving')
+      // 디바운스 없이 바로 PATCH (셀 단위이므로 빠름)
+      if (!user) return
+      user.getIdToken().then((token) => {
+        fetch(`/api/campaigns/${campaignId}/databases/${databaseId}/rows/${rowId}`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cells: { [colId]: value } }),
+        }).then((res) => {
+          if (res.ok) setResourceStatus('databases', databaseId, 'saved')
+          else setResourceStatus('databases', databaseId, 'error')
+        })
+      })
+    },
+    [campaignId, user, setResourceStatus]
+  )
+
+  const addDatabaseRow = useCallback(
+    async (databaseId: string, afterRowId?: string) => {
+      if (!user) return null
+      const db = databases.find((d) => d.id === databaseId)
+      if (!db) return null
+
+      // 빈 셀 초기화
+      const cells: Record<string, CampaignCellValue> = {}
+      for (const col of db.columns) cells[col.id] = null
+
+      // order 계산 (afterRow 다음 or 마지막)
+      const sortedRows = [...db.rows].sort((a, b) =>
+        (a as CampaignDataRow & { order?: number }).order ??
+        0 - ((b as CampaignDataRow & { order?: number }).order ?? 0)
+      )
+      let order = (sortedRows.length + 1) * 1000
+      if (afterRowId) {
+        const idx = sortedRows.findIndex((r) => r.id === afterRowId)
+        if (idx >= 0) {
+          const next = sortedRows[idx + 1]
+          const current = (sortedRows[idx] as CampaignDataRow & { order?: number }).order ?? (idx + 1) * 1000
+          const nextOrder = next ? ((next as CampaignDataRow & { order?: number }).order ?? (idx + 2) * 1000) : current + 2000
+          order = Math.round((current + nextOrder) / 2)
+        }
+      }
+
+      const newRowId = `row_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+      const newRow: CampaignDataRow = { id: newRowId, cells }
+
+      // 낙관적 업데이트
+      setDatabases((prev) => {
+        const next = prev.map((d) => {
+          if (d.id !== databaseId) return d
+          const rows = afterRowId
+            ? (() => {
+                const idx = d.rows.findIndex((r) => r.id === afterRowId)
+                const arr = [...d.rows]
+                arr.splice(idx + 1, 0, newRow)
+                return arr
+              })()
+            : [...d.rows, newRow]
+          return { ...d, rows }
+        })
+        setOverview(buildCampaignOverview(next))
+        return next
+      })
+
+      const token = await user.getIdToken()
+      const res = await fetch(`/api/campaigns/${campaignId}/databases/${databaseId}/rows`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: newRowId, cells, order }),
+      })
+      if (!res.ok) {
+        // 롤백
+        setDatabases((prev) =>
+          prev.map((d) =>
+            d.id === databaseId ? { ...d, rows: d.rows.filter((r) => r.id !== newRowId) } : d
+          )
+        )
+        return null
+      }
+      return newRow
+    },
+    [campaignId, databases, user]
+  )
+
+  const deleteDatabaseRows = useCallback(
+    async (databaseId: string, rowIds: string[]) => {
+      if (!user || rowIds.length === 0) return
+
+      // 낙관적 업데이트
+      setDatabases((prev) => {
+        const next = prev.map((d) =>
+          d.id === databaseId ? { ...d, rows: d.rows.filter((r) => !rowIds.includes(r.id)) } : d
+        )
+        setOverview(buildCampaignOverview(next))
+        return next
+      })
+
+      const token = await user.getIdToken()
+      await Promise.all(
+        rowIds.map((rowId) =>
+          fetch(`/api/campaigns/${campaignId}/databases/${databaseId}/rows/${rowId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        )
+      )
+    },
+    [campaignId, user]
+  )
+
+  const updateDatabaseColumns = useCallback(
+    (databaseId: string, columns: CampaignDataColumn[]) => {
+      setDatabases((prev) => {
+        const next = prev.map((d) => (d.id === databaseId ? { ...d, columns } : d))
+        setOverview(buildCampaignOverview(next))
+        return next
+      })
+      setResourceStatus('databases', databaseId, 'saving')
+      databaseSaver.schedule(databaseId, { columns })
+    },
+    [databaseSaver, setResourceStatus]
+  )
+
   const saveStatus = useMemo(() => saveState.global, [saveState.global])
 
   return {
@@ -333,6 +475,10 @@ export function useCampaignWorkspace(campaignId: string, user: User | null | und
     reorderSections,
     addDatabase,
     updateDatabase,
+    updateDatabaseRow,
+    addDatabaseRow,
+    deleteDatabaseRows,
+    updateDatabaseColumns,
     addBlock,
     updateBlock,
     patchBlock,

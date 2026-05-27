@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react'
 import { Database } from 'lucide-react'
-import { CampaignDatabase, CampaignDataTableContent, CampaignBusinessType } from '@/types'
-import { DataTableSectionEditor } from './DataTableSectionEditor'
+import { CampaignDatabase, CampaignDataTableContent, CampaignBusinessType, CampaignCellValue, CampaignDataColumn } from '@/types'
+import { DataTableSectionEditor, type DataTableHandlers } from './DataTableSectionEditor'
 import { BUSINESS_TYPE_TITLES } from '@/lib/campaigns/databaseTemplates'
 
 const BUSINESS_TYPE_LABELS: Record<CampaignBusinessType, string> = BUSINESS_TYPE_TITLES
@@ -11,9 +11,22 @@ const BUSINESS_TYPE_LABELS: Record<CampaignBusinessType, string> = BUSINESS_TYPE
 interface Props {
   database: CampaignDatabase
   onChange: (patch: Partial<CampaignDatabase>) => void
+  onCellChange?: (rowId: string, colId: string, value: CampaignCellValue) => void
+  onRowAdd?: () => void
+  onRowsDelete?: (rowIds: string[]) => void
+  onColumnsChange?: (columns: CampaignDataColumn[]) => void
+  onExpandRow?: (rowId: string) => void
 }
 
-export function CampaignDatabaseEditor({ database, onChange }: Props) {
+export function CampaignDatabaseEditor({
+  database,
+  onChange,
+  onCellChange,
+  onRowAdd,
+  onRowsDelete,
+  onColumnsChange,
+  onExpandRow,
+}: Props) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(database.title)
 
@@ -33,6 +46,19 @@ export function CampaignDatabaseEditor({ database, onChange }: Props) {
     rows: database.rows,
   }
 
+  // handlers 모드가 있을 때 granular 핸들러 사용
+  const handlers: DataTableHandlers | undefined =
+    onCellChange || onRowAdd || onRowsDelete || onColumnsChange || onExpandRow
+      ? {
+          onCellChange,
+          onRowAdd,
+          onRowsDelete,
+          onColumnsChange,
+          onExpandRow,
+        }
+      : undefined
+
+  // legacy fallback: handlers 없을 때 onChange로 전체 저장
   const handleTableChange = (content: CampaignDataTableContent) => {
     onChange({ columns: content.columns, rows: content.rows })
   }
@@ -70,12 +96,13 @@ export function CampaignDatabaseEditor({ database, onChange }: Props) {
         </div>
       </div>
 
-      {/* 테이블 에디터 (기존 DataTableSectionEditor 재사용) */}
+      {/* 테이블 에디터 */}
       <div className="flex-1 overflow-hidden bg-white">
         <DataTableSectionEditor
           key={database.id}
           content={tableContent}
           onChange={handleTableChange}
+          handlers={handlers}
         />
       </div>
     </div>

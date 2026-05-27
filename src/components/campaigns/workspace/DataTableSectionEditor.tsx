@@ -319,15 +319,26 @@ function TypedColumnHeader({
   )
 }
 
+// ── 핸들러 인터페이스 (PART A: 행 분리) ─────────────────────────────────
+
+export interface DataTableHandlers {
+  onCellChange?: (rowId: string, colId: string, value: CampaignCellValue) => void
+  onRowAdd?: () => void
+  onRowsDelete?: (rowIds: string[]) => void
+  onColumnsChange?: (columns: CampaignDataColumn[]) => void
+  onExpandRow?: (rowId: string) => void
+}
+
 // ── 메인 컴포넌트 ────────────────────────────────────────────────────────
 
 interface Props {
   content: CampaignDataTableContent
   onChange: (content: CampaignDataTableContent) => void
+  handlers?: DataTableHandlers
   compact?: boolean
 }
 
-export function DataTableSectionEditor({ content, onChange, compact = false }: Props) {
+export function DataTableSectionEditor({ content, onChange, handlers, compact = false }: Props) {
   const { columns, rows } = content
   const [sorting, setSorting] = useState<SortingState>([])
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
@@ -338,11 +349,11 @@ export function DataTableSectionEditor({ content, onChange, compact = false }: P
   const tableRef = useRef<ReturnType<typeof useReactTable<CampaignDataRow>> | null>(null)
   // 테이블 DOM 컨테이너 (focusCell용)
   const tableContainerRef = useRef<HTMLDivElement>(null)
-  const latestRef = useRef({ columns, rows, onChange })
+  const latestRef = useRef({ columns, rows, onChange, handlers })
 
   useLayoutEffect(() => {
-    latestRef.current = { columns, rows, onChange }
-  }, [columns, rows, onChange])
+    latestRef.current = { columns, rows, onChange, handlers }
+  }, [columns, rows, onChange, handlers])
 
   // ── 셀 포커스 / 키보드 이동 ──────────────────────────────────────────
 
@@ -398,10 +409,28 @@ export function DataTableSectionEditor({ content, onChange, compact = false }: P
         .split('\n')
         .map((line) => line.split('\t'))
 
-      const { columns: latestColumns, rows: latestRows, onChange: latestOnChange } = latestRef.current
+      const { columns: latestColumns, rows: latestRows, onChange: latestOnChange, handlers: h } = latestRef.current
       const startRowIdx = latestRows.findIndex((r) => r.id === startRowId)
       const startColIdx = latestColumns.findIndex((c) => c.id === startColId)
       if (startRowIdx === -1 || startColIdx === -1) return
+
+      // handlers 모드: 기존 행 범위 내에서만 셀 단위 업데이트
+      if (h?.onCellChange) {
+        for (let r = 0; r < tsvRows.length; r++) {
+          const targetRowIdx = startRowIdx + r
+          if (targetRowIdx >= latestRows.length) break
+          const targetRow = latestRows[targetRowIdx]
+          const tsvCells = tsvRows[r]
+          for (let c = 0; c < tsvCells.length; c++) {
+            const targetColIdx = startColIdx + c
+            if (targetColIdx >= latestColumns.length) break
+            const col = latestColumns[targetColIdx]
+            const val = normalizeCellValue(tsvCells[c].trim(), col.type)
+            h.onCellChange(targetRow.id, col.id, val)
+          }
+        }
+        return
+      }
 
       const newRows = [...latestRows]
 
@@ -439,7 +468,11 @@ export function DataTableSectionEditor({ content, onChange, compact = false }: P
 
   const updateCell = useCallback(
     (rowId: string, colId: string, value: CampaignCellValue) => {
-      const { columns: latestColumns, rows: latestRows, onChange: latestOnChange } = latestRef.current
+      const { columns: latestColumns, rows: latestRows, onChange: latestOnChange, handlers: h } = latestRef.current
+      if (h?.onCellChange) {
+        h.onCellChange(rowId, colId, value)
+        return
+      }
       const newRows = latestRows.map((r) =>
         r.id === rowId ? { ...r, cells: { ...r.cells, [colId]: value } } : r
       )
@@ -450,14 +483,19 @@ export function DataTableSectionEditor({ content, onChange, compact = false }: P
 
   const updateColumn = useCallback(
     (colId: string, patch: Partial<CampaignDataColumn>) => {
-      onChange({ columns: columns.map((c) => (c.id === colId ? { ...c, ...patch } : c)), rows })
+      const { handlers: h } = latestRef.current
+      const newColumns = columns.map((c) => (c.id === colId ? { ...c, ...patch } : c))
+      if (h?.onColumnsChange) { h.onColumnsChange(newColumns); return }
+      onChange({ columns: newColumns, rows })
     },
     [columns, rows, onChange]
   )
 
   const deleteColumn = useCallback(
     (colId: string) => {
+      const { handlers: h } = latestRef.current
       const newColumns = columns.filter((c) => c.id !== colId)
+      if (h?.onColumnsChange) { h.onColumnsChange(newColumns); return }
       const newRows = rows.map((r) => {
         const cells = { ...r.cells }
         delete cells[colId]
@@ -470,12 +508,16 @@ export function DataTableSectionEditor({ content, onChange, compact = false }: P
 
   const reorderColumns = useCallback(
     (newColumns: CampaignDataColumn[]) => {
+      const { handlers: h } = latestRef.current
+      if (h?.onColumnsChange) { h.onColumnsChange(newColumns); return }
       onChange({ columns: newColumns, rows })
     },
     [rows, onChange]
   )
 
   const addRow = useCallback(() => {
+    const { handlers: h } = latestRef.current
+    if (h?.onRowAdd) { h.onRowAdd(); return }
     onChange({ columns, rows: [...rows, createEmptyRow(columns)] })
   }, [columns, rows, onChange])
 
@@ -487,13 +529,17 @@ export function DataTableSectionEditor({ content, onChange, compact = false }: P
     const selectedIds = Object.keys(rowSelection).filter((id) => rowSelection[id])
     if (selectedIds.length === 0) return
     if (!confirm(`선택한 ${selectedIds.length}개 행을 삭제할까요?`)) return
+    const { handlers: h } = latestRef.current
+    if (h?.onRowsDelete) { h.onRowsDelete(selectedIds); setRowSelection({}); return }
     onChange({ columns, rows: rows.filter((r) => !selectedIds.includes(r.id)) })
     setRowSelection({})
   }, [rowSelection, columns, rows, onChange])
 
   const addColumn = useCallback(() => {
+    const { handlers: h } = latestRef.current
     const newCol: CampaignDataColumn = { id: `col_${Date.now()}`, name: '새 컬럼', type: 'text' }
     const newColumns = [...columns, newCol]
+    if (h?.onColumnsChange) { h.onColumnsChange(newColumns); return }
     const newRows = rows.map((r) => ({ ...r, cells: { ...r.cells, [newCol.id]: null } }))
     onChange({ columns: newColumns, rows: newRows })
   }, [columns, rows, onChange])
