@@ -124,6 +124,7 @@ function TypedColumnHeader({
   const [isRenaming, setIsRenaming] = useState(false)
   const [nameInput, setNameInput] = useState(col.name)
   const [showMenu, setShowMenu] = useState(false)
+  const [menuRect, setMenuRect] = useState<DOMRect | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sortDir = header.column.getIsSorted()
@@ -205,7 +206,11 @@ function TypedColumnHeader({
 
       <div className="relative shrink-0" ref={menuRef}>
         <button
-          onClick={(e) => { e.stopPropagation(); setShowMenu((v) => !v) }}
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuRect(e.currentTarget.getBoundingClientRect())
+            setShowMenu((v) => !v)
+          }}
           className="opacity-0 group-hover/colhdr:opacity-100 text-gray-400 hover:text-gray-700 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 transition-opacity text-sm leading-none"
           title="컬럼 옵션"
           aria-label={`${col.name} 컬럼 옵션`}
@@ -213,8 +218,11 @@ function TypedColumnHeader({
           ⋯
         </button>
 
-        {showMenu && (
-          <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-48 py-1.5">
+        {showMenu && menuRect && (
+          <div
+            className="fixed z-[1000] w-48 rounded-lg border border-gray-200 bg-white py-1.5 shadow-lg"
+            style={{ left: Math.max(8, menuRect.right - 192), top: menuRect.bottom + 4 }}
+          >
             <button
               onClick={() => { setIsRenaming(true); setNameInput(col.name); setShowMenu(false) }}
               className="w-full text-left text-xs text-gray-700 hover:bg-gray-50 px-3 py-1.5"
@@ -263,9 +271,10 @@ function TypedColumnHeader({
 interface Props {
   content: CampaignDataTableContent
   onChange: (content: CampaignDataTableContent) => void
+  compact?: boolean
 }
 
-export function DataTableSectionEditor({ content, onChange }: Props) {
+export function DataTableSectionEditor({ content, onChange, compact = false }: Props) {
   const { columns, rows } = content
   const [sorting, setSorting] = useState<SortingState>([])
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
@@ -276,6 +285,11 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
   const tableRef = useRef<ReturnType<typeof useReactTable<CampaignDataRow>> | null>(null)
   // 테이블 DOM 컨테이너 (focusCell용)
   const tableContainerRef = useRef<HTMLDivElement>(null)
+  const latestRef = useRef({ columns, rows, onChange })
+
+  useLayoutEffect(() => {
+    latestRef.current = { columns, rows, onChange }
+  }, [columns, rows, onChange])
 
   // ── 셀 포커스 / 키보드 이동 ──────────────────────────────────────────
 
@@ -288,9 +302,10 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
 
   const navigateFrom = useCallback(
     (rowId: string, colId: string, dir: NavigateDir) => {
+      const latestColumns = latestRef.current.columns
       const displayRows = tableRef.current?.getRowModel().rows ?? []
       const rowIdx = displayRows.findIndex((r) => r.original.id === rowId)
-      const colIdx = columns.findIndex((c) => c.id === colId)
+      const colIdx = latestColumns.findIndex((c) => c.id === colId)
 
       let targetRowIdx = rowIdx
       let targetColIdx = colIdx
@@ -302,7 +317,7 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
         case 'right': targetColIdx++; break
         case 'tab':
           targetColIdx++
-          if (targetColIdx >= columns.length) {
+          if (targetColIdx >= latestColumns.length) {
             targetColIdx = 0
             targetRowIdx++
           }
@@ -310,13 +325,13 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
       }
 
       if (targetRowIdx < 0 || targetRowIdx >= displayRows.length) return
-      if (targetColIdx < 0 || targetColIdx >= columns.length) return
+      if (targetColIdx < 0 || targetColIdx >= latestColumns.length) return
 
       const targetRow = displayRows[targetRowIdx]?.original
-      const targetCol = columns[targetColIdx]
+      const targetCol = latestColumns[targetColIdx]
       if (targetRow && targetCol) focusCell(targetRow.id, targetCol.id)
     },
-    [columns, focusCell]
+    [focusCell]
   )
 
   // ── TSV Paste 처리 ───────────────────────────────────────────────────
@@ -330,18 +345,19 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
         .split('\n')
         .map((line) => line.split('\t'))
 
-      const startRowIdx = rows.findIndex((r) => r.id === startRowId)
-      const startColIdx = columns.findIndex((c) => c.id === startColId)
+      const { columns: latestColumns, rows: latestRows, onChange: latestOnChange } = latestRef.current
+      const startRowIdx = latestRows.findIndex((r) => r.id === startRowId)
+      const startColIdx = latestColumns.findIndex((c) => c.id === startColId)
       if (startRowIdx === -1 || startColIdx === -1) return
 
-      const newRows = [...rows]
+      const newRows = [...latestRows]
 
       for (let r = 0; r < tsvRows.length; r++) {
         const targetRowIdx = startRowIdx + r
 
         // 행이 부족하면 새 행 추가
         if (targetRowIdx >= newRows.length) {
-          newRows.push(createEmptyRow(columns))
+          newRows.push(createEmptyRow(latestColumns))
         }
 
         const cells = { ...newRows[targetRowIdx].cells }
@@ -349,8 +365,8 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
 
         for (let c = 0; c < tsvCells.length; c++) {
           const targetColIdx = startColIdx + c
-          if (targetColIdx >= columns.length) break
-          const col = columns[targetColIdx]
+          if (targetColIdx >= latestColumns.length) break
+          const col = latestColumns[targetColIdx]
           cells[col.id] = normalizeCellValue(tsvCells[c].trim(), col.type) as
             | string
             | number
@@ -361,21 +377,22 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
         newRows[targetRowIdx] = { ...newRows[targetRowIdx], cells }
       }
 
-      onChange({ columns, rows: newRows })
+      latestOnChange({ columns: latestColumns, rows: newRows })
     },
-    [columns, rows, onChange]
+    []
   )
 
   // ── 컬럼 / 행 콜백 ───────────────────────────────────────────────────
 
   const updateCell = useCallback(
     (rowId: string, colId: string, value: string | number | boolean | null) => {
-      const newRows = rows.map((r) =>
+      const { columns: latestColumns, rows: latestRows, onChange: latestOnChange } = latestRef.current
+      const newRows = latestRows.map((r) =>
         r.id === rowId ? { ...r, cells: { ...r.cells, [colId]: value } } : r
       )
-      onChange({ columns, rows: newRows })
+      latestOnChange({ columns: latestColumns, rows: newRows })
     },
-    [columns, rows, onChange]
+    []
   )
 
   const updateColumn = useCallback(
@@ -430,7 +447,6 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
 
   // ── TanStack 컬럼 정의 ───────────────────────────────────────────────
 
-  /* eslint-disable @typescript-eslint/no-explicit-any */
   const tableColumns = useMemo<ColumnDef<CampaignDataRow>[]>(
     () => [
       {
@@ -453,7 +469,7 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
         (col): ColumnDef<CampaignDataRow> => ({
           id: col.id,
           accessorFn: (row: CampaignDataRow) => row.cells[col.id] ?? null,
-          header: ({ header }: any) => (
+          header: ({ header }) => (
             <TypedColumnHeader
               col={col}
               header={header as Header<CampaignDataRow, unknown>}
@@ -461,7 +477,7 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
               onDelete={() => deleteColumn(col.id)}
             />
           ),
-          cell: ({ row, getValue }: any) => (
+          cell: ({ row, getValue }) => (
             <EditableCell
               value={getValue() as string | number | boolean | null}
               column={col}
@@ -480,7 +496,6 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
     ],
     [columns, updateColumn, deleteColumn, updateCell, navigateFrom, handlePaste]
   )
-  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // ── TanStack 인스턴스 ─────────────────────────────────────────────────
 
@@ -508,23 +523,25 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
   // ── 렌더 ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col bg-white">
       {/* 툴바 */}
-      <DataTableToolbar
-        rowCount={rows.length}
-        filteredRowCount={filteredRowCount}
-        columnCount={columns.length}
-        selectedCount={selectedCount}
-        globalFilter={globalFilter}
-        onGlobalFilterChange={setGlobalFilter}
-        onAddRow={addRow}
-        onAddColumn={addColumn}
-        onOpenColumnDrawer={() => setShowColumnDrawer(true)}
-        onDeleteSelected={deleteSelectedRows}
-      />
+      {!compact && (
+        <DataTableToolbar
+          rowCount={rows.length}
+          filteredRowCount={filteredRowCount}
+          columnCount={columns.length}
+          selectedCount={selectedCount}
+          globalFilter={globalFilter}
+          onGlobalFilterChange={setGlobalFilter}
+          onAddRow={addRow}
+          onAddColumn={addColumn}
+          onOpenColumnDrawer={() => setShowColumnDrawer(true)}
+          onDeleteSelected={deleteSelectedRows}
+        />
+      )}
 
       {/* 본문 */}
-      <div className="flex-1 overflow-hidden p-3">
+      <div className={compact ? 'flex-1 overflow-hidden bg-white' : 'flex-1 overflow-hidden bg-white p-3'}>
         {columns.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-4 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50/50">
             <div className="flex flex-col items-center gap-2 text-center">
@@ -547,11 +564,11 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
           /* ── 테이블 ── */
           <div
             ref={tableContainerRef}
-            className="h-full overflow-auto rounded-lg"
-            style={{ border: '1px solid #e5e7eb' }}
+            className={compact ? 'h-full overflow-auto bg-white' : 'h-full overflow-auto rounded-lg bg-white'}
+            style={{ border: compact ? 'none' : '1px solid #e9e9e7' }}
           >
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'auto' }}>
-              <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
+            <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', tableLayout: 'auto', background: '#ffffff' }}>
+              <thead style={{ background: '#f7f7f5', position: 'sticky', top: 0, zIndex: 10 }}>
                 {table.getHeaderGroups().map((hg) => (
                   <tr key={hg.id}>
                     {hg.headers.map((header, i) => (
@@ -565,8 +582,8 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
                           height: 36,
                           padding: header.id === '_select' ? '0' : '0 12px',
                           textAlign: 'left',
-                          borderBottom: '1px solid #e5e7eb',
-                          borderRight: i < hg.headers.length - 1 ? '1px solid #eef2f7' : 'none',
+                          borderBottom: '1px solid #e9e9e7',
+                          borderRight: i < hg.headers.length - 1 ? '1px solid #e9e9e7' : 'none',
                           verticalAlign: 'middle',
                           overflow: 'hidden',
                           whiteSpace: 'nowrap',
@@ -589,8 +606,8 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
                 {table.getRowModel().rows.map((row, rowIdx) => (
                   <tr
                     key={row.id}
-                    style={{ background: row.getIsSelected() ? '#eff6ff' : undefined }}
-                    className="hover:bg-[#f9fafb] transition-colors duration-75"
+                    style={{ background: row.getIsSelected() ? '#f4f8ff' : '#ffffff' }}
+                    className="transition-colors duration-75 hover:bg-[#f7f7f5]"
                   >
                     {row.getVisibleCells().map((cell, cellIdx) => (
                       <td
@@ -600,15 +617,17 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
                           padding: cell.column.id === '_select' ? '0' : '0 12px',
                           borderBottom:
                             rowIdx < table.getRowModel().rows.length - 1
-                              ? '1px solid #eef2f7'
+                              ? '1px solid #e9e9e7'
                               : 'none',
                           borderRight:
                             cellIdx < row.getVisibleCells().length - 1
-                              ? '1px solid #eef2f7'
+                              ? '1px solid #e9e9e7'
                               : 'none',
                           verticalAlign: 'middle',
                           overflow: 'hidden',
-                          maxWidth: 0,
+                          minWidth: cell.column.id === '_select' ? 44 : getColMinWidth(
+                            columns.find((c) => c.id === cell.column.id)?.type ?? 'text'
+                          ),
                         }}
                       >
                         {cell.column.id === '_select' ? (

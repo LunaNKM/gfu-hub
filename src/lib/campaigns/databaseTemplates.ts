@@ -3,6 +3,8 @@ import {
   CampaignDatabase,
   CampaignDataColumn,
   CampaignDataRow,
+  CampaignDataTableContent,
+  CampaignCrmSyncType,
 } from '@/types'
 
 // ── 컬럼 생성 헬퍼 ────────────────────────────────────────────────
@@ -149,6 +151,20 @@ export const BUSINESS_TYPE_COLUMNS: Record<CampaignBusinessType, CampaignDataCol
     col('post_url', '게시물 URL', 'url'),
     col('note', '비고', 'text'),
   ],
+  meta_analytics: [
+    col('level', 'Level', 'select', 'dimension', ['campaign', 'adset', 'ad']),
+    col('name', 'Name', 'text', 'dimension'),
+    col('spend', 'Spend', 'currency', 'cost'),
+    col('impressions', 'Impressions', 'number', 'performance'),
+    col('reach', 'Reach', 'number', 'performance'),
+    col('clicks', 'Clicks', 'number', 'performance'),
+    col('ctr', 'CTR', 'percent', 'metric'),
+    col('cpc', 'CPC', 'currency', 'metric'),
+    col('cpm', 'CPM', 'currency', 'metric'),
+    col('conversions', 'Conversions', 'number', 'performance'),
+    col('video_play', 'Video Play', 'number', 'performance'),
+    col('thruplay', 'ThruPlay', 'number', 'performance'),
+  ],
   other: [
     col('name', '항목', 'text', 'dimension'),
     col('value', '값', 'text'),
@@ -170,6 +186,7 @@ const BUSINESS_TYPE_TITLES: Record<CampaignBusinessType, string> = {
   schedule:                '일정표',
   content_review:          '콘텐츠 검수',
   result_report:           '결과 리포트',
+  meta_analytics:          'Meta Analytics',
   other:                   '기타',
 }
 
@@ -208,3 +225,23 @@ export const DEFAULT_DATABASE_TYPES: CampaignBusinessType[] = [
 ]
 
 export { BUSINESS_TYPE_TITLES }
+
+export function createDefaultTableContent(params: {
+  title?: string
+  crmSyncType?: CampaignCrmSyncType | string
+  businessType?: CampaignBusinessType
+}): CampaignDataTableContent {
+  let businessType = params.businessType
+
+  if (!businessType && params.crmSyncType === 'confirmed_influencers') {
+    businessType = 'confirmed_influencers'
+  }
+  if (!businessType && params.crmSyncType === 'influencer_performance') {
+    businessType = 'influencer_performance'
+  }
+
+  return {
+    columns: BUSINESS_TYPE_COLUMNS[businessType ?? 'other'] ?? BUSINESS_TYPE_COLUMNS.other,
+    rows: [],
+  }
+}

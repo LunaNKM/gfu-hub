@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, isAuthResponse } from '@/lib/server/auth'
-import { getDocument, patchDocument, deleteDocument } from '@/lib/server/firestoreRest'
+import { patchDocument, deleteDocument } from '@/lib/server/firestoreRest'
+import { getCampaignOwnedResource } from '@/lib/server/campaignResourceAuth'
 import { CampaignDatabase } from '@/types'
 
 const PATCHABLE_FIELDS = [
@@ -9,6 +10,7 @@ const PATCHABLE_FIELDS = [
   'order',
   'columns',
   'rows',
+  'rowCount',
   'clientVisible',
   'clientEditable',
 ] as const
@@ -20,9 +22,12 @@ export async function PATCH(
   const auth = requireAuth(req)
   if (isAuthResponse(auth)) return auth
 
-  const { databaseId } = await params
+  const { id, databaseId } = await params
 
   try {
+    const database = await getCampaignOwnedResource<CampaignDatabase>(auth.token, 'campaignDatabases', databaseId, id)
+    if (database instanceof NextResponse) return database
+
     const body = await req.json()
     const patch: Record<string, unknown> = {}
 
@@ -36,7 +41,7 @@ export async function PATCH(
     await patchDocument(auth.token, 'campaignDatabases', databaseId, patch)
     return NextResponse.json({ ok: true })
   } catch (err) {
-    console.error('database 수정 오류:', err)
+    console.error('database update error:', err)
     return NextResponse.json({ error: '데이터베이스를 수정할 수 없습니다.' }, { status: 500 })
   }
 }
@@ -51,16 +56,13 @@ export async function DELETE(
   const { id, databaseId } = await params
 
   try {
-    // campaignId 확인
-    const db = await getDocument<CampaignDatabase>(auth.token, 'campaignDatabases', databaseId)
-    if (!db || db.campaignId !== id) {
-      return NextResponse.json({ error: '데이터베이스를 찾을 수 없습니다.' }, { status: 404 })
-    }
+    const database = await getCampaignOwnedResource<CampaignDatabase>(auth.token, 'campaignDatabases', databaseId, id)
+    if (database instanceof NextResponse) return database
 
     await deleteDocument(auth.token, 'campaignDatabases', databaseId)
     return NextResponse.json({ ok: true })
   } catch (err) {
-    console.error('database 삭제 오류:', err)
+    console.error('database delete error:', err)
     return NextResponse.json({ error: '데이터베이스를 삭제할 수 없습니다.' }, { status: 500 })
   }
 }

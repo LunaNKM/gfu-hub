@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, isAuthResponse } from '@/lib/server/auth'
-import { getDocument, patchDocument, deleteDocument } from '@/lib/server/firestoreRest'
+import { patchDocument, deleteDocument } from '@/lib/server/firestoreRest'
+import { getCampaignOwnedResource } from '@/lib/server/campaignResourceAuth'
 import { CampaignBlock } from '@/types'
 
 const PATCHABLE_FIELDS = [
@@ -18,9 +19,12 @@ export async function PATCH(
   const auth = requireAuth(req)
   if (isAuthResponse(auth)) return auth
 
-  const { blockId } = await params
+  const { id, blockId } = await params
 
   try {
+    const block = await getCampaignOwnedResource<CampaignBlock>(auth.token, 'campaignBlocks', blockId, id)
+    if (block instanceof NextResponse) return block
+
     const body = await req.json()
     const patch: Record<string, unknown> = {}
 
@@ -34,7 +38,7 @@ export async function PATCH(
     await patchDocument(auth.token, 'campaignBlocks', blockId, patch)
     return NextResponse.json({ ok: true })
   } catch (err) {
-    console.error('block 수정 오류:', err)
+    console.error('block update error:', err)
     return NextResponse.json({ error: '블록을 수정할 수 없습니다.' }, { status: 500 })
   }
 }
@@ -49,15 +53,13 @@ export async function DELETE(
   const { id, blockId } = await params
 
   try {
-    const block = await getDocument<CampaignBlock>(auth.token, 'campaignBlocks', blockId)
-    if (!block || block.campaignId !== id) {
-      return NextResponse.json({ error: '블록을 찾을 수 없습니다.' }, { status: 404 })
-    }
+    const block = await getCampaignOwnedResource<CampaignBlock>(auth.token, 'campaignBlocks', blockId, id)
+    if (block instanceof NextResponse) return block
 
     await deleteDocument(auth.token, 'campaignBlocks', blockId)
     return NextResponse.json({ ok: true })
   } catch (err) {
-    console.error('block 삭제 오류:', err)
+    console.error('block delete error:', err)
     return NextResponse.json({ error: '블록을 삭제할 수 없습니다.' }, { status: 500 })
   }
 }

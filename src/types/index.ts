@@ -377,6 +377,7 @@ export interface WeeklyMarketReport {
 
 // ── 캠페인 워크스페이스 ───────────────────────────────────────────
 
+// document is the workspace v2 section model. data_table/dashboard are legacy section types kept for migration.
 export type CampaignSectionType = 'document' | 'data_table' | 'dashboard'
 
 export type CampaignBusinessType =
@@ -391,6 +392,7 @@ export type CampaignBusinessType =
   | 'schedule'
   | 'content_review'
   | 'result_report'
+  | 'meta_analytics'
   | 'other'
 
 export type CampaignBlockType =
@@ -424,7 +426,9 @@ export interface CampaignDatabase {
   businessType: CampaignBusinessType
   order: number
   columns: CampaignDataColumn[]
+  // Legacy-compatible inline rows. Long term rows should live as CampaignDatabaseRow documents.
   rows: CampaignDataRow[]
+  rowCount?: number
   clientVisible: boolean
   clientEditable: boolean
   createdAt: Date | string
@@ -545,3 +549,28 @@ export interface CampaignSection {
   createdBy: string
   updatedBy: string
 }
+
+export type {
+  CampaignDatabaseDocument,
+  CampaignDatabaseRow,
+  CampaignDatabaseRows,
+  CampaignDatabaseSchema,
+  LegacyCampaignDatabaseRow,
+} from './campaignDatabase'
+
+export {
+  hydrateCampaignDatabase,
+  normalizeCampaignDatabase,
+  normalizeCampaignDatabaseRow,
+  splitCampaignDatabase,
+} from './campaignDatabase'
+
+export type {
+  CampaignSharePermission,
+  CampaignShareReport,
+} from './campaignShare'
+
+export {
+  isDocumentCampaignSection,
+  isLegacyCampaignSection,
+} from './campaignWorkspace'

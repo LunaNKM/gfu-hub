@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { CampaignDataColumn } from '@/types'
 import { normalizeCellValue, tagColor } from './workspaceUtils'
 
@@ -16,70 +16,6 @@ interface EditableCellProps {
   onPaste?: (text: string) => void
 }
 
-// ── 값 표시 컴포넌트 ─────────────────────────────────────────────
-
-function DisplayValue({
-  value,
-  column,
-}: {
-  value: string | number | boolean | null
-  column: CampaignDataColumn
-}) {
-  if (value === null || value === undefined || value === '') {
-    return <span className="text-gray-300 select-none pointer-events-none">—</span>
-  }
-
-  switch (column.type) {
-    case 'currency':
-      return (
-        <span className="text-gray-800 text-xs">
-          {typeof value === 'number' ? `₩${value.toLocaleString()}` : String(value)}
-        </span>
-      )
-    case 'percent':
-      return (
-        <span className="text-gray-800 text-xs">
-          {typeof value === 'number' ? `${value}%` : String(value)}
-        </span>
-      )
-    case 'url': {
-      const str = String(value)
-      return (
-        <span className="text-blue-500 text-xs truncate max-w-full block" title={str}>
-          {str}
-        </span>
-      )
-    }
-    case 'select': {
-      const str = String(value)
-      const { bg, text } = tagColor(str)
-      return (
-        <span
-          style={{
-            backgroundColor: bg,
-            color: text,
-            padding: '1px 8px',
-            borderRadius: 999,
-            fontSize: 11,
-            fontWeight: 500,
-            display: 'inline-block',
-            maxWidth: '100%',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {str}
-        </span>
-      )
-    }
-    default:
-      return <span className="text-gray-800 text-xs truncate">{String(value)}</span>
-  }
-}
-
-// ── 메인 컴포넌트 ────────────────────────────────────────────────
-
 export function EditableCell({
   value,
   column,
@@ -90,83 +26,83 @@ export function EditableCell({
   onPaste,
 }: EditableCellProps) {
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState<string>('')
+  const [draft, setDraft] = useState('')
+  const inputRef = useRef<HTMLInputElement | HTMLSelectElement>(null)
 
-  function startEdit() {
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus()
+      if (inputRef.current instanceof HTMLInputElement) inputRef.current.select()
+    }
+  }, [editing])
+
+  const startEdit = () => {
     setDraft(value == null ? '' : String(value))
     setEditing(true)
   }
 
-  function commit(draft: string) {
-    onChange(normalizeCellValue(draft, column.type))
+  const commit = (nextDraft = draft) => {
+    onChange(normalizeCellValue(nextDraft, column.type))
     setEditing(false)
   }
 
-  function commitAndNavigate(draft: string, dir: NavigateDir) {
+  const commitAndNavigate = (dir: NavigateDir) => {
     onChange(normalizeCellValue(draft, column.type))
     setEditing(false)
-    // DOM 업데이트 후 포커스 이동
-    setTimeout(() => onNavigate?.(dir), 0)
+    window.setTimeout(() => onNavigate?.(dir), 0)
   }
 
-  // ── 체크박스: 항상 인터랙티브 ────────────────────────────────
   if (column.type === 'checkbox') {
     return (
-      <div className="flex items-center justify-center h-full w-full">
+      <div className="flex h-full w-full items-center justify-center">
         <input
           type="checkbox"
           checked={value === true}
-          onChange={(e) => onChange(e.target.checked)}
-          className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer focus:ring-1 focus:ring-blue-400"
+          onChange={(event) => onChange(event.target.checked)}
+          className="h-4 w-4 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-1 focus:ring-blue-400"
           aria-label="체크박스"
         />
       </div>
     )
   }
 
-  // ── 표시 모드 ─────────────────────────────────────────────────
   if (!editing) {
     return (
       <div
         tabIndex={0}
         data-cell-row={rowId}
         data-cell-col={colId}
-        className="w-full h-full flex items-center overflow-hidden cursor-text outline-none focus:ring-1 focus:ring-blue-400 focus:ring-inset rounded-sm"
-        onClick={startEdit}
-        onPaste={(e) => {
-          const text = e.clipboardData?.getData('text')
+        className="flex h-full w-full cursor-text items-center overflow-hidden rounded-sm outline-none focus:ring-1 focus:ring-blue-400 focus:ring-inset"
+        onMouseDown={(event) => {
+          event.preventDefault()
+          startEdit()
+        }}
+        onPaste={(event) => {
+          const text = event.clipboardData?.getData('text')
           if (text && onPaste) {
-            e.preventDefault()
+            event.preventDefault()
             onPaste(text)
           }
         }}
-        onKeyDown={(e) => {
-          switch (e.key) {
-            case 'Enter':
-            case 'F2':
-              e.preventDefault()
-              startEdit()
-              break
-            case 'Tab':
-              e.preventDefault()
-              onNavigate?.(e.shiftKey ? 'left' : 'tab')
-              break
-            case 'ArrowUp':
-              e.preventDefault()
-              onNavigate?.('up')
-              break
-            case 'ArrowDown':
-              e.preventDefault()
-              onNavigate?.('down')
-              break
-            case 'ArrowLeft':
-              e.preventDefault()
-              onNavigate?.('left')
-              break
-            case 'ArrowRight':
-              e.preventDefault()
-              onNavigate?.('right')
-              break
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === 'F2') {
+            event.preventDefault()
+            startEdit()
+          } else if (event.key === 'Tab') {
+            event.preventDefault()
+            onNavigate?.(event.shiftKey ? 'left' : 'tab')
+          } else if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            onNavigate?.('up')
+          } else if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            onNavigate?.('down')
+          } else if (event.key === 'ArrowLeft') {
+            event.preventDefault()
+            onNavigate?.('left')
+          } else if (event.key === 'ArrowRight') {
+            event.preventDefault()
+            onNavigate?.('right')
           }
         }}
         role="gridcell"
@@ -177,50 +113,110 @@ export function EditableCell({
     )
   }
 
-  // ── 편집 모드: select ─────────────────────────────────────────
   if (column.type === 'select') {
     return (
       <select
-        autoFocus
-        value={String(draft)}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => commit(draft)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); commitAndNavigate(draft, 'down') }
-          if (e.key === 'Tab') { e.preventDefault(); commitAndNavigate(draft, e.shiftKey ? 'left' : 'tab') }
-          if (e.key === 'Escape') setEditing(false)
+        ref={inputRef as React.RefObject<HTMLSelectElement>}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => commit()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            commitAndNavigate('down')
+          } else if (event.key === 'Tab') {
+            event.preventDefault()
+            commitAndNavigate(event.shiftKey ? 'left' : 'tab')
+          } else if (event.key === 'Escape') {
+            setEditing(false)
+          }
         }}
-        className="w-full h-full text-xs border-0 outline-none bg-transparent"
-        style={{ background: 'transparent' }}
+        className="h-full w-full border-0 bg-transparent text-xs outline-none"
       >
         <option value="">-</option>
-        {column.options?.map((opt) => (
-          <option key={opt} value={opt}>{opt}</option>
+        {column.options?.map((option) => (
+          <option key={option} value={option}>{option}</option>
         ))}
       </select>
     )
   }
 
-  // ── 편집 모드: input ──────────────────────────────────────────
   const inputType =
-    column.type === 'date' ? 'date' :
-    column.type === 'number' || column.type === 'currency' || column.type === 'percent' ? 'number' :
-    'text'
+    column.type === 'date'
+      ? 'date'
+      : column.type === 'number' || column.type === 'currency' || column.type === 'percent'
+        ? 'number'
+        : 'text'
 
   return (
     <input
-      autoFocus
+      ref={inputRef as React.RefObject<HTMLInputElement>}
       type={inputType}
       value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => commit(draft)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') { e.preventDefault(); commitAndNavigate(draft, 'down') }
-        if (e.key === 'Tab') { e.preventDefault(); commitAndNavigate(draft, e.shiftKey ? 'left' : 'tab') }
-        if (e.key === 'Escape') setEditing(false)
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => commit()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          commitAndNavigate('down')
+        } else if (event.key === 'Tab') {
+          event.preventDefault()
+          commitAndNavigate(event.shiftKey ? 'left' : 'tab')
+        } else if (event.key === 'Escape') {
+          setEditing(false)
+        }
       }}
-      className="w-full h-full text-xs border-0 outline-none bg-transparent focus:ring-0 px-0"
-      style={{ background: 'transparent', minWidth: 0 }}
+      className="h-full w-full min-w-0 border-0 bg-transparent px-0 text-xs outline-none focus:ring-0"
     />
   )
+}
+
+function DisplayValue({
+  value,
+  column,
+}: {
+  value: string | number | boolean | null
+  column: CampaignDataColumn
+}) {
+  if (value === null || value === undefined || value === '') {
+    return <span className="pointer-events-none select-none text-gray-300">-</span>
+  }
+
+  if (column.type === 'currency') {
+    return <span className="text-xs text-gray-800">{typeof value === 'number' ? value.toLocaleString() : String(value)}</span>
+  }
+  if (column.type === 'percent') {
+    return <span className="text-xs text-gray-800">{typeof value === 'number' ? `${value}%` : String(value)}</span>
+  }
+  if (column.type === 'url') {
+    const text = String(value)
+    return <span className="block max-w-full truncate text-xs text-blue-500" title={text}>{text}</span>
+  }
+  if (column.type === 'select') {
+    const text = String(value)
+    const { bg, text: textColor } = tagColor(text)
+    return (
+      <span
+        style={{
+          backgroundColor: bg,
+          color: textColor,
+          padding: '1px 8px',
+          borderRadius: 999,
+          fontSize: 11,
+          fontWeight: 500,
+          display: 'inline-block',
+          maxWidth: '100%',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {text}
+      </span>
+    )
+  }
+
+  return <span className="truncate text-xs text-gray-800">{String(value)}</span>
 }

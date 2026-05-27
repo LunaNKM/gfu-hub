@@ -5,7 +5,7 @@ import {
   createDocument,
 } from '@/lib/server/firestoreRest'
 import { CampaignSection } from '@/types'
-import { createDefaultTableContent } from '@/components/campaigns/workspace/dataTableTemplates'
+import { createDefaultTableContent } from '@/lib/campaigns/databaseTemplates'
 
 function defaultContent(type: string, title?: string) {
   if (type === 'document') return { blocks: [] }

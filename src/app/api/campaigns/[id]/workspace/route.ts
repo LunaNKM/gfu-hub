@@ -6,9 +6,9 @@ import {
   createDocument,
 } from '@/lib/server/firestoreRest'
 import { Campaign, CampaignSection, CampaignBlock, CampaignDatabase, CampaignCrmSyncType } from '@/types'
-import { createDefaultTableContent } from '@/components/campaigns/workspace/dataTableTemplates'
 import {
   createDefaultDatabase,
+  createDefaultTableContent,
   DEFAULT_DATABASE_TYPES,
 } from '@/lib/campaigns/databaseTemplates'
 import { buildCampaignOverview } from '@/lib/campaigns/overview'

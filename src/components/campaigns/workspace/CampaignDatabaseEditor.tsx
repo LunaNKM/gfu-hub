@@ -40,9 +40,9 @@ export function CampaignDatabaseEditor({ database, onChange }: Props) {
   const businessLabel = BUSINESS_TYPE_LABELS[database.businessType] ?? database.businessType
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col bg-white">
       {/* 헤더 */}
-      <div className="border-b border-gray-100 bg-white px-5 py-3 flex items-center gap-3 shrink-0">
+      <div className="flex shrink-0 items-center gap-3 border-b border-[#e9e9e7] bg-white px-5 py-3">
         <Database size={15} className="text-gray-400 shrink-0" />
         <div className="flex-1 min-w-0">
           {editingTitle ? (
@@ -71,7 +71,7 @@ export function CampaignDatabaseEditor({ database, onChange }: Props) {
       </div>
 
       {/* 테이블 에디터 (기존 DataTableSectionEditor 재사용) */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden bg-white">
         <DataTableSectionEditor
           key={database.id}
           content={tableContent}

@@ -1,28 +1,17 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { Loader2 } from 'lucide-react'
 import {
-  Campaign,
-  CampaignSection,
-  CampaignSectionType,
-  CampaignBlock,
-  CampaignDatabase,
-  CampaignBusinessType,
-  CampaignOverview,
   CampaignDataTableContent,
-  CampaignDashboardContent,
-  CampaignBlockType,
 } from '@/types'
 import { SectionSidebar, type ActiveView } from './SectionSidebar'
 import { CampaignOverviewDashboard } from './CampaignOverviewDashboard'
 import { CampaignDatabaseEditor } from './CampaignDatabaseEditor'
 import { CampaignSectionDocument } from './CampaignSectionDocument'
 import { DataTableSectionEditor } from './DataTableSectionEditor'
-import { DashboardSectionEditor } from './DashboardSectionEditor'
-
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+import { useCampaignWorkspace } from './hooks/useCampaignWorkspace'
 
 interface Props {
   campaignId: string
@@ -30,466 +19,164 @@ interface Props {
 
 export function CampaignWorkspace({ campaignId }: Props) {
   const { user } = useAuth()
-
-  const [campaign, setCampaign] = useState<Campaign | null>(null)
-  const [sections, setSections] = useState<CampaignSection[]>([])
-  const [blocks, setBlocks] = useState<CampaignBlock[]>([])
-  const [databases, setDatabases] = useState<CampaignDatabase[]>([])
-  const [overview, setOverview] = useState<CampaignOverview | null>(null)
   const [activeView, setActiveView] = useState<ActiveView>({ type: 'overview' })
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const workspace = useCampaignWorkspace(campaignId, user)
 
-  const debounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
-  const pendingPatches = useRef<Record<string, unknown>>({})
-
-  // ── 초기 로드 ──────────────────────────────────────────────────
-
-  const load = useCallback(async () => {
-    if (!user) return
-    try {
-      const token = await user.getIdToken()
-      const res = await fetch(`/api/campaigns/${campaignId}/workspace`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      setCampaign(data.campaign)
-      setSections(data.sections ?? [])
-      setBlocks(data.blocks ?? [])
-      setDatabases(data.databases ?? [])
-      setOverview(data.overview ?? null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '불러오기 실패')
-    } finally {
-      setLoading(false)
-    }
-  }, [campaignId, user])
-
-  useEffect(() => { load() }, [load])
-
-  // ── 섹션 저장 ──────────────────────────────────────────────────
-
-  const scheduleSectionSave = useCallback(
-    (sectionId: string, patch: Partial<CampaignSection>) => {
-      const key = `section:${sectionId}`
-      pendingPatches.current[key] = { ...(pendingPatches.current[key] as object ?? {}), ...patch }
-      if (debounceRefs.current[key]) clearTimeout(debounceRefs.current[key])
-      setSaveStatus('saving')
-      debounceRefs.current[key] = setTimeout(async () => {
-        try {
-          if (!user) throw new Error('로그인이 필요합니다.')
-          const token = await user.getIdToken()
-          const body = pendingPatches.current[key]
-          delete pendingPatches.current[key]
-          const res = await fetch(`/api/campaigns/${campaignId}/sections/${sectionId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify(body),
-          })
-          if (!res.ok) throw new Error()
-          setSaveStatus('saved')
-          setTimeout(() => setSaveStatus('idle'), 2000)
-        } catch {
-          setSaveStatus('error')
-        }
-      }, 800)
-    },
-    [campaignId, user]
+  const activeSection = useMemo(
+    () =>
+      activeView.type === 'section'
+        ? workspace.sections.find((section) => section.id === activeView.id) ?? null
+        : null,
+    [activeView, workspace.sections]
   )
 
-  const updateSection = useCallback(
-    (sectionId: string, patch: Partial<CampaignSection>) => {
-      setSections((prev) => prev.map((s) => (s.id === sectionId ? { ...s, ...patch } : s)))
-      scheduleSectionSave(sectionId, patch)
-    },
-    [scheduleSectionSave]
+  const activeDatabase = useMemo(
+    () =>
+      activeView.type === 'database'
+        ? workspace.databases.find((database) => database.id === activeView.id) ?? null
+        : null,
+    [activeView, workspace.databases]
   )
 
-  // ── 데이터베이스 저장 ──────────────────────────────────────────
-
-  const scheduleDatabaseSave = useCallback(
-    (databaseId: string, patch: Partial<CampaignDatabase>) => {
-      const key = `db:${databaseId}`
-      pendingPatches.current[key] = { ...(pendingPatches.current[key] as object ?? {}), ...patch }
-      if (debounceRefs.current[key]) clearTimeout(debounceRefs.current[key])
-      setSaveStatus('saving')
-      debounceRefs.current[key] = setTimeout(async () => {
-        try {
-          if (!user) throw new Error('로그인이 필요합니다.')
-          const token = await user.getIdToken()
-          const body = pendingPatches.current[key]
-          delete pendingPatches.current[key]
-          const res = await fetch(`/api/campaigns/${campaignId}/databases/${databaseId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify(body),
-          })
-          if (!res.ok) throw new Error()
-          setSaveStatus('saved')
-          setTimeout(() => setSaveStatus('idle'), 2000)
-        } catch {
-          setSaveStatus('error')
-        }
-      }, 800)
-    },
-    [campaignId, user]
-  )
-
-  const updateDatabase = useCallback(
-    (databaseId: string, patch: Partial<CampaignDatabase>) => {
-      setDatabases((prev) =>
-        prev.map((d) => (d.id === databaseId ? { ...d, ...patch } : d))
-      )
-      // overview 재계산
-      setDatabases((prev) => {
-        const updated = prev.map((d) => (d.id === databaseId ? { ...d, ...patch } : d))
-        import('@/lib/campaigns/overview').then(({ buildCampaignOverview }) => {
-          setOverview(buildCampaignOverview(updated))
-        })
-        return updated
-      })
-      scheduleDatabaseSave(databaseId, patch)
-    },
-    [scheduleDatabaseSave]
-  )
-
-  // ── 블록 업데이트 ──────────────────────────────────────────────
-
-  const updateBlock = useCallback(
-    (blockId: string, content: Record<string, unknown>) => {
-      setBlocks((prev) =>
-        prev.map((b) => (b.id === blockId ? { ...b, content } : b))
-      )
-      const key = `block:${blockId}`
-      if (debounceRefs.current[key]) clearTimeout(debounceRefs.current[key])
-      setSaveStatus('saving')
-      debounceRefs.current[key] = setTimeout(async () => {
-        try {
-          if (!user) return
-          const token = await user.getIdToken()
-          await fetch(`/api/campaigns/${campaignId}/blocks/${blockId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ content }),
-          })
-          setSaveStatus('saved')
-          setTimeout(() => setSaveStatus('idle'), 2000)
-        } catch {
-          setSaveStatus('error')
-        }
-      }, 800)
-    },
-    [campaignId, user]
-  )
-
-  // ── 섹션 추가 ──────────────────────────────────────────────────
-
-  const patchBlock = useCallback(
-    (blockId: string, patch: Partial<CampaignBlock>) => {
-      setBlocks((prev) => prev.map((b) => (b.id === blockId ? { ...b, ...patch } : b)))
-      const key = `block:${blockId}`
-      pendingPatches.current[key] = { ...(pendingPatches.current[key] as object ?? {}), ...patch }
-      if (debounceRefs.current[key]) clearTimeout(debounceRefs.current[key])
-      setSaveStatus('saving')
-      debounceRefs.current[key] = setTimeout(async () => {
-        try {
-          if (!user) return
-          const token = await user.getIdToken()
-          const body = pendingPatches.current[key]
-          delete pendingPatches.current[key]
-          const res = await fetch(`/api/campaigns/${campaignId}/blocks/${blockId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify(body),
-          })
-          if (!res.ok) throw new Error()
-          setSaveStatus('saved')
-          setTimeout(() => setSaveStatus('idle'), 2000)
-        } catch {
-          setSaveStatus('error')
-        }
-      }, 800)
-    },
-    [campaignId, user]
-  )
-
-  const addBlock = useCallback(
-    async (
-      sectionId: string,
-      type: CampaignBlockType,
-      content: Record<string, unknown> = {}
-    ) => {
-      if (!user) return
-      try {
-        const token = await user.getIdToken()
-        const sectionBlocks = blocks.filter((b) => b.sectionId === sectionId)
-        const maxOrder = sectionBlocks.reduce((max, block) => Math.max(max, block.order ?? 0), 0)
-        const res = await fetch(`/api/campaigns/${campaignId}/blocks`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ sectionId, type, order: maxOrder + 1000, content }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error)
-        setBlocks((prev) => [...prev, data.block as CampaignBlock])
-      } catch (e) {
-        console.error('블록 추가 실패:', e)
-      }
-    },
-    [blocks, campaignId, user]
-  )
-
-  const deleteBlock = useCallback(
-    async (blockId: string) => {
-      if (!user) return
-      try {
-        const token = await user.getIdToken()
-        const res = await fetch(`/api/campaigns/${campaignId}/blocks/${blockId}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (!res.ok) throw new Error()
-        setBlocks((prev) => prev.filter((block) => block.id !== blockId))
-      } catch (e) {
-        console.error('블록 삭제 실패:', e)
-      }
-    },
-    [campaignId, user]
-  )
-
-  const moveBlock = useCallback(
-    (sectionId: string, blockId: string, direction: 'up' | 'down') => {
-      const sectionBlocks = blocks
-        .filter((b) => b.sectionId === sectionId)
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-      const currentIndex = sectionBlocks.findIndex((b) => b.id === blockId)
-      const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
-      if (currentIndex < 0 || targetIndex < 0 || targetIndex >= sectionBlocks.length) return
-
-      const reordered = [...sectionBlocks]
-      const [moved] = reordered.splice(currentIndex, 1)
-      reordered.splice(targetIndex, 0, moved)
-      reordered.forEach((block, index) => {
-        patchBlock(block.id, { order: (index + 1) * 1000 })
-      })
-    },
-    [blocks, patchBlock]
-  )
-
-  const addSection = useCallback(
-    async (type: CampaignSectionType) => {
-      if (!user) return
-      try {
-        const token = await user.getIdToken()
-        const res = await fetch(`/api/campaigns/${campaignId}/sections`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ type }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error)
-        const newSection = data.section as CampaignSection
-        setSections((prev) => [...prev, newSection])
-        setActiveView({ type: 'section', id: newSection.id })
-      } catch (e) {
-        console.error('섹션 추가 실패:', e)
-      }
-    },
-    [campaignId, user]
-  )
-
-  // ── 데이터베이스 추가 ──────────────────────────────────────────
-
-  const addDatabase = useCallback(
-    async (businessType: CampaignBusinessType) => {
-      if (!user) return
-      try {
-        const token = await user.getIdToken()
-        const res = await fetch(`/api/campaigns/${campaignId}/databases`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ businessType }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error)
-        const newDb = data.database as CampaignDatabase
-        setDatabases((prev) => [...prev, newDb])
-        setActiveView({ type: 'database', id: newDb.id })
-      } catch (e) {
-        console.error('데이터베이스 추가 실패:', e)
-      }
-    },
-    [campaignId, user]
-  )
-
-  // ── 섹션 순서 변경 ─────────────────────────────────────────────
-
-  const reorderSections = useCallback(
-    async (newSections: CampaignSection[]) => {
-      setSections(newSections)
-      try {
-        if (!user) return
-        const token = await user.getIdToken()
-        await fetch(`/api/campaigns/${campaignId}/sections/reorder`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ sectionIds: newSections.map((s) => s.id) }),
-        })
-      } catch (e) {
-        console.error('순서 변경 실패:', e)
-      }
-    },
-    [campaignId, user]
-  )
-
-  // ── 현재 활성 뷰 ───────────────────────────────────────────────
-
-  const activeSection =
-    activeView.type === 'section'
-      ? sections.find((s) => s.id === activeView.id) ?? null
-      : null
-
-  const activeDatabase =
-    activeView.type === 'database'
-      ? databases.find((d) => d.id === activeView.id) ?? null
-      : null
-
-  // 브레드크럼 텍스트
   const breadcrumb =
     activeView.type === 'overview'
       ? '종합 대시보드'
       : activeSection?.title ?? activeDatabase?.title ?? ''
 
-  // ── 렌더 ───────────────────────────────────────────────────────
+  const addSection = async (...args: Parameters<typeof workspace.addSection>) => {
+    const section = await workspace.addSection(...args)
+    if (section) setActiveView({ type: 'section', id: section.id })
+  }
 
-  if (loading) {
+  const addDatabase = async (...args: Parameters<typeof workspace.addDatabase>) => {
+    const database = await workspace.addDatabase(...args)
+    if (database) setActiveView({ type: 'database', id: database.id })
+  }
+
+  if (workspace.loading) {
     return (
-      <div className="flex items-center justify-center h-screen text-gray-300">
+      <div className="flex h-screen items-center justify-center text-gray-300">
         <Loader2 size={24} className="animate-spin" />
       </div>
     )
   }
 
-  if (error || !campaign) {
+  if (workspace.error || !workspace.campaign) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-2 text-gray-400">
-        <p className="text-sm">{error ?? '캠페인을 찾을 수 없습니다.'}</p>
+      <div className="flex h-screen flex-col items-center justify-center gap-2 text-gray-400">
+        <p className="text-sm">{workspace.error ?? '캠페인을 찾을 수 없습니다.'}</p>
       </div>
     )
   }
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
-      {/* 좌측 사이드바 */}
       <SectionSidebar
-        campaignName={campaign.campaignName}
-        clientName={campaign.clientName}
-        sections={sections}
-        databases={databases}
+        campaignName={workspace.campaign.campaignName}
+        clientName={workspace.campaign.clientName}
+        sections={workspace.sections}
+        databases={workspace.databases}
         activeView={activeView}
         onSelectView={setActiveView}
         onAddSection={addSection}
         onAddDatabase={addDatabase}
-        onReorder={reorderSections}
+        onReorder={workspace.reorderSections}
       />
 
-      {/* 중앙 편집 영역 */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* 상단 바 */}
-        <div className="flex items-center justify-between px-4 border-b border-gray-200 bg-white shrink-0 h-10">
-          <div className="flex items-center gap-1.5 text-sm min-w-0">
-            <span className="text-gray-400 text-xs truncate shrink-0">{campaign.clientName}</span>
-            <span className="text-gray-300 text-xs shrink-0">›</span>
-            <span className="text-gray-700 font-medium text-sm truncate">{breadcrumb}</span>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex h-10 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
+          <div className="flex min-w-0 items-center gap-1.5 text-sm">
+            <span className="shrink-0 truncate text-xs text-gray-400">{workspace.campaign.clientName}</span>
+            <span className="shrink-0 text-xs text-gray-300">/</span>
+            <span className="truncate text-sm font-medium text-gray-700">{breadcrumb}</span>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0 ml-4">
-            {saveStatus === 'saving' && (
-              <>
-                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-                <span className="text-xs text-gray-400">저장 중...</span>
-              </>
-            )}
-            {saveStatus === 'saved' && (
-              <>
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                <span className="text-xs text-gray-400">저장됨</span>
-              </>
-            )}
-            {saveStatus === 'error' && (
-              <>
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-                <span className="text-xs text-red-400">저장 실패</span>
-              </>
-            )}
-          </div>
+          <SaveIndicator status={workspace.saveStatus} />
         </div>
 
-        {/* 편집기 */}
         <div className="flex-1 overflow-hidden">
-          {/* 종합 대시보드 */}
           {activeView.type === 'overview' && (
-            <CampaignOverviewDashboard overview={overview} />
+            <CampaignOverviewDashboard overview={workspace.overview} />
           )}
 
-          {/* 섹션 */}
           {activeView.type === 'section' && activeSection && (
             <>
               {activeSection.type === 'document' && (
                 <CampaignSectionDocument
                   key={activeSection.id}
                   section={activeSection}
-                  blocks={blocks}
-                  databases={databases}
-                  campaignId={campaignId}
-                  onBlockUpdate={updateBlock}
-                  onBlockPatch={patchBlock}
-                  onBlockAdd={addBlock}
-                  onBlockDelete={deleteBlock}
-                  onBlockMove={moveBlock}
+                  blocks={workspace.blocks}
+                  databases={workspace.databases}
+                  onBlockUpdate={workspace.updateBlock}
+                  onBlockPatch={workspace.patchBlock}
+                  onBlockAdd={workspace.addBlock}
+                  onBlockDelete={workspace.deleteBlock}
+                  onBlockMove={workspace.moveBlock}
+                  onDatabaseUpdate={workspace.updateDatabase}
                 />
               )}
               {activeSection.type === 'data_table' && (
                 <DataTableSectionEditor
                   key={activeSection.id}
                   content={activeSection.content as CampaignDataTableContent}
-                  onChange={(content) => updateSection(activeSection.id, { content })}
+                  onChange={(content) => workspace.updateSection(activeSection.id, { content })}
                 />
               )}
               {activeSection.type === 'dashboard' && (
-                <DashboardSectionEditor
-                  key={activeSection.id}
-                  content={activeSection.content as CampaignDashboardContent}
-                  allSections={sections}
-                  onChange={(content) => updateSection(activeSection.id, { content })}
-                />
+                <EmptyState label="수동 위젯 대시보드는 더 이상 사용하지 않습니다. 종합 대시보드를 이용하세요." />
               )}
             </>
           )}
 
-          {/* 데이터베이스 */}
           {activeView.type === 'database' && activeDatabase && (
             <CampaignDatabaseEditor
               key={activeDatabase.id}
               database={activeDatabase}
-              onChange={(patch) => updateDatabase(activeDatabase.id, patch)}
+              onChange={(patch) => workspace.updateDatabase(activeDatabase.id, patch)}
             />
           )}
 
-          {/* 빈 상태 */}
           {activeView.type === 'section' && !activeSection && (
-            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-              섹션을 찾을 수 없습니다.
-            </div>
+            <EmptyState label="섹션을 찾을 수 없습니다." />
           )}
           {activeView.type === 'database' && !activeDatabase && (
-            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-              데이터베이스를 찾을 수 없습니다.
-            </div>
+            <EmptyState label="데이터베이스를 찾을 수 없습니다." />
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function SaveIndicator({ status }: { status: 'idle' | 'loading' | 'saving' | 'saved' | 'error' }) {
+  if (status === 'saving') return <Indicator color="bg-yellow-400" label="저장 중..." pulse />
+  if (status === 'saved') return <Indicator color="bg-green-400" label="저장됨" />
+  if (status === 'error') return <Indicator color="bg-red-400" label="저장 실패" danger />
+  return null
+}
+
+function Indicator({
+  color,
+  label,
+  pulse,
+  danger,
+}: {
+  color: string
+  label: string
+  pulse?: boolean
+  danger?: boolean
+}) {
+  return (
+    <div className="ml-4 flex shrink-0 items-center gap-1.5">
+      <span className={`h-1.5 w-1.5 rounded-full ${color} ${pulse ? 'animate-pulse' : ''}`} />
+      <span className={`text-xs ${danger ? 'text-red-400' : 'text-gray-400'}`}>{label}</span>
+    </div>
+  )
+}
+
+function EmptyState({ label }: { label: string }) {
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-gray-400">
+      {label}
     </div>
   )
 }
