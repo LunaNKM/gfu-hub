@@ -1,169 +1,283 @@
 'use client'
 
-import React, { useState, useCallback, useMemo, useRef } from 'react'
-import { AgGridReact } from 'ag-grid-react'
-import 'ag-grid-community/styles/ag-grid.css'
-import 'ag-grid-community/styles/ag-theme-quartz.css'
-import './dataTableTheme.css'
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import {
-  ModuleRegistry,
-  AllCommunityModule,
-  ColDef,
-  CellValueChangedEvent,
-  SelectionChangedEvent,
-} from 'ag-grid-community'
-import {
-  Plus,
-  Type,
-  Hash,
-  CircleDollarSign,
-  Percent,
-  Calendar,
-  List,
-  CheckSquare,
-  Link,
-  TableProperties,
-} from 'lucide-react'
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  flexRender,
+  type ColumnDef,
+  type SortingState,
+  type RowSelectionState,
+  type Header,
+  type Table,
+  type Row,
+} from '@tanstack/react-table'
+import { Plus, TableProperties } from 'lucide-react'
 import {
   CampaignDataTableContent,
   CampaignDataColumn,
   CampaignDataRow,
   CampaignColumnType,
+  CampaignColumnRole,
 } from '@/types'
-import { normalizeCellValue, tagColor } from './workspaceUtils'
 import { createEmptyRow, createSampleRows } from './dataTableTemplates'
 import { DataTableToolbar } from './DataTableToolbar'
 import { DataTableColumnDrawer } from './DataTableColumnDrawer'
 import { DataTableEmptyState } from './DataTableEmptyState'
+import { EditableCell } from './EditableCell'
 
-ModuleRegistry.registerModules([AllCommunityModule])
+// ── 상수 ─────────────────────────────────────────────────────────────────
 
-// ── 타입 아이콘 매핑 ─────────────────────────────────────────────
-
-const TYPE_ICONS: Record<CampaignColumnType, React.ElementType> = {
-  text:     Type,
-  number:   Hash,
-  currency: CircleDollarSign,
-  percent:  Percent,
-  date:     Calendar,
-  select:   List,
-  checkbox: CheckSquare,
-  url:      Link,
+const TYPE_BADGE: Record<CampaignColumnType, string> = {
+  text:     'T',
+  number:   '#',
+  currency: '#',
+  percent:  '%',
+  date:     'D',
+  select:   'S',
+  checkbox: '✓',
+  url:      '↗',
 }
 
-// ── AG Grid 커스텀 헤더 컴포넌트 ─────────────────────────────────
+const COLUMN_TYPES: { value: CampaignColumnType; label: string }[] = [
+  { value: 'text',     label: '텍스트' },
+  { value: 'number',   label: '숫자' },
+  { value: 'currency', label: '금액' },
+  { value: 'percent',  label: '퍼센트' },
+  { value: 'date',     label: '날짜' },
+  { value: 'select',   label: '선택' },
+  { value: 'checkbox', label: '체크박스' },
+  { value: 'url',      label: 'URL' },
+]
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-function TypedHeader(params: any) {
-  const colType: CampaignColumnType = params.colType ?? 'text'
-  const Icon = TYPE_ICONS[colType] ?? Type
+const COLUMN_ROLES: { value: CampaignColumnRole | ''; label: string }[] = [
+  { value: '',            label: '없음' },
+  { value: 'dimension',   label: '분류값' },
+  { value: 'metric',      label: '수치값' },
+  { value: 'status',      label: '상태' },
+  { value: 'platform',    label: '플랫폼' },
+  { value: 'cost',        label: '비용' },
+  { value: 'performance', label: '성과' },
+]
+
+function getColMinWidth(type: CampaignColumnType): number {
+  switch (type) {
+    case 'checkbox': return 72
+    case 'date':     return 130
+    case 'currency': return 130
+    case 'number':
+    case 'percent':  return 110
+    case 'url':      return 200
+    default:         return 150
+  }
+}
+
+// ── 헤더 전체선택 체크박스 ────────────────────────────────────────────────
+
+function HeaderCheckbox({ table }: { table: Table<CampaignDataRow> }) {
+  const ref = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate =
+        table.getIsSomeRowsSelected() && !table.getIsAllRowsSelected()
+    }
+  })
+
   return (
-    <div className="flex items-center gap-1.5 w-full overflow-hidden">
-      <Icon size={12} style={{ color: '#9ca3af', flexShrink: 0 }} />
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={table.getIsAllRowsSelected()}
+      onChange={table.getToggleAllRowsSelectedHandler()}
+      className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 cursor-pointer focus:ring-1 focus:ring-blue-400"
+      aria-label="전체 선택"
+    />
+  )
+}
+
+// ── 컬럼 헤더 (아이콘 + 이름 + 정렬 + ⋯ 메뉴) ──────────────────────────
+
+function TypedColumnHeader({
+  col,
+  header,
+  onUpdate,
+  onDelete,
+}: {
+  col: CampaignDataColumn
+  header: Header<CampaignDataRow, unknown>
+  onUpdate: (patch: Partial<CampaignDataColumn>) => void
+  onDelete: () => void
+}) {
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [nameInput, setNameInput] = useState(col.name)
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sortDir = header.column.getIsSorted()
+
+  // col.name이 외부에서 바뀌면 동기화
+  useEffect(() => { setNameInput(col.name) }, [col.name])
+
+  // 메뉴 외부 클릭 닫기
+  useEffect(() => {
+    if (!showMenu) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showMenu])
+
+  const commitRename = () => {
+    const trimmed = nameInput.trim()
+    if (trimmed && trimmed !== col.name) onUpdate({ name: trimmed })
+    else setNameInput(col.name)
+    setIsRenaming(false)
+  }
+
+  // 더블클릭 rename / 단일클릭 sort 충돌 방지
+  const handleClick = () => {
+    if (clickTimerRef.current) return
+    clickTimerRef.current = setTimeout(() => {
+      clickTimerRef.current = null
+      header.column.toggleSorting()
+    }, 230)
+  }
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = null
+    }
+    setIsRenaming(true)
+    setNameInput(col.name)
+  }
+
+  return (
+    <div className="flex items-center gap-1 w-full h-full overflow-hidden group/colhdr select-none">
+      {/* 타입 뱃지 */}
       <span
-        style={{
-          fontSize: 12,
-          fontWeight: 500,
-          color: '#6b7280',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
+        className="shrink-0 text-[10px] font-mono text-gray-400 w-4 text-center"
+        title={col.type}
       >
-        {params.displayName}
+        {TYPE_BADGE[col.type] ?? 'T'}
       </span>
+
+      {/* 컬럼명 or rename input */}
+      {isRenaming ? (
+        <input
+          autoFocus
+          value={nameInput}
+          onChange={(e) => setNameInput(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter') commitRename()
+            if (e.key === 'Escape') { setNameInput(col.name); setIsRenaming(false) }
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="flex-1 min-w-0 text-xs border border-blue-400 rounded px-1.5 py-0.5 outline-none bg-white shadow-sm"
+        />
+      ) : (
+        <button
+          className="flex-1 min-w-0 text-left text-xs font-medium text-gray-600 truncate hover:text-gray-800 leading-none"
+          onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
+          title="클릭: 정렬 / 더블클릭: 이름 변경"
+        >
+          {col.name}
+        </button>
+      )}
+
+      {/* 정렬 표시 */}
+      {sortDir && (
+        <span className="shrink-0 text-gray-400 text-[10px] leading-none">
+          {sortDir === 'asc' ? '↑' : '↓'}
+        </span>
+      )}
+
+      {/* ⋯ 메뉴 */}
+      <div className="relative shrink-0" ref={menuRef}>
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowMenu((v) => !v) }}
+          className="opacity-0 group-hover/colhdr:opacity-100 text-gray-400 hover:text-gray-700 w-5 h-5 flex items-center justify-center rounded hover:bg-gray-200 transition-opacity text-sm leading-none"
+          title="컬럼 옵션"
+          aria-label={`${col.name} 컬럼 옵션`}
+        >
+          ⋯
+        </button>
+
+        {showMenu && (
+          <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-48 py-1.5">
+            <button
+              onClick={() => { setIsRenaming(true); setNameInput(col.name); setShowMenu(false) }}
+              className="w-full text-left text-xs text-gray-700 hover:bg-gray-50 px-3 py-1.5"
+            >
+              이름 변경
+            </button>
+
+            <div className="border-t border-gray-100 my-1" />
+
+            <div className="px-3 py-1.5 space-y-1">
+              <p className="text-[10px] text-gray-400">타입</p>
+              <select
+                value={col.type}
+                onChange={(e) => {
+                  onUpdate({ type: e.target.value as CampaignColumnType })
+                  setShowMenu(false)
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full text-xs border border-gray-200 rounded px-1.5 py-1 bg-white outline-none text-gray-600 focus:border-blue-400"
+              >
+                {COLUMN_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="px-3 py-1.5 space-y-1">
+              <p className="text-[10px] text-gray-400">역할</p>
+              <select
+                value={col.role ?? ''}
+                onChange={(e) => {
+                  onUpdate({ role: (e.target.value as CampaignColumnRole) || undefined })
+                  setShowMenu(false)
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full text-xs border border-gray-200 rounded px-1.5 py-1 bg-white outline-none text-gray-600 focus:border-blue-400"
+              >
+                {COLUMN_ROLES.map((r) => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="border-t border-gray-100 my-1" />
+
+            <button
+              onClick={() => {
+                if (confirm(`"${col.name}" 컬럼을 삭제할까요?`)) {
+                  onDelete()
+                  setShowMenu(false)
+                }
+              }}
+              className="w-full text-left text-xs text-red-500 hover:bg-red-50 px-3 py-1.5"
+            >
+              컬럼 삭제
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
-// ── 태그 셀 렌더러 ────────────────────────────────────────────────
-
-function TagCellRenderer(params: any) {
-  const val = params.value
-  if (val === null || val === undefined || val === '') return null
-  const str = String(val)
-  const { bg, text } = tagColor(str)
-  return (
-    <span
-      style={{
-        backgroundColor: bg,
-        color: text,
-        padding: '1px 8px',
-        borderRadius: 999,
-        fontSize: 11,
-        fontWeight: 500,
-        display: 'inline-block',
-        lineHeight: '18px',
-        maxWidth: '100%',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {str}
-    </span>
-  )
-}
-/* eslint-enable @typescript-eslint/no-explicit-any */
-
-// ── 데이터 변환 ──────────────────────────────────────────────────
-
-interface RowData {
-  _id: string
-  [key: string]: string | number | boolean | null | undefined
-}
-
-function colsToAgDefs(columns: CampaignDataColumn[]): ColDef[] {
-  return columns.map((col, index) => {
-    const isTagCol =
-      col.type === 'select' || col.role === 'status' || col.role === 'platform'
-    const isCheckbox = col.type === 'checkbox'
-
-    return {
-      field: col.id,
-      headerName: col.name,
-      editable: true,
-      sortable: true,
-      filter: true,
-      resizable: true,
-      minWidth: 100,
-      headerComponent: TypedHeader,
-      headerComponentParams: { colType: col.type },
-      ...(index === 0
-        ? { checkboxSelection: true, headerCheckboxSelection: true }
-        : {}),
-      ...(isCheckbox
-        ? {
-            cellDataType: 'boolean',
-            cellRenderer: 'agCheckboxCellRenderer',
-            cellEditor: 'agCheckboxCellEditor',
-          }
-        : {}),
-      ...(!isCheckbox && isTagCol
-        ? {
-            cellRenderer: TagCellRenderer,
-            cellRendererParams: { colType: col.type, colRole: col.role },
-          }
-        : {}),
-    }
-  })
-}
-
-function rowsToAgData(rows: CampaignDataRow[]): RowData[] {
-  return rows.map((r) => ({ _id: r.id, ...r.cells }))
-}
-
-function agDataToRows(agRows: RowData[], columns: CampaignDataColumn[]): CampaignDataRow[] {
-  return agRows.map((r) => {
-    const cells: CampaignDataRow['cells'] = {}
-    for (const col of columns) {
-      cells[col.id] = normalizeCellValue(r[col.id], col.type) as string | number | boolean | null
-    }
-    return { id: String(r._id), cells }
-  })
-}
-
-// ── 메인 컴포넌트 ────────────────────────────────────────────────
+// ── 메인 컴포넌트 ────────────────────────────────────────────────────────
 
 interface Props {
   content: CampaignDataTableContent
@@ -172,86 +286,141 @@ interface Props {
 
 export function DataTableSectionEditor({ content, onChange }: Props) {
   const { columns, rows } = content
-  const gridRef = useRef<AgGridReact<RowData>>(null)
+  const [sorting, setSorting] = useState<SortingState>([])
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [showColumnDrawer, setShowColumnDrawer] = useState(false)
-  const [selectedCount, setSelectedCount] = useState(0)
 
-  const agColumns = useMemo(() => colsToAgDefs(columns), [columns])
-  const agData = useMemo(() => rowsToAgData(rows), [rows])
+  // ── 셀 / 컬럼 / 행 콜백 ─────────────────────────────────────────────
 
-  const getCurrentRows = useCallback((): CampaignDataRow[] => {
-    const api = gridRef.current?.api
-    if (!api) return rows
-    const agRows: RowData[] = []
-    api.forEachNode((node) => { if (node.data) agRows.push(node.data) })
-    return agDataToRows(agRows, columns)
-  }, [columns, rows])
-
-  const onCellValueChanged = useCallback(
-    (_event: CellValueChangedEvent<RowData>) => {
-      onChange({ columns, rows: getCurrentRows() })
+  const updateCell = useCallback(
+    (rowId: string, colId: string, value: string | number | boolean | null) => {
+      const newRows = rows.map((r) =>
+        r.id === rowId ? { ...r, cells: { ...r.cells, [colId]: value } } : r
+      )
+      onChange({ columns, rows: newRows })
     },
-    [columns, getCurrentRows, onChange]
+    [columns, rows, onChange]
   )
 
-  const onSelectionChanged = useCallback((e: SelectionChangedEvent<RowData>) => {
-    setSelectedCount(e.api.getSelectedNodes().length)
-  }, [])
-
-  const addRow = useCallback(() => {
-    const newRow = createEmptyRow(columns)
-    onChange({ columns, rows: [...getCurrentRows(), newRow] })
-  }, [columns, getCurrentRows, onChange])
-
-  const addSampleRows = useCallback(() => {
-    const samples = createSampleRows(columns)
-    onChange({ columns, rows: [...getCurrentRows(), ...samples] })
-  }, [columns, getCurrentRows, onChange])
-
-  const deleteSelectedRows = useCallback(() => {
-    const api = gridRef.current?.api
-    if (!api) return
-    const selected = api.getSelectedNodes().map((n) => n.data?._id)
-    if (selected.length === 0) return
-    const newRows = getCurrentRows().filter((r) => !selected.includes(r.id))
-    onChange({ columns, rows: newRows })
-    setSelectedCount(0)
-  }, [columns, getCurrentRows, onChange])
-
-  const addColumn = useCallback(() => {
-    const newCol: CampaignDataColumn = {
-      id: `col_${Date.now()}`,
-      name: `컬럼 ${columns.length + 1}`,
-      type: 'text',
-    }
-    const newColumns = [...columns, newCol]
-    const newRows = getCurrentRows().map((r) => ({
-      ...r,
-      cells: { ...r.cells, [newCol.id]: null },
-    }))
-    onChange({ columns: newColumns, rows: newRows })
-  }, [columns, getCurrentRows, onChange])
+  const updateColumn = useCallback(
+    (colId: string, patch: Partial<CampaignDataColumn>) => {
+      const newColumns = columns.map((c) => (c.id === colId ? { ...c, ...patch } : c))
+      onChange({ columns: newColumns, rows })
+    },
+    [columns, rows, onChange]
+  )
 
   const deleteColumn = useCallback(
     (colId: string) => {
       const newColumns = columns.filter((c) => c.id !== colId)
-      const newRows = getCurrentRows().map((r) => {
+      const newRows = rows.map((r) => {
         const cells = { ...r.cells }
         delete cells[colId]
         return { ...r, cells }
       })
       onChange({ columns: newColumns, rows: newRows })
     },
-    [columns, getCurrentRows, onChange]
+    [columns, rows, onChange]
   )
 
-  const updateColumn = useCallback(
-    (colId: string, patch: Partial<CampaignDataColumn>) => {
-      const newColumns = columns.map((c) => (c.id === colId ? { ...c, ...patch } : c))
-      onChange({ columns: newColumns, rows: getCurrentRows() })
-    },
-    [columns, getCurrentRows, onChange]
+  const addRow = useCallback(() => {
+    onChange({ columns, rows: [...rows, createEmptyRow(columns)] })
+  }, [columns, rows, onChange])
+
+  const addSampleRows = useCallback(() => {
+    onChange({ columns, rows: [...rows, ...createSampleRows(columns)] })
+  }, [columns, rows, onChange])
+
+  const deleteSelectedRows = useCallback(() => {
+    const selectedIds = Object.keys(rowSelection).filter((id) => rowSelection[id])
+    if (selectedIds.length === 0) return
+    if (!confirm(`선택한 ${selectedIds.length}개 행을 삭제할까요?`)) return
+    onChange({ columns, rows: rows.filter((r) => !selectedIds.includes(r.id)) })
+    setRowSelection({})
+  }, [rowSelection, columns, rows, onChange])
+
+  const addColumn = useCallback(() => {
+    const newCol: CampaignDataColumn = {
+      id: `col_${Date.now()}`,
+      name: '새 컬럼',
+      type: 'text',
+    }
+    const newColumns = [...columns, newCol]
+    const newRows = rows.map((r) => ({ ...r, cells: { ...r.cells, [newCol.id]: null } }))
+    onChange({ columns: newColumns, rows: newRows })
+  }, [columns, rows, onChange])
+
+  // ── TanStack 컬럼 정의 ───────────────────────────────────────────────
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const tableColumns = useMemo<ColumnDef<CampaignDataRow>[]>(
+    () => [
+      // 선택 컬럼
+      {
+        id: '_select',
+        header: ({ table }: { table: Table<CampaignDataRow> }) => (
+          <HeaderCheckbox table={table} />
+        ),
+        cell: ({ row }: { row: Row<CampaignDataRow> }) => (
+          <input
+            type="checkbox"
+            checked={row.getIsSelected()}
+            onChange={row.getToggleSelectedHandler()}
+            className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 cursor-pointer focus:ring-1 focus:ring-blue-400"
+            aria-label="행 선택"
+          />
+        ),
+        size: 44,
+        enableSorting: false,
+      } as ColumnDef<CampaignDataRow>,
+
+      // 데이터 컬럼
+      ...columns.map(
+        (col): ColumnDef<CampaignDataRow> => ({
+          id: col.id,
+          accessorFn: (row: CampaignDataRow) => row.cells[col.id] ?? null,
+          header: ({ header }: any) => (
+            <TypedColumnHeader
+              col={col}
+              header={header as Header<CampaignDataRow, unknown>}
+              onUpdate={(patch) => updateColumn(col.id, patch)}
+              onDelete={() => deleteColumn(col.id)}
+            />
+          ),
+          cell: ({ row, getValue }: any) => (
+            <EditableCell
+              value={getValue() as string | number | boolean | null}
+              column={col}
+              onChange={(value) => updateCell(row.original.id, col.id, value)}
+            />
+          ),
+          minSize: getColMinWidth(col.type),
+          size: getColMinWidth(col.type),
+          enableSorting: col.type !== 'checkbox',
+        })
+      ),
+    ],
+    [columns, updateColumn, deleteColumn, updateCell]
   )
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  // ── TanStack 인스턴스 ─────────────────────────────────────────────────
+
+  const table = useReactTable({
+    data: rows,
+    columns: tableColumns,
+    state: { sorting, rowSelection },
+    onSortingChange: setSorting,
+    onRowSelectionChange: setRowSelection,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getRowId: (row) => row.id,
+    enableRowSelection: true,
+  })
+
+  const selectedCount = Object.values(rowSelection).filter(Boolean).length
+
+  // ── 렌더 ─────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col h-full">
@@ -276,9 +445,7 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
                 <TableProperties size={18} className="text-gray-400" />
               </div>
               <p className="text-sm font-medium text-gray-500">컬럼을 먼저 추가하세요</p>
-              <p className="text-xs text-gray-400">
-                컬럼 설정에서 테이블 구조를 만들어보세요.
-              </p>
+              <p className="text-xs text-gray-400">컬럼 설정에서 테이블 구조를 만들어보세요.</p>
             </div>
             <button
               onClick={() => setShowColumnDrawer(true)}
@@ -291,25 +458,118 @@ export function DataTableSectionEditor({ content, onChange }: Props) {
           /* 행 없음 상태 */
           <DataTableEmptyState onAddRow={addRow} onAddSampleRows={addSampleRows} />
         ) : (
-          /* AG Grid */
-          <div className="ag-theme-quartz campaign-data-grid h-full w-full">
-            <AgGridReact<RowData>
-              ref={gridRef}
-              rowData={agData}
-              columnDefs={agColumns}
-              onCellValueChanged={onCellValueChanged}
-              onSelectionChanged={onSelectionChanged}
-              rowSelection="multiple"
-              suppressRowClickSelection
-              enableCellTextSelection
-              stopEditingWhenCellsLoseFocus
-              defaultColDef={{
-                editable: true,
-                resizable: true,
-                sortable: true,
-                filter: true,
+          /* 테이블 */
+          <div
+            className="h-full overflow-auto rounded-lg"
+            style={{ border: '1px solid #e5e7eb' }}
+          >
+            <table
+              style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                tableLayout: 'auto',
               }}
-            />
+            >
+              {/* 헤더 */}
+              <thead
+                style={{
+                  background: '#f8fafc',
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 10,
+                }}
+              >
+                {table.getHeaderGroups().map((hg) => (
+                  <tr key={hg.id}>
+                    {hg.headers.map((header, i) => (
+                      <th
+                        key={header.id}
+                        style={{
+                          minWidth:
+                            header.id === '_select' ? 44 : getColMinWidth(
+                              columns.find((c) => c.id === header.id)?.type ?? 'text'
+                            ),
+                          width: header.id === '_select' ? 44 : undefined,
+                          height: 36,
+                          padding: header.id === '_select' ? '0' : '0 12px',
+                          textAlign: 'left',
+                          borderBottom: '1px solid #e5e7eb',
+                          borderRight:
+                            i < hg.headers.length - 1 ? '1px solid #eef2f7' : 'none',
+                          verticalAlign: 'middle',
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {header.id === '_select' ? (
+                          <div className="flex items-center justify-center h-full">
+                            {flexRender(header.column.columnDef.header, header.getContext())}
+                          </div>
+                        ) : (
+                          flexRender(header.column.columnDef.header, header.getContext())
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                ))}
+              </thead>
+
+              {/* 바디 */}
+              <tbody>
+                {table.getRowModel().rows.map((row, rowIdx) => (
+                  <tr
+                    key={row.id}
+                    style={{
+                      background: row.getIsSelected() ? '#eff6ff' : undefined,
+                    }}
+                    className="hover:bg-[#f9fafb] transition-colors duration-75"
+                  >
+                    {row.getVisibleCells().map((cell, cellIdx) => (
+                      <td
+                        key={cell.id}
+                        style={{
+                          height: 40,
+                          padding: cell.column.id === '_select' ? '0' : '0 12px',
+                          borderBottom:
+                            rowIdx < table.getRowModel().rows.length - 1
+                              ? '1px solid #eef2f7'
+                              : 'none',
+                          borderRight:
+                            cellIdx < row.getVisibleCells().length - 1
+                              ? '1px solid #eef2f7'
+                              : 'none',
+                          verticalAlign: 'middle',
+                          overflow: 'hidden',
+                          maxWidth: 0, // overflow hidden 정상 동작
+                        }}
+                      >
+                        {cell.column.id === '_select' ? (
+                          <div className="flex items-center justify-center h-full">
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </div>
+                        ) : (
+                          flexRender(cell.column.columnDef.cell, cell.getContext())
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* 하단 행 추가 버튼 */}
+            <div
+              className="border-t border-gray-100 bg-white flex items-center sticky bottom-0"
+              style={{ height: 36, paddingLeft: 56 }}
+            >
+              <button
+                onClick={addRow}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                title="행 추가"
+              >
+                <Plus size={12} /> 행 추가
+              </button>
+            </div>
           </div>
         )}
       </div>
