@@ -13,6 +13,7 @@ import {
   CampaignOverview,
   CampaignDataTableContent,
   CampaignDashboardContent,
+  CampaignBlockType,
 } from '@/types'
 import { SectionSidebar, type ActiveView } from './SectionSidebar'
 import { CampaignOverviewDashboard } from './CampaignOverviewDashboard'
@@ -185,6 +186,98 @@ export function CampaignWorkspace({ campaignId }: Props) {
 
   // ── 섹션 추가 ──────────────────────────────────────────────────
 
+  const patchBlock = useCallback(
+    (blockId: string, patch: Partial<CampaignBlock>) => {
+      setBlocks((prev) => prev.map((b) => (b.id === blockId ? { ...b, ...patch } : b)))
+      const key = `block:${blockId}`
+      pendingPatches.current[key] = { ...(pendingPatches.current[key] as object ?? {}), ...patch }
+      if (debounceRefs.current[key]) clearTimeout(debounceRefs.current[key])
+      setSaveStatus('saving')
+      debounceRefs.current[key] = setTimeout(async () => {
+        try {
+          if (!user) return
+          const token = await user.getIdToken()
+          const body = pendingPatches.current[key]
+          delete pendingPatches.current[key]
+          const res = await fetch(`/api/campaigns/${campaignId}/blocks/${blockId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(body),
+          })
+          if (!res.ok) throw new Error()
+          setSaveStatus('saved')
+          setTimeout(() => setSaveStatus('idle'), 2000)
+        } catch {
+          setSaveStatus('error')
+        }
+      }, 800)
+    },
+    [campaignId, user]
+  )
+
+  const addBlock = useCallback(
+    async (
+      sectionId: string,
+      type: CampaignBlockType,
+      content: Record<string, unknown> = {}
+    ) => {
+      if (!user) return
+      try {
+        const token = await user.getIdToken()
+        const sectionBlocks = blocks.filter((b) => b.sectionId === sectionId)
+        const maxOrder = sectionBlocks.reduce((max, block) => Math.max(max, block.order ?? 0), 0)
+        const res = await fetch(`/api/campaigns/${campaignId}/blocks`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ sectionId, type, order: maxOrder + 1000, content }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        setBlocks((prev) => [...prev, data.block as CampaignBlock])
+      } catch (e) {
+        console.error('블록 추가 실패:', e)
+      }
+    },
+    [blocks, campaignId, user]
+  )
+
+  const deleteBlock = useCallback(
+    async (blockId: string) => {
+      if (!user) return
+      try {
+        const token = await user.getIdToken()
+        const res = await fetch(`/api/campaigns/${campaignId}/blocks/${blockId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) throw new Error()
+        setBlocks((prev) => prev.filter((block) => block.id !== blockId))
+      } catch (e) {
+        console.error('블록 삭제 실패:', e)
+      }
+    },
+    [campaignId, user]
+  )
+
+  const moveBlock = useCallback(
+    (sectionId: string, blockId: string, direction: 'up' | 'down') => {
+      const sectionBlocks = blocks
+        .filter((b) => b.sectionId === sectionId)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      const currentIndex = sectionBlocks.findIndex((b) => b.id === blockId)
+      const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+      if (currentIndex < 0 || targetIndex < 0 || targetIndex >= sectionBlocks.length) return
+
+      const reordered = [...sectionBlocks]
+      const [moved] = reordered.splice(currentIndex, 1)
+      reordered.splice(targetIndex, 0, moved)
+      reordered.forEach((block, index) => {
+        patchBlock(block.id, { order: (index + 1) * 1000 })
+      })
+    },
+    [blocks, patchBlock]
+  )
+
   const addSection = useCallback(
     async (type: CampaignSectionType) => {
       if (!user) return
@@ -351,6 +444,10 @@ export function CampaignWorkspace({ campaignId }: Props) {
                   databases={databases}
                   campaignId={campaignId}
                   onBlockUpdate={updateBlock}
+                  onBlockPatch={patchBlock}
+                  onBlockAdd={addBlock}
+                  onBlockDelete={deleteBlock}
+                  onBlockMove={moveBlock}
                 />
               )}
               {activeSection.type === 'data_table' && (
