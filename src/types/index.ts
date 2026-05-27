@@ -379,6 +379,80 @@ export interface WeeklyMarketReport {
 
 export type CampaignSectionType = 'document' | 'data_table' | 'dashboard'
 
+export type CampaignBusinessType =
+  | 'strategy_overview'
+  | 'influencer_candidates'
+  | 'confirmed_influencers'
+  | 'influencer_performance'
+  | 'reels_feed_plan'
+  | 'orientation_sheet'
+  | 'ad_budget'
+  | 'ad_execution_plan'
+  | 'schedule'
+  | 'content_review'
+  | 'result_report'
+  | 'other'
+
+export type CampaignBlockType =
+  | 'heading'
+  | 'paragraph'
+  | 'image'
+  | 'file'
+  | 'simple_table'
+  | 'database_embed'
+  | 'chart_embed'
+
+export interface CampaignBlock {
+  id: string
+  campaignId: string
+  sectionId: string
+  type: CampaignBlockType
+  order: number
+  content: Record<string, unknown>
+  clientVisible: boolean
+  clientEditable: boolean
+  createdAt: Date | string
+  updatedAt: Date | string
+  createdBy: string
+  updatedBy: string
+}
+
+export interface CampaignDatabase {
+  id: string
+  campaignId: string
+  title: string
+  businessType: CampaignBusinessType
+  order: number
+  columns: CampaignDataColumn[]
+  rows: CampaignDataRow[]
+  clientVisible: boolean
+  clientEditable: boolean
+  createdAt: Date | string
+  updatedAt: Date | string
+  createdBy: string
+  updatedBy: string
+}
+
+export interface CampaignOverviewMetric {
+  id: string
+  label: string
+  value: string | number
+  unit?: string
+  hint?: string
+}
+
+export interface CampaignOverviewChart {
+  id: string
+  title: string
+  type: 'bar' | 'line' | 'pie' | 'funnel' | 'ranking'
+  data: { name: string; value: number }[]
+}
+
+export interface CampaignOverview {
+  metrics: CampaignOverviewMetric[]
+  charts: CampaignOverviewChart[]
+}
+
 export type CampaignColumnType =
   | 'text'
   | 'number'
