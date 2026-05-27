@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, isAuthResponse } from '@/lib/server/auth'
 import {
   getDocument,
-  queryCollectionOrdered,
+  queryCollectionByField,
   createDocument,
 } from '@/lib/server/firestoreRest'
 import { Campaign, CampaignSection } from '@/types'
+
+function sortSections(sections: CampaignSection[]): CampaignSection[] {
+  return [...sections].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+}
 
 function defaultContent(type: string) {
   if (type === 'document') return { blocks: [] }
@@ -67,13 +71,12 @@ export async function GET(
       return NextResponse.json({ error: '캠페인을 찾을 수 없습니다.' }, { status: 404 })
     }
 
-    let sections = await queryCollectionOrdered<CampaignSection>(
+    let sections = sortSections(await queryCollectionByField<CampaignSection>(
       auth.token,
       'campaignSections',
       'campaignId',
-      id,
-      'order'
-    )
+      id
+    ))
 
     if (sections.length === 0) {
       sections = await createDefaultSections(auth.token, id, auth.uid)

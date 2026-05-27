@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, isAuthResponse } from '@/lib/server/auth'
 import {
-  queryCollectionOrdered,
+  queryCollectionByField,
   createDocument,
 } from '@/lib/server/firestoreRest'
 import { CampaignSection } from '@/types'
@@ -35,12 +35,11 @@ export async function POST(
       return NextResponse.json({ error: '유효하지 않은 섹션 타입입니다.' }, { status: 400 })
     }
 
-    const existing = await queryCollectionOrdered<CampaignSection>(
+    const existing = await queryCollectionByField<CampaignSection>(
       auth.token,
       'campaignSections',
       'campaignId',
-      id,
-      'order'
+      id
     )
     const maxOrder = existing.reduce((m, s) => Math.max(m, s.order ?? 0), 0)
 
