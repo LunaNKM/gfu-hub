@@ -1,9 +1,17 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import { Database } from 'lucide-react'
-import { CampaignDatabase, CampaignDataTableContent, CampaignBusinessType, CampaignCellValue, CampaignDataColumn } from '@/types'
+import {
+  CampaignDatabase,
+  CampaignDataTableContent,
+  CampaignBusinessType,
+  CampaignCellValue,
+  CampaignDataColumn,
+} from '@/types'
 import { DataTableSectionEditor, type DataTableHandlers } from './DataTableSectionEditor'
+import { ExpandedRecordPanel } from './ExpandedRecordPanel'
+import { useUndoableDatabase } from './hooks/useUndoableDatabase'
 import { BUSINESS_TYPE_TITLES } from '@/lib/campaigns/databaseTemplates'
 
 const BUSINESS_TYPE_LABELS: Record<CampaignBusinessType, string> = BUSINESS_TYPE_TITLES
@@ -15,7 +23,6 @@ interface Props {
   onRowAdd?: () => void
   onRowsDelete?: (rowIds: string[]) => void
   onColumnsChange?: (columns: CampaignDataColumn[]) => void
-  onExpandRow?: (rowId: string) => void
 }
 
 export function CampaignDatabaseEditor({
@@ -25,10 +32,25 @@ export function CampaignDatabaseEditor({
   onRowAdd,
   onRowsDelete,
   onColumnsChange,
-  onExpandRow,
 }: Props) {
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(database.title)
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
+
+  // ── Undo/Redo ────────────────────────────────────────────────────────
+  const getCurrentValue = useCallback(
+    (rowId: string, colId: string): CampaignCellValue => {
+      const row = database.rows.find((r) => r.id === rowId)
+      return row?.cells[colId] ?? null
+    },
+    [database.rows]
+  )
+
+  const { wrappedCellChange } = useUndoableDatabase(
+    database.id,
+    onCellChange ?? (() => {}),
+    getCurrentValue
+  )
 
   const commitTitle = () => {
     const trimmed = titleDraft.trim()
@@ -40,30 +62,30 @@ export function CampaignDatabaseEditor({
     setEditingTitle(false)
   }
 
-  // DataTableSectionEditor expects CampaignDataTableContent
   const tableContent: CampaignDataTableContent = {
     columns: database.columns,
     rows: database.rows,
   }
 
-  // handlers 모드가 있을 때 granular 핸들러 사용
   const handlers: DataTableHandlers | undefined =
-    onCellChange || onRowAdd || onRowsDelete || onColumnsChange || onExpandRow
+    onCellChange || onRowAdd || onRowsDelete || onColumnsChange
       ? {
-          onCellChange,
+          onCellChange: wrappedCellChange,
           onRowAdd,
           onRowsDelete,
           onColumnsChange,
-          onExpandRow,
+          onExpandRow: (rowId) => setExpandedRowId(rowId),
         }
       : undefined
 
-  // legacy fallback: handlers 없을 때 onChange로 전체 저장
   const handleTableChange = (content: CampaignDataTableContent) => {
     onChange({ columns: content.columns, rows: content.rows })
   }
 
   const businessLabel = BUSINESS_TYPE_LABELS[database.businessType] ?? database.businessType
+  const expandedRow = expandedRowId
+    ? database.rows.find((r) => r.id === expandedRowId) ?? null
+    : null
 
   return (
     <div className="flex h-full flex-col bg-white">
@@ -94,6 +116,7 @@ export function CampaignDatabaseEditor({
           )}
           <p className="text-xs text-gray-400 mt-0.5">{businessLabel}</p>
         </div>
+        <p className="shrink-0 text-[11px] text-gray-400">Ctrl+Z / ⌘Z 실행 취소</p>
       </div>
 
       {/* 테이블 에디터 */}
@@ -105,6 +128,18 @@ export function CampaignDatabaseEditor({
           handlers={handlers}
         />
       </div>
+
+      {/* 확장 레코드 패널 */}
+      {expandedRow && (
+        <ExpandedRecordPanel
+          row={expandedRow}
+          columns={database.columns}
+          onCellChange={(rowId, colId, value) => {
+            if (onCellChange) wrappedCellChange(rowId, colId, value)
+          }}
+          onClose={() => setExpandedRowId(null)}
+        />
+      )}
     </div>
   )
 }

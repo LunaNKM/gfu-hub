@@ -21,6 +21,7 @@ import {
   CheckSquare,
   ChevronDownCircle,
   CircleDollarSign,
+  Expand,
   Hash,
   Link2,
   Percent,
@@ -607,8 +608,31 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
           enableSorting: col.type !== 'checkbox',
         })
       ),
+
+      // 확장 버튼 컬럼 (handlers.onExpandRow가 있을 때만)
+      ...(handlers?.onExpandRow
+        ? [
+            {
+              id: '_expand',
+              header: () => null,
+              cell: ({ row }: { row: Row<CampaignDataRow> }) => (
+                <button
+                  onClick={() => latestRef.current.handlers?.onExpandRow?.(row.original.id)}
+                  className="flex items-center justify-center w-full h-full text-gray-300 hover:text-gray-500 transition-colors opacity-0 group-hover/row:opacity-100"
+                  title="레코드 열기"
+                  aria-label="레코드 열기"
+                >
+                  <Expand size={12} />
+                </button>
+              ),
+              size: 32,
+              minSize: 32,
+              enableSorting: false,
+            } as ColumnDef<CampaignDataRow>,
+          ]
+        : []),
     ],
-    [columns, updateColumn, deleteColumn, updateCell, navigateFrom, handlePaste]
+    [columns, handlers, updateColumn, deleteColumn, updateCell, navigateFrom, handlePaste]
   )
 
   // ── TanStack 인스턴스 ─────────────────────────────────────────────────
@@ -688,25 +712,26 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
                     {hg.headers.map((header, i) => {
                       const isAccent = header.id === '_accent'
                       const isSelect = header.id === '_select'
+                      const isExpand = header.id === '_expand'
                       return (
                         <th
                           key={header.id}
                           style={{
-                            minWidth: isAccent ? 4 : isSelect ? 44 : getColMinWidth(
+                            minWidth: isAccent ? 4 : isExpand ? 32 : isSelect ? 44 : getColMinWidth(
                               columns.find((c) => c.id === header.id)?.type ?? 'text'
                             ),
-                            width: isAccent ? 4 : isSelect ? 44 : undefined,
+                            width: isAccent ? 4 : isExpand ? 32 : isSelect ? 44 : undefined,
                             height: 36,
-                            padding: isAccent ? '0' : isSelect ? '0' : '0 12px',
+                            padding: isAccent || isExpand ? '0' : isSelect ? '0' : '0 12px',
                             textAlign: 'left',
                             borderBottom: '1px solid #e9e9e7',
-                            borderRight: !isAccent && i < hg.headers.length - 1 ? '1px solid #e9e9e7' : 'none',
+                            borderRight: !isAccent && !isExpand && i < hg.headers.length - 1 ? '1px solid #e9e9e7' : 'none',
                             verticalAlign: 'middle',
                             overflow: 'hidden',
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {isAccent ? null : isSelect ? (
+                          {isAccent || isExpand ? null : isSelect ? (
                             <div className="flex items-center justify-center h-full">
                               {flexRender(header.column.columnDef.header, header.getContext())}
                             </div>
@@ -725,36 +750,37 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
                   <tr
                     key={row.id}
                     style={{ background: row.getIsSelected() ? '#f4f8ff' : '#ffffff' }}
-                    className="transition-colors duration-75 hover:bg-[#f7f7f5]"
+                    className="group/row transition-colors duration-75 hover:bg-[#f7f7f5]"
                   >
                     {row.getVisibleCells().map((cell, cellIdx) => {
                       const isAccent = cell.column.id === '_accent'
                       const isSelect = cell.column.id === '_select'
+                      const isExpand = cell.column.id === '_expand'
                       return (
                         <td
                           key={cell.id}
                           style={{
                             height: 40,
-                            padding: isAccent ? '0' : isSelect ? '0' : '0 12px',
+                            padding: isAccent || isExpand ? '0' : isSelect ? '0' : '0 12px',
                             borderBottom:
                               rowIdx < table.getRowModel().rows.length - 1
                                 ? '1px solid #e9e9e7'
                                 : 'none',
                             borderRight:
-                              !isAccent && cellIdx < row.getVisibleCells().length - 1
+                              !isAccent && !isExpand && cellIdx < row.getVisibleCells().length - 1
                                 ? '1px solid #e9e9e7'
                                 : 'none',
                             verticalAlign: 'middle',
                             overflow: 'hidden',
-                            minWidth: isAccent ? 4 : isSelect ? 44 : getColMinWidth(
+                            minWidth: isAccent ? 4 : isExpand ? 32 : isSelect ? 44 : getColMinWidth(
                               columns.find((c) => c.id === cell.column.id)?.type ?? 'text'
                             ),
-                            width: isAccent ? 4 : isSelect ? 44 : undefined,
+                            width: isAccent ? 4 : isExpand ? 32 : isSelect ? 44 : undefined,
                           }}
                         >
                           {isAccent ? (
                             flexRender(cell.column.columnDef.cell, cell.getContext())
-                          ) : isSelect ? (
+                          ) : isSelect || isExpand ? (
                             <div className="flex items-center justify-center h-full">
                               {flexRender(cell.column.columnDef.cell, cell.getContext())}
                             </div>
