@@ -2,6 +2,9 @@ const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
 const BASE_URL = PROJECT_ID
   ? `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`
   : ''
+const RESOURCE_BASE = PROJECT_ID
+  ? `projects/${PROJECT_ID}/databases/(default)/documents`
+  : ''
 
 type FirestoreValue =
   | { stringValue: string }
@@ -201,14 +204,15 @@ export async function commitWrites(token: string, writes: CommitWrite[]): Promis
   if (writes.length === 0) return
   const body = {
     writes: writes.map((w) => {
+      const resourceName = `${RESOURCE_BASE}/${w.collection}/${encodeURIComponent(w.documentId)}`
       if (w.type === 'delete') {
-        return { delete: `${BASE_URL}/${w.collection}/${encodeURIComponent(w.documentId)}` }
+        return { delete: resourceName }
       }
       const fields = encodeFields(w.data)
       if (w.type === 'upsert') {
         return {
           update: {
-            name: `${BASE_URL}/${w.collection}/${encodeURIComponent(w.documentId)}`,
+            name: resourceName,
             fields,
           },
         }
@@ -216,7 +220,7 @@ export async function commitWrites(token: string, writes: CommitWrite[]): Promis
       // patch
       return {
         update: {
-          name: `${BASE_URL}/${w.collection}/${encodeURIComponent(w.documentId)}`,
+          name: resourceName,
           fields,
         },
         updateMask: { fieldPaths: Object.keys(w.data) },
