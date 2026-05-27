@@ -1,7 +1,7 @@
 'use client'
 
 import type React from 'react'
-import type { CampaignBlock, CampaignDatabase } from '@/types'
+import type { CampaignBlock, CampaignCellValue, CampaignDataColumn, CampaignDatabase } from '@/types'
 import { BlockChrome } from './BlockChrome'
 import { ChartEmbedBlock } from './ChartEmbedBlock'
 import { DatabaseEmbedBlock } from './DatabaseEmbedBlock'
@@ -18,7 +18,10 @@ export function DocumentBlockRenderer({
   onBlockPatch,
   onBlockDelete,
   onBlockMove,
-  onDatabaseUpdate,
+  onDatabaseCellChange,
+  onDatabaseRowAdd,
+  onDatabaseRowsDelete,
+  onDatabaseColumnsChange,
 }: {
   block: CampaignBlock
   sectionId: string
@@ -27,14 +30,27 @@ export function DocumentBlockRenderer({
   onBlockPatch: (blockId: string, patch: Partial<CampaignBlock>) => void
   onBlockDelete: (blockId: string) => void
   onBlockMove: (sectionId: string, blockId: string, direction: 'up' | 'down') => void
-  onDatabaseUpdate?: (databaseId: string, patch: Partial<CampaignDatabase>) => void
+  onDatabaseCellChange?: (databaseId: string, rowId: string, colId: string, value: CampaignCellValue) => void
+  onDatabaseRowAdd?: (databaseId: string) => void
+  onDatabaseRowsDelete?: (databaseId: string, rowIds: string[]) => void
+  onDatabaseColumnsChange?: (databaseId: string, columns: CampaignDataColumn[]) => void
 }) {
   let body: React.ReactNode = null
 
   if (block.type === 'heading' || block.type === 'paragraph') {
     body = <TextBlock block={block} type={block.type} onUpdate={(content) => onBlockUpdate(block.id, content)} />
   } else if (block.type === 'database_embed') {
-    body = <DatabaseEmbedBlock block={block} databases={databases} onUpdate={(content) => onBlockUpdate(block.id, content)} onDatabaseUpdate={onDatabaseUpdate} />
+    body = (
+      <DatabaseEmbedBlock
+        block={block}
+        databases={databases}
+        onUpdate={(content) => onBlockUpdate(block.id, content)}
+        onCellChange={onDatabaseCellChange}
+        onRowAdd={onDatabaseRowAdd}
+        onRowsDelete={onDatabaseRowsDelete}
+        onColumnsChange={onDatabaseColumnsChange}
+      />
+    )
   } else if (block.type === 'chart_embed') {
     body = <ChartEmbedBlock block={block} databases={databases} onUpdate={(content) => onBlockUpdate(block.id, content)} />
   } else if (block.type === 'simple_table') {

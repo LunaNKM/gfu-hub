@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { User } from 'firebase/auth'
 import {
   Campaign,
@@ -56,6 +56,13 @@ export function useCampaignWorkspace(campaignId: string, user: User | null | und
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<WorkspaceSaveState>(initialSaveState)
+
+  // 안정적인 databases 참조 (addDatabaseRow deps에서 databases 제거)
+  const databasesRef = useRef<CampaignDatabase[]>([])
+  databasesRef.current = databases
+
+  // POST 중인 행 ID → 큐잉된 셀 변경 목록 (PATCH 404 방지)
+  const pendingRowsRef = useRef<Map<string, Array<{ colId: string; value: CampaignCellValue }>>>(new Map())
 
   const setResourceStatus = useCallback(
     (bucket: 'sections' | 'blocks' | 'databases', id: string, status: ResourceSaveStatus) => {
@@ -335,18 +342,46 @@ export function useCampaignWorkspace(campaignId: string, user: User | null | und
         return next
       })
       setResourceStatus('databases', databaseId, 'saving')
-      // 디바운스 없이 바로 PATCH (셀 단위이므로 빠름)
+
+      // 행이 아직 서버에 POST 중이면 큐에 쌓음 (PATCH 404 방지)
+      if (pendingRowsRef.current.has(rowId)) {
+        const queue = pendingRowsRef.current.get(rowId)!
+        const existingIdx = queue.findIndex((q) => q.colId === colId)
+        if (existingIdx >= 0) queue[existingIdx].value = value
+        else queue.push({ colId, value })
+        return
+      }
+
       if (!user) return
-      user.getIdToken().then((token) => {
-        fetch(`/api/campaigns/${campaignId}/databases/${databaseId}/rows/${rowId}`, {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cells: { [colId]: value } }),
-        }).then((res) => {
-          if (res.ok) setResourceStatus('databases', databaseId, 'saved')
-          else setResourceStatus('databases', databaseId, 'error')
+      user.getIdToken()
+        .then((token) =>
+          fetch(`/api/campaigns/${campaignId}/databases/${databaseId}/rows/${rowId}`, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cells: { [colId]: value } }),
+          })
+        )
+        .then((res) => {
+          if (res.ok) {
+            setResourceStatus('databases', databaseId, 'saved')
+            return
+          }
+
+          console.error(`[updateDatabaseRow] PATCH failed: databaseId=${databaseId} rowId=${rowId} colId=${colId}`)
+          setResourceStatus('databases', databaseId, 'error')
+          setSaveState((prev) => ({
+            ...prev,
+            errorMessage: `셀 저장 실패 (db: ${databaseId}, row: ${rowId})`,
+          }))
         })
-      })
+        .catch((err) => {
+          console.error('[updateDatabaseRow] PATCH error:', err)
+          setResourceStatus('databases', databaseId, 'error')
+          setSaveState((prev) => ({
+            ...prev,
+            errorMessage: `셀 저장 실패 (db: ${databaseId}, row: ${rowId})`,
+          }))
+        })
     },
     [campaignId, user, setResourceStatus]
   )
@@ -354,7 +389,7 @@ export function useCampaignWorkspace(campaignId: string, user: User | null | und
   const addDatabaseRow = useCallback(
     async (databaseId: string, afterRowId?: string) => {
       if (!user) return null
-      const db = databases.find((d) => d.id === databaseId)
+      const db = databasesRef.current.find((d) => d.id === databaseId)
       if (!db) return null
 
       // 빈 셀 초기화
@@ -362,23 +397,29 @@ export function useCampaignWorkspace(campaignId: string, user: User | null | und
       for (const col of db.columns) cells[col.id] = null
 
       // order 계산 (afterRow 다음 or 마지막)
-      const sortedRows = [...db.rows].sort((a, b) =>
-        (a as CampaignDataRow & { order?: number }).order ??
-        0 - ((b as CampaignDataRow & { order?: number }).order ?? 0)
+      const sortedRows = [...db.rows].sort(
+        (a, b) =>
+          ((a as CampaignDataRow & { order?: number }).order ?? 0) -
+          ((b as CampaignDataRow & { order?: number }).order ?? 0)
       )
       let order = (sortedRows.length + 1) * 1000
       if (afterRowId) {
         const idx = sortedRows.findIndex((r) => r.id === afterRowId)
         if (idx >= 0) {
-          const next = sortedRows[idx + 1]
           const current = (sortedRows[idx] as CampaignDataRow & { order?: number }).order ?? (idx + 1) * 1000
-          const nextOrder = next ? ((next as CampaignDataRow & { order?: number }).order ?? (idx + 2) * 1000) : current + 2000
+          const next = sortedRows[idx + 1]
+          const nextOrder = next
+            ? ((next as CampaignDataRow & { order?: number }).order ?? (idx + 2) * 1000)
+            : current + 2000
           order = Math.round((current + nextOrder) / 2)
         }
       }
 
       const newRowId = `row_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
       const newRow: CampaignDataRow = { id: newRowId, cells }
+
+      // POST 완료 전에 셀 편집이 들어오면 큐에 쌓히도록 pending 등록
+      pendingRowsRef.current.set(newRowId, [])
 
       // 낙관적 업데이트
       setDatabases((prev) => {
@@ -404,8 +445,15 @@ export function useCampaignWorkspace(campaignId: string, user: User | null | und
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: newRowId, cells, order }),
       })
+
       if (!res.ok) {
-        // 롤백
+        // pending 해제 후 롤백
+        pendingRowsRef.current.delete(newRowId)
+        setResourceStatus('databases', databaseId, 'error')
+        setSaveState((prev) => ({
+          ...prev,
+          errorMessage: `행 생성 실패 (db: ${databaseId}, row: ${newRowId})`,
+        }))
         setDatabases((prev) =>
           prev.map((d) =>
             d.id === databaseId ? { ...d, rows: d.rows.filter((r) => r.id !== newRowId) } : d
@@ -413,9 +461,34 @@ export function useCampaignWorkspace(campaignId: string, user: User | null | und
         )
         return null
       }
+
+      // pending 해제 + 큐에 쌓인 셀 변경 플러시
+      const queue = pendingRowsRef.current.get(newRowId) ?? []
+      pendingRowsRef.current.delete(newRowId)
+
+      if (queue.length > 0) {
+        const mergedCells: Record<string, CampaignCellValue> = {}
+        for (const { colId, value } of queue) mergedCells[colId] = value
+        const freshToken = await user.getIdToken()
+        const flushRes = await fetch(`/api/campaigns/${campaignId}/databases/${databaseId}/rows/${newRowId}`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${freshToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cells: mergedCells }),
+        })
+        if (!flushRes.ok) {
+          console.error(`[addDatabaseRow] queued PATCH failed: databaseId=${databaseId} rowId=${newRowId}`)
+          setResourceStatus('databases', databaseId, 'error')
+          setSaveState((prev) => ({
+            ...prev,
+            errorMessage: `새 행 셀 저장 실패 (db: ${databaseId}, row: ${newRowId})`,
+          }))
+          return null
+        }
+      }
+
       return newRow
     },
-    [campaignId, databases, user]
+    [campaignId, setResourceStatus, user]
   )
 
   const deleteDatabaseRows = useCallback(

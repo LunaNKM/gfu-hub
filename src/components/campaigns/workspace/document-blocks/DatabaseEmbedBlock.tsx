@@ -1,27 +1,55 @@
 'use client'
 
+import { useMemo } from 'react'
 import { Database } from 'lucide-react'
-import type { CampaignBlock, CampaignDataTableContent, CampaignDatabase } from '@/types'
-import { DataTableSectionEditor } from '../DataTableSectionEditor'
+import type {
+  CampaignBlock,
+  CampaignCellValue,
+  CampaignDataColumn,
+  CampaignDataTableContent,
+  CampaignDatabase,
+} from '@/types'
+import { DataTableSectionEditor, type DataTableHandlers } from '../DataTableSectionEditor'
 
 export function DatabaseEmbedBlock({
   block,
   databases,
   onUpdate,
-  onDatabaseUpdate,
+  onCellChange,
+  onRowAdd,
+  onRowsDelete,
+  onColumnsChange,
 }: {
   block: CampaignBlock
   databases: CampaignDatabase[]
   onUpdate: (content: Record<string, unknown>) => void
-  onDatabaseUpdate?: (databaseId: string, patch: Partial<CampaignDatabase>) => void
+  onCellChange?: (databaseId: string, rowId: string, colId: string, value: CampaignCellValue) => void
+  onRowAdd?: (databaseId: string) => void
+  onRowsDelete?: (databaseId: string, rowIds: string[]) => void
+  onColumnsChange?: (databaseId: string, columns: CampaignDataColumn[]) => void
 }) {
   const databaseId = String(block.content.databaseId ?? '')
   const database = databases.find((item) => item.id === databaseId)
 
   const handleTableChange = (content: CampaignDataTableContent) => {
-    if (!database || !onDatabaseUpdate) return
-    onDatabaseUpdate(database.id, { columns: content.columns, rows: content.rows })
+    if (!database || !onColumnsChange) return
+    onColumnsChange(database.id, content.columns)
   }
+
+  const handlers = useMemo<DataTableHandlers | undefined>(() => {
+    if (!database || (!onCellChange && !onRowAdd && !onRowsDelete && !onColumnsChange)) {
+      return undefined
+    }
+
+    return {
+      onCellChange: onCellChange
+        ? (rowId, colId, value) => onCellChange(database.id, rowId, colId, value)
+        : undefined,
+      onRowAdd: onRowAdd ? () => onRowAdd(database.id) : undefined,
+      onRowsDelete: onRowsDelete ? (rowIds) => onRowsDelete(database.id, rowIds) : undefined,
+      onColumnsChange: onColumnsChange ? (columns) => onColumnsChange(database.id, columns) : undefined,
+    }
+  }, [database, onCellChange, onRowAdd, onRowsDelete, onColumnsChange])
 
   return (
     <div className="overflow-hidden rounded-lg border border-[#e9e9e7] bg-white">
@@ -55,6 +83,7 @@ export function DatabaseEmbedBlock({
               compact
               content={{ columns: database.columns, rows: database.rows }}
               onChange={handleTableChange}
+              handlers={handlers}
             />
           </div>
         </div>

@@ -5,6 +5,8 @@ import { ListPlus } from 'lucide-react'
 import type {
   CampaignBlock,
   CampaignBlockType,
+  CampaignCellValue,
+  CampaignDataColumn,
   CampaignDatabase,
   CampaignSection,
 } from '@/types'
@@ -24,7 +26,10 @@ interface Props {
   ) => void
   onBlockDelete: (blockId: string) => void
   onBlockMove: (sectionId: string, blockId: string, direction: 'up' | 'down') => void
-  onDatabaseUpdate?: (databaseId: string, patch: Partial<CampaignDatabase>) => void
+  onDatabaseCellChange?: (databaseId: string, rowId: string, colId: string, value: CampaignCellValue) => void
+  onDatabaseRowAdd?: (databaseId: string) => void
+  onDatabaseRowsDelete?: (databaseId: string, rowIds: string[]) => void
+  onDatabaseColumnsChange?: (databaseId: string, columns: CampaignDataColumn[]) => void
 }
 
 export function CampaignSectionDocument({
@@ -36,7 +41,10 @@ export function CampaignSectionDocument({
   onBlockAdd,
   onBlockDelete,
   onBlockMove,
-  onDatabaseUpdate,
+  onDatabaseCellChange,
+  onDatabaseRowAdd,
+  onDatabaseRowsDelete,
+  onDatabaseColumnsChange,
 }: Props) {
   const sectionBlocks = useMemo(
     () =>
@@ -65,7 +73,10 @@ export function CampaignSectionDocument({
               onBlockPatch={onBlockPatch}
               onBlockDelete={onBlockDelete}
               onBlockMove={onBlockMove}
-              onDatabaseUpdate={onDatabaseUpdate}
+              onDatabaseCellChange={onDatabaseCellChange}
+              onDatabaseRowAdd={onDatabaseRowAdd}
+              onDatabaseRowsDelete={onDatabaseRowsDelete}
+              onDatabaseColumnsChange={onDatabaseColumnsChange}
             />
           ))}
 

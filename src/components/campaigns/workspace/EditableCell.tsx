@@ -12,6 +12,9 @@ interface EditableCellProps {
   column: CampaignDataColumn
   rowId: string
   colId: string
+  editing: boolean
+  onStartEdit: () => void
+  onStopEdit: () => void
   onChange: (value: CampaignCellValue) => void
   onNavigate?: (dir: NavigateDir) => void
   onPaste?: (text: string) => void
@@ -151,13 +154,23 @@ export function EditableCell({
   column,
   rowId,
   colId,
+  editing,
+  onStartEdit,
+  onStopEdit,
   onChange,
   onNavigate,
   onPaste,
 }: EditableCellProps) {
-  const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(null)
+  const wasEditingRef = useRef(false)
+
+  useEffect(() => {
+    if (editing && !wasEditingRef.current) {
+      setDraft(value == null ? '' : Array.isArray(value) ? value.join(', ') : String(value))
+    }
+    wasEditingRef.current = editing
+  }, [editing, value])
 
   useEffect(() => {
     if (editing) {
@@ -168,17 +181,17 @@ export function EditableCell({
 
   const startEdit = () => {
     setDraft(value == null ? '' : Array.isArray(value) ? value.join(', ') : String(value))
-    setEditing(true)
+    onStartEdit()
   }
 
   const commit = (nextDraft = draft) => {
     onChange(normalizeCellValue(nextDraft, column.type))
-    setEditing(false)
+    onStopEdit()
   }
 
   const commitAndNavigate = (dir: NavigateDir) => {
     onChange(normalizeCellValue(draft, column.type))
-    setEditing(false)
+    onStopEdit()
     window.setTimeout(() => onNavigate?.(dir), 0)
   }
 
@@ -232,7 +245,7 @@ export function EditableCell({
         <div
           {...baseViewProps}
           className="flex h-full w-full cursor-pointer items-center gap-1 overflow-hidden rounded-sm px-1 outline-none focus:ring-1 focus:ring-blue-400 focus:ring-inset"
-          onMouseDown={(e) => { e.preventDefault(); startEdit() }}
+          onClick={() => startEdit()}
         >
           {values.length === 0 && <span className="pointer-events-none select-none text-gray-300 text-xs">-</span>}
           {values.slice(0, 2).map((v) => {
@@ -266,8 +279,8 @@ export function EditableCell({
         <MultiSelectDropdown
           value={values}
           column={column}
-          onChange={(next) => { onChange(next); setEditing(false) }}
-          onClose={() => setEditing(false)}
+          onChange={(next) => { onChange(next); onStopEdit() }}
+          onClose={onStopEdit}
         />
       </div>
     )
@@ -279,7 +292,7 @@ export function EditableCell({
       return (
         <div
           {...baseViewProps}
-          onMouseDown={(event) => { event.preventDefault(); startEdit() }}
+          onClick={() => startEdit()}
         >
           <DisplayValue value={value} column={column} />
         </div>
@@ -296,7 +309,7 @@ export function EditableCell({
         onKeyDown={(event) => {
           if (event.key === 'Enter') { event.preventDefault(); commitAndNavigate('down') }
           else if (event.key === 'Tab') { event.preventDefault(); commitAndNavigate(event.shiftKey ? 'left' : 'tab') }
-          else if (event.key === 'Escape') setEditing(false)
+          else if (event.key === 'Escape') onStopEdit()
         }}
         className="h-full w-full border-0 bg-transparent text-xs outline-none"
       >
@@ -314,7 +327,7 @@ export function EditableCell({
       return (
         <div
           {...baseViewProps}
-          onMouseDown={(event) => { event.preventDefault(); startEdit() }}
+          onClick={() => startEdit()}
         >
           <span className="truncate text-xs text-gray-800">{String(value ?? '')}</span>
         </div>
@@ -330,7 +343,7 @@ export function EditableCell({
         onBlur={() => commit()}
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') { setEditing(false); return }
+          if (e.key === 'Escape') { onStopEdit(); return }
           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitAndNavigate('down'); return }
           if (e.key === 'Tab') { e.preventDefault(); commitAndNavigate(e.shiftKey ? 'left' : 'tab') }
         }}
@@ -346,7 +359,7 @@ export function EditableCell({
     return (
       <div
         {...baseViewProps}
-        onMouseDown={(event) => { event.preventDefault(); startEdit() }}
+        onClick={() => startEdit()}
       >
         <DisplayValue value={value} column={column} />
       </div>
@@ -371,7 +384,7 @@ export function EditableCell({
       onKeyDown={(event) => {
         if (event.key === 'Enter') { event.preventDefault(); commitAndNavigate('down') }
         else if (event.key === 'Tab') { event.preventDefault(); commitAndNavigate(event.shiftKey ? 'left' : 'tab') }
-        else if (event.key === 'Escape') setEditing(false)
+        else if (event.key === 'Escape') onStopEdit()
       }}
       className="h-full w-full min-w-0 border-0 bg-transparent px-0 text-xs outline-none focus:ring-0"
     />

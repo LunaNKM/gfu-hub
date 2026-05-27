@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { Database } from 'lucide-react'
 import {
   CampaignDatabase,
@@ -38,12 +38,16 @@ export function CampaignDatabaseEditor({
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
 
   // ── Undo/Redo ────────────────────────────────────────────────────────
+  // rowsRef: database.rows가 바뀌어도 getCurrentValue가 새 함수를 만들지 않도록
+  const rowsRef = useRef(database.rows)
+  rowsRef.current = database.rows
+
   const getCurrentValue = useCallback(
     (rowId: string, colId: string): CampaignCellValue => {
-      const row = database.rows.find((r) => r.id === rowId)
+      const row = rowsRef.current.find((r) => r.id === rowId)
       return row?.cells[colId] ?? null
     },
-    [database.rows]
+    []
   )
 
   const { wrappedCellChange } = useUndoableDatabase(
@@ -67,20 +71,26 @@ export function CampaignDatabaseEditor({
     rows: database.rows,
   }
 
-  const handlers: DataTableHandlers | undefined =
-    onCellChange || onRowAdd || onRowsDelete || onColumnsChange
-      ? {
-          onCellChange: wrappedCellChange,
-          onRowAdd,
-          onRowsDelete,
-          onColumnsChange,
-          onExpandRow: (rowId) => setExpandedRowId(rowId),
-        }
-      : undefined
+  const handlers = useMemo<DataTableHandlers | undefined>(
+    () =>
+      onCellChange || onRowAdd || onRowsDelete || onColumnsChange
+        ? {
+            onCellChange: wrappedCellChange,
+            onRowAdd,
+            onRowsDelete,
+            onColumnsChange,
+            onExpandRow: (rowId) => setExpandedRowId(rowId),
+          }
+        : undefined,
+    [onCellChange, onRowAdd, onRowsDelete, onColumnsChange, wrappedCellChange]
+  )
 
-  const handleTableChange = (content: CampaignDataTableContent) => {
-    onChange({ columns: content.columns, rows: content.rows })
-  }
+  const handleTableChange = useCallback(
+    (content: CampaignDataTableContent) => {
+      onChange({ columns: content.columns, rows: content.rows })
+    },
+    [onChange]
+  )
 
   const businessLabel = BUSINESS_TYPE_LABELS[database.businessType] ?? database.businessType
   const expandedRow = expandedRowId

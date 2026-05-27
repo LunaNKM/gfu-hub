@@ -111,7 +111,10 @@ export function CampaignWorkspace({ campaignId }: Props) {
                   onBlockAdd={workspace.addBlock}
                   onBlockDelete={workspace.deleteBlock}
                   onBlockMove={workspace.moveBlock}
-                  onDatabaseUpdate={workspace.updateDatabase}
+                  onDatabaseCellChange={workspace.updateDatabaseRow}
+                  onDatabaseRowAdd={(databaseId) => { void workspace.addDatabaseRow(databaseId) }}
+                  onDatabaseRowsDelete={workspace.deleteDatabaseRows}
+                  onDatabaseColumnsChange={workspace.updateDatabaseColumns}
                 />
               )}
               {activeSection.type === 'data_table' && (

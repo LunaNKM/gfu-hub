@@ -345,6 +345,7 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [globalFilter, setGlobalFilter] = useState('')
   const [showColumnDrawer, setShowColumnDrawer] = useState(false)
+  const [editingCell, setEditingCell] = useState<{ rowId: string; colId: string } | null>(null)
 
   // table 인스턴스를 ref로 최신 유지 (navigateFrom에서 표시 순서 기반 이동)
   const tableRef = useRef<ReturnType<typeof useReactTable<CampaignDataRow>> | null>(null)
@@ -484,68 +485,72 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
 
   const updateColumn = useCallback(
     (colId: string, patch: Partial<CampaignDataColumn>) => {
-      const { handlers: h } = latestRef.current
-      const newColumns = columns.map((c) => (c.id === colId ? { ...c, ...patch } : c))
+      const { handlers: h, columns: cols, rows: rws, onChange: oc } = latestRef.current
+      const newColumns = cols.map((c) => (c.id === colId ? { ...c, ...patch } : c))
       if (h?.onColumnsChange) { h.onColumnsChange(newColumns); return }
-      onChange({ columns: newColumns, rows })
+      oc({ columns: newColumns, rows: rws })
     },
-    [columns, rows, onChange]
+    []
   )
 
   const deleteColumn = useCallback(
     (colId: string) => {
-      const { handlers: h } = latestRef.current
-      const newColumns = columns.filter((c) => c.id !== colId)
+      const { handlers: h, columns: cols, rows: rws, onChange: oc } = latestRef.current
+      const newColumns = cols.filter((c) => c.id !== colId)
       if (h?.onColumnsChange) { h.onColumnsChange(newColumns); return }
-      const newRows = rows.map((r) => {
+      const newRows = rws.map((r) => {
         const cells = { ...r.cells }
         delete cells[colId]
         return { ...r, cells }
       })
-      onChange({ columns: newColumns, rows: newRows })
+      oc({ columns: newColumns, rows: newRows })
     },
-    [columns, rows, onChange]
+    []
   )
 
   const reorderColumns = useCallback(
     (newColumns: CampaignDataColumn[]) => {
-      const { handlers: h } = latestRef.current
+      const { handlers: h, rows: rws, onChange: oc } = latestRef.current
       if (h?.onColumnsChange) { h.onColumnsChange(newColumns); return }
-      onChange({ columns: newColumns, rows })
+      oc({ columns: newColumns, rows: rws })
     },
-    [rows, onChange]
+    []
   )
 
   const addRow = useCallback(() => {
-    const { handlers: h } = latestRef.current
+    const { handlers: h, columns: cols, rows: rws, onChange: oc } = latestRef.current
     if (h?.onRowAdd) { h.onRowAdd(); return }
-    onChange({ columns, rows: [...rows, createEmptyRow(columns)] })
-  }, [columns, rows, onChange])
+    oc({ columns: cols, rows: [...rws, createEmptyRow(cols)] })
+  }, [])
 
   const addSampleRows = useCallback(() => {
-    onChange({ columns, rows: [...rows, ...createSampleRows(columns)] })
-  }, [columns, rows, onChange])
+    const { columns: cols, rows: rws, onChange: oc } = latestRef.current
+    oc({ columns: cols, rows: [...rws, ...createSampleRows(cols)] })
+  }, [])
 
   const deleteSelectedRows = useCallback(() => {
     const selectedIds = Object.keys(rowSelection).filter((id) => rowSelection[id])
     if (selectedIds.length === 0) return
     if (!confirm(`선택한 ${selectedIds.length}개 행을 삭제할까요?`)) return
-    const { handlers: h } = latestRef.current
+    const { handlers: h, columns: cols, rows: rws, onChange: oc } = latestRef.current
     if (h?.onRowsDelete) { h.onRowsDelete(selectedIds); setRowSelection({}); return }
-    onChange({ columns, rows: rows.filter((r) => !selectedIds.includes(r.id)) })
+    oc({ columns: cols, rows: rws.filter((r) => !selectedIds.includes(r.id)) })
     setRowSelection({})
-  }, [rowSelection, columns, rows, onChange])
+  }, [rowSelection])
 
   const addColumn = useCallback(() => {
-    const { handlers: h } = latestRef.current
+    const { handlers: h, columns: cols, rows: rws, onChange: oc } = latestRef.current
     const newCol: CampaignDataColumn = { id: `col_${Date.now()}`, name: '새 컬럼', type: 'text' }
-    const newColumns = [...columns, newCol]
+    const newColumns = [...cols, newCol]
     if (h?.onColumnsChange) { h.onColumnsChange(newColumns); return }
-    const newRows = rows.map((r) => ({ ...r, cells: { ...r.cells, [newCol.id]: null } }))
-    onChange({ columns: newColumns, rows: newRows })
-  }, [columns, rows, onChange])
+    const newRows = rws.map((r) => ({ ...r, cells: { ...r.cells, [newCol.id]: null } }))
+    oc({ columns: newColumns, rows: newRows })
+  }, [])
 
   // ── TanStack 컬럼 정의 ───────────────────────────────────────────────
+
+  // handlers 객체 자체가 아닌 boolean만 dep으로 사용 → handlers 참조가 바뀌어도 tableColumns 재생성 없음
+  const hasExpandRow = !!handlers?.onExpandRow
 
   const tableColumns = useMemo<ColumnDef<CampaignDataRow>[]>(
     () => [
@@ -598,6 +603,13 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
               column={col}
               rowId={row.original.id}
               colId={col.id}
+              editing={editingCell?.rowId === row.original.id && editingCell?.colId === col.id}
+              onStartEdit={() => setEditingCell({ rowId: row.original.id, colId: col.id })}
+              onStopEdit={() => {
+                setEditingCell((current) =>
+                  current?.rowId === row.original.id && current?.colId === col.id ? null : current
+                )
+              }}
               onChange={(value) => updateCell(row.original.id, col.id, value)}
               onNavigate={(dir) => navigateFrom(row.original.id, col.id, dir)}
               onPaste={(text) => handlePaste(text, row.original.id, col.id)}
@@ -609,8 +621,8 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
         })
       ),
 
-      // 확장 버튼 컬럼 (handlers.onExpandRow가 있을 때만)
-      ...(handlers?.onExpandRow
+      // 확장 버튼 컬럼 (hasExpandRow가 true일 때만, latestRef로 실제 핸들러 참조)
+      ...(hasExpandRow
         ? [
             {
               id: '_expand',
@@ -632,7 +644,7 @@ export function DataTableSectionEditor({ content, onChange, handlers, compact = 
           ]
         : []),
     ],
-    [columns, handlers, updateColumn, deleteColumn, updateCell, navigateFrom, handlePaste]
+    [columns, editingCell, hasExpandRow, updateColumn, deleteColumn, updateCell, navigateFrom, handlePaste]
   )
 
   // ── TanStack 인스턴스 ─────────────────────────────────────────────────
