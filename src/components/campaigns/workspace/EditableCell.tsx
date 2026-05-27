@@ -4,11 +4,19 @@ import React, { useState } from 'react'
 import { CampaignDataColumn } from '@/types'
 import { normalizeCellValue, tagColor } from './workspaceUtils'
 
+export type NavigateDir = 'up' | 'down' | 'left' | 'right' | 'tab'
+
 interface EditableCellProps {
   value: string | number | boolean | null
   column: CampaignDataColumn
+  rowId: string
+  colId: string
   onChange: (value: string | number | boolean | null) => void
+  onNavigate?: (dir: NavigateDir) => void
+  onPaste?: (text: string) => void
 }
+
+// ── 값 표시 컴포넌트 ─────────────────────────────────────────────
 
 function DisplayValue({
   value,
@@ -70,11 +78,38 @@ function DisplayValue({
   }
 }
 
-export function EditableCell({ value, column, onChange }: EditableCellProps) {
+// ── 메인 컴포넌트 ────────────────────────────────────────────────
+
+export function EditableCell({
+  value,
+  column,
+  rowId,
+  colId,
+  onChange,
+  onNavigate,
+  onPaste,
+}: EditableCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<string>('')
 
-  // ── 체크박스: 항상 인터랙티브 ─────────────────────────────────
+  function startEdit() {
+    setDraft(value == null ? '' : String(value))
+    setEditing(true)
+  }
+
+  function commit(draft: string) {
+    onChange(normalizeCellValue(draft, column.type))
+    setEditing(false)
+  }
+
+  function commitAndNavigate(draft: string, dir: NavigateDir) {
+    onChange(normalizeCellValue(draft, column.type))
+    setEditing(false)
+    // DOM 업데이트 후 포커스 이동
+    setTimeout(() => onNavigate?.(dir), 0)
+  }
+
+  // ── 체크박스: 항상 인터랙티브 ────────────────────────────────
   if (column.type === 'checkbox') {
     return (
       <div className="flex items-center justify-center h-full w-full">
@@ -93,43 +128,66 @@ export function EditableCell({ value, column, onChange }: EditableCellProps) {
   if (!editing) {
     return (
       <div
-        className="w-full h-full flex items-center overflow-hidden cursor-text"
-        onClick={() => {
-          setDraft(value == null ? '' : String(value))
-          setEditing(true)
-        }}
-        role="button"
         tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === 'F2') {
-            setDraft(value == null ? '' : String(value))
-            setEditing(true)
+        data-cell-row={rowId}
+        data-cell-col={colId}
+        className="w-full h-full flex items-center overflow-hidden cursor-text outline-none focus:ring-1 focus:ring-blue-400 focus:ring-inset rounded-sm"
+        onClick={startEdit}
+        onPaste={(e) => {
+          const text = e.clipboardData?.getData('text')
+          if (text && onPaste) {
             e.preventDefault()
+            onPaste(text)
           }
         }}
-        aria-label={`${column.name} 셀 편집`}
+        onKeyDown={(e) => {
+          switch (e.key) {
+            case 'Enter':
+            case 'F2':
+              e.preventDefault()
+              startEdit()
+              break
+            case 'Tab':
+              e.preventDefault()
+              onNavigate?.(e.shiftKey ? 'left' : 'tab')
+              break
+            case 'ArrowUp':
+              e.preventDefault()
+              onNavigate?.('up')
+              break
+            case 'ArrowDown':
+              e.preventDefault()
+              onNavigate?.('down')
+              break
+            case 'ArrowLeft':
+              e.preventDefault()
+              onNavigate?.('left')
+              break
+            case 'ArrowRight':
+              e.preventDefault()
+              onNavigate?.('right')
+              break
+          }
+        }}
+        role="gridcell"
+        aria-label={`${column.name} 셀`}
       >
         <DisplayValue value={value} column={column} />
       </div>
     )
   }
 
-  // ── 편집 모드: select ──────────────────────────────────────────
+  // ── 편집 모드: select ─────────────────────────────────────────
   if (column.type === 'select') {
     return (
       <select
         autoFocus
         value={String(draft)}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => {
-          onChange(normalizeCellValue(draft, column.type))
-          setEditing(false)
-        }}
+        onBlur={() => commit(draft)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            onChange(normalizeCellValue(draft, column.type))
-            setEditing(false)
-          }
+          if (e.key === 'Enter') { e.preventDefault(); commitAndNavigate(draft, 'down') }
+          if (e.key === 'Tab') { e.preventDefault(); commitAndNavigate(draft, e.shiftKey ? 'left' : 'tab') }
           if (e.key === 'Escape') setEditing(false)
         }}
         className="w-full h-full text-xs border-0 outline-none bg-transparent"
@@ -137,9 +195,7 @@ export function EditableCell({ value, column, onChange }: EditableCellProps) {
       >
         <option value="">-</option>
         {column.options?.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
-          </option>
+          <option key={opt} value={opt}>{opt}</option>
         ))}
       </select>
     )
@@ -147,11 +203,9 @@ export function EditableCell({ value, column, onChange }: EditableCellProps) {
 
   // ── 편집 모드: input ──────────────────────────────────────────
   const inputType =
-    column.type === 'date'
-      ? 'date'
-      : column.type === 'number' || column.type === 'currency' || column.type === 'percent'
-      ? 'number'
-      : 'text'
+    column.type === 'date' ? 'date' :
+    column.type === 'number' || column.type === 'currency' || column.type === 'percent' ? 'number' :
+    'text'
 
   return (
     <input
@@ -159,15 +213,10 @@ export function EditableCell({ value, column, onChange }: EditableCellProps) {
       type={inputType}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        onChange(normalizeCellValue(draft, column.type))
-        setEditing(false)
-      }}
+      onBlur={() => commit(draft)}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          onChange(normalizeCellValue(draft, column.type))
-          setEditing(false)
-        }
+        if (e.key === 'Enter') { e.preventDefault(); commitAndNavigate(draft, 'down') }
+        if (e.key === 'Tab') { e.preventDefault(); commitAndNavigate(draft, e.shiftKey ? 'left' : 'tab') }
         if (e.key === 'Escape') setEditing(false)
       }}
       className="w-full h-full text-xs border-0 outline-none bg-transparent focus:ring-0 px-0"
