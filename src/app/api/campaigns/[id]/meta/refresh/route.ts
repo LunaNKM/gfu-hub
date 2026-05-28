@@ -16,24 +16,23 @@ import { normalizeMetaAdAccountId } from '@/lib/campaigns/metaAccount'
 
 const META_API_BASE = 'https://graph.facebook.com/v20.0'
 
+// Keep this list limited to valid Ads Insights API fields.
+// `currency` is NOT a valid fields param for this endpoint — it causes HTTP 400.
 const INSIGHT_FIELDS: Record<string, string[]> = {
   campaign: [
     'campaign_id', 'campaign_name',
     'spend', 'impressions', 'reach', 'clicks', 'ctr', 'cpc', 'cpm',
     'video_play_actions', 'video_thruplay_watched_actions', 'actions',
-    'currency',
   ],
   adset: [
     'adset_id', 'adset_name',
     'spend', 'impressions', 'reach', 'clicks', 'ctr', 'cpc', 'cpm',
     'video_play_actions', 'video_thruplay_watched_actions', 'actions',
-    'currency',
   ],
   ad: [
     'ad_id', 'ad_name',
     'spend', 'impressions', 'reach', 'clicks', 'ctr', 'cpc', 'cpm',
     'video_play_actions', 'video_thruplay_watched_actions', 'actions',
-    'currency',
   ],
 }
 
