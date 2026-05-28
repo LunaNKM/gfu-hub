@@ -95,7 +95,11 @@ export function CampaignWorkspace({ campaignId }: Props) {
 
         <div className="flex-1 overflow-hidden">
           {activeView.type === 'overview' && (
-            <CampaignOverviewDashboard overview={workspace.overview} />
+            <CampaignOverviewDashboard
+              overview={workspace.overview}
+              campaignId={campaignId}
+              onReloadWorkspace={workspace.reloadWorkspace}
+            />
           )}
 
           {activeView.type === 'section' && activeSection && (

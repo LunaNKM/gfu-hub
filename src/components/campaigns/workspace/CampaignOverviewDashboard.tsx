@@ -7,6 +7,7 @@ import type {
   CampaignStatusProgress,
 } from '@/types'
 import { CampaignPerformanceDetailView } from './CampaignPerformanceDetailView'
+import { MetaMappingPanel } from './meta/MetaMappingPanel'
 
 // ── 색상 팔레트 ───────────────────────────────────────────────────
 
@@ -131,10 +132,13 @@ function EmptyNote({ text }: { text: string }) {
 
 interface Props {
   overview: CampaignOverview | null
+  campaignId: string
+  onReloadWorkspace: () => void
 }
 
-export function CampaignOverviewDashboard({ overview }: Props) {
+export function CampaignOverviewDashboard({ overview, campaignId, onReloadWorkspace }: Props) {
   const [viewMode, setViewMode] = useState<'overview' | 'detail'>('overview')
+  const [metaPanelOpen, setMetaPanelOpen] = useState(false)
 
   if (!overview) {
     return (
@@ -220,37 +224,67 @@ export function CampaignOverviewDashboard({ overview }: Props) {
     <div className="h-full overflow-y-auto" style={{ background: '#f7f9fc' }}>
       <div style={{ padding: 18 }}>
 
-        {/* ── Overview 탭 ──────────────────────────────────── */}
+        {/* ── Overview 탭 + Meta 설정 버튼 ─────────────────── */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 6,
-          width: 'fit-content',
-          padding: 4,
+          justifyContent: 'space-between',
           marginBottom: 14,
-          borderRadius: 10,
-          background: '#edf1f7',
         }}>
-          {(['Overview', 'Influencer', 'Content', 'Meta'] as const).map((tab) => {
-            const active = tab === 'Overview'
-            return (
-              <span key={tab} style={{
-                height: 28,
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '0 12px',
-                borderRadius: 7,
-                fontSize: 12,
-                fontWeight: 700,
-                userSelect: 'none',
-                ...(active
-                  ? { background: '#fff', color: '#1b2638', boxShadow: '0 1px 3px rgba(16,24,40,.08)' }
-                  : { color: '#687387' }),
-              }}>
-                {tab}
-              </span>
-            )
-          })}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            width: 'fit-content',
+            padding: 4,
+            borderRadius: 10,
+            background: '#edf1f7',
+          }}>
+            {(['Overview', 'Influencer', 'Content', 'Meta'] as const).map((tab) => {
+              const active = tab === 'Overview'
+              return (
+                <span key={tab} style={{
+                  height: 28,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '0 12px',
+                  borderRadius: 7,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  userSelect: 'none',
+                  ...(active
+                    ? { background: '#fff', color: '#1b2638', boxShadow: '0 1px 3px rgba(16,24,40,.08)' }
+                    : { color: '#687387' }),
+                }}>
+                  {tab}
+                </span>
+              )
+            })}
+          </div>
+
+          {/* Meta 설정 버튼 */}
+          <button
+            type="button"
+            onClick={() => setMetaPanelOpen(true)}
+            style={{
+              height: 30,
+              padding: '0 12px',
+              border: '1px solid #d5dae5',
+              borderRadius: 6,
+              background: '#fff',
+              color: '#3578f6',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span style={{ fontSize: 13 }}>⚙</span>
+            Meta 설정
+          </button>
         </div>
 
         {/* ── KPI 그리드 (HTML 시안 breakpoint: 720px/1180px) ── */}
@@ -545,6 +579,17 @@ export function CampaignOverviewDashboard({ overview }: Props) {
           </aside>
         </div>
       </div>
+
+      {/* Meta 설정 패널 */}
+      <MetaMappingPanel
+        campaignId={campaignId}
+        isOpen={metaPanelOpen}
+        onClose={() => setMetaPanelOpen(false)}
+        onRefreshSuccess={() => {
+          setMetaPanelOpen(false)
+          onReloadWorkspace()
+        }}
+      />
     </div>
   )
 }
