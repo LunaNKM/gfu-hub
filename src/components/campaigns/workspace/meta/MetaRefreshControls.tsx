@@ -30,6 +30,31 @@ function fmtFetchedAt(raw: string): string {
   }
 }
 
+// ── Level 표시 이름 ────────────────────────────────────────────────
+
+const LEVEL_LABELS: Record<CampaignMetaInsightLevel, string> = {
+  campaign: 'Campaign',
+  adset: 'Ad Set',
+  ad: 'Ad',
+}
+
+// ── effectiveRefreshLevels 계산 ────────────────────────────────────
+// selectedLevels 중 실제로 선택된 object ID가 1개 이상인 level만 반환.
+// ID가 없는 level은 refresh를 막지 않고 이번 refresh에서 제외한다.
+
+function getRefreshableLevels(
+  selectedLevels: CampaignMetaInsightLevel[],
+  campaignIds: string[],
+  adsetIds: string[],
+  adIds: string[],
+): CampaignMetaInsightLevel[] {
+  const levels: CampaignMetaInsightLevel[] = []
+  if (selectedLevels.includes('campaign') && campaignIds.length > 0) levels.push('campaign')
+  if (selectedLevels.includes('adset')    && adsetIds.length > 0)    levels.push('adset')
+  if (selectedLevels.includes('ad')       && adIds.length > 0)       levels.push('ad')
+  return levels
+}
+
 // ── 컴포넌트 ──────────────────────────────────────────────────────
 
 interface MetaRefreshControlsProps {
@@ -50,37 +75,6 @@ interface MetaRefreshControlsProps {
   }) => void
 }
 
-// level별로 최소 1개의 object ID가 있는지 검사
-function levelHasIds(
-  levels: CampaignMetaInsightLevel[],
-  campaignIds: string[],
-  adsetIds: string[],
-  adIds: string[],
-): boolean {
-  return levels.every((level) => {
-    if (level === 'campaign') return campaignIds.length > 0
-    if (level === 'adset')    return adsetIds.length > 0
-    if (level === 'ad')       return adIds.length > 0
-    return false
-  })
-}
-
-// 누락된 level ID를 알려주는 안내 문구
-function missingIdsHint(
-  levels: CampaignMetaInsightLevel[],
-  campaignIds: string[],
-  adsetIds: string[],
-  adIds: string[],
-): string {
-  const missing: string[] = []
-  if (levels.includes('campaign') && campaignIds.length === 0) missing.push('Campaign ID')
-  if (levels.includes('adset')    && adsetIds.length    === 0) missing.push('Ad Set ID')
-  if (levels.includes('ad')       && adIds.length       === 0) missing.push('Ad ID')
-  return missing.length > 0
-    ? `누락된 Object ID: ${missing.join(', ')}`
-    : ''
-}
-
 export function MetaRefreshControls({
   mappingId,
   selectedLevels,
@@ -94,12 +88,20 @@ export function MetaRefreshControls({
 }: MetaRefreshControlsProps) {
   const [dates, setDates] = useState(defaultDates)
 
-  const idsValid = levelHasIds(selectedLevels, metaCampaignIds, metaAdsetIds, metaAdIds)
+  // selectedLevels 중 실제 선택된 ID가 있는 level만 — 이것만 refresh 요청에 포함된다
+  const effectiveRefreshLevels = getRefreshableLevels(
+    selectedLevels, metaCampaignIds, metaAdsetIds, metaAdIds
+  )
+
+  // selectedLevels에 있지만 ID가 없어서 이번 refresh에서 제외되는 level
+  const excludedLevels = selectedLevels.filter(
+    (lv) => !effectiveRefreshLevels.includes(lv)
+  )
+
   const canRefresh =
     !!mappingId &&
-    selectedLevels.length > 0 &&
     metaAccountId.trim().length > 0 &&
-    idsValid &&
+    effectiveRefreshLevels.length > 0 &&
     !refreshing
 
   function handleRefresh() {
@@ -107,11 +109,17 @@ export function MetaRefreshControls({
     onRefresh({
       mappingId,
       metaAccountId,
-      levels: selectedLevels,
+      levels: effectiveRefreshLevels,  // ← 선택된 ID가 있는 level만 전달
       dateStart: dates.dateStart,
       dateStop: dates.dateStop,
     })
   }
+
+  // 수집 Level별 선택 개수 요약 (selectedLevels에 포함된 level만 표시)
+  const selectionParts: string[] = []
+  if (selectedLevels.includes('campaign')) selectionParts.push(`Campaign ${metaCampaignIds.length}개`)
+  if (selectedLevels.includes('adset'))    selectionParts.push(`Ad Set ${metaAdsetIds.length}개`)
+  if (selectedLevels.includes('ad'))       selectionParts.push(`Ad ${metaAdIds.length}개`)
 
   return (
     <div>
@@ -142,19 +150,31 @@ export function MetaRefreshControls({
         </div>
       </div>
 
-      {/* 안내 */}
+      {/* 선택 개수 요약 — 사용자가 현재 선택 상태를 파악할 수 있게 함 */}
+      {selectionParts.length > 0 && (
+        <p style={{ margin: '0 0 8px', fontSize: 11, color: '#6c7587' }}>
+          선택됨: {selectionParts.join(' · ')}
+        </p>
+      )}
+
+      {/* refresh 불가 안내 (canRefresh가 false일 때만) */}
       {!canRefresh && !refreshing && (
         <p style={{ margin: '0 0 10px', color: '#b57a00', fontSize: 11 }}>
           {!mappingId
             ? 'mapping을 먼저 저장한 뒤 새로고침할 수 있습니다.'
-            : selectedLevels.length === 0
-              ? '수집 Level을 하나 이상 선택해 주세요.'
-              : !metaAccountId.trim()
-                ? 'Meta Account ID를 입력해 주세요.'
-                : missingIdsHint(selectedLevels, metaCampaignIds, metaAdsetIds, metaAdIds)
-                  ? `선택한 레벨에 해당하는 Meta 항목을 선택하고 저장한 뒤 새로고침할 수 있습니다. (${missingIdsHint(selectedLevels, metaCampaignIds, metaAdsetIds, metaAdIds)})`
-                  : '선택한 레벨에 해당하는 Meta 항목을 선택하고 저장한 뒤 새로고침할 수 있습니다.'
+            : !metaAccountId.trim()
+              ? 'Meta Account ID를 입력해 주세요.'
+              : '새로고침할 항목이 없습니다. 수집 Level을 켜고 Meta Object를 선택해 주세요.'
           }
+        </p>
+      )}
+
+      {/* 일부 level 제외 안내 — 경고가 아닌 보조 정보 (canRefresh여도 표시) */}
+      {canRefresh && excludedLevels.length > 0 && (
+        <p style={{ margin: '0 0 10px', fontSize: 11, color: '#6c7587', lineHeight: 1.5 }}>
+          이번 새로고침 대상: {effectiveRefreshLevels.map((lv) => LEVEL_LABELS[lv]).join(', ')}
+          <br />
+          제외 (선택 없음): {excludedLevels.map((lv) => LEVEL_LABELS[lv]).join(', ')}
         </p>
       )}
 

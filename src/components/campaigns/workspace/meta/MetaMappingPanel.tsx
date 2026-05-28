@@ -234,7 +234,7 @@ export function MetaMappingPanel({
               >
                 {mappings.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.metaAccountId} — {m.selectedLevels.join(', ')}
+                    {m.metaAccountId} — Campaign {(m.metaCampaignIds ?? []).length} / Ad Set {(m.metaAdsetIds ?? []).length} / Ad {(m.metaAdIds ?? []).length}
                   </option>
                 ))}
                 <option value="">+ 새 Mapping 추가</option>
