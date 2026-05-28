@@ -4,15 +4,11 @@ import { useCallback, useRef, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import type { User } from 'firebase/auth'
 import type { MetaObjectsResponse } from '@/types/campaignMeta'
+import { normalizeMetaAdAccountId } from '@/lib/campaigns/metaAccount'
 
-// ── accountId 정규화 헬퍼 ─────────────────────────────────────────
-// act_ prefix가 없으면 붙임. 비교 기준으로 사용.
-
-export function normalizeMetaAccountId(raw: string): string {
-  const trimmed = raw.trim()
-  if (!trimmed) return ''
-  return trimmed.startsWith('act_') ? trimmed : `act_${trimmed}`
-}
+// ── accountId 정규화 헬퍼 (re-export) ────────────────────────────
+// MetaObjectSelector 등 기존 import를 깨지 않기 위해 별칭으로 재노출.
+export { normalizeMetaAdAccountId as normalizeMetaAccountId }
 
 // ── auth helper ───────────────────────────────────────────────────
 
@@ -39,7 +35,7 @@ export function useMetaObjects() {
 
   const reload = useCallback(
     async (metaAccountId: string) => {
-      const normalized = normalizeMetaAccountId(metaAccountId)
+      const normalized = normalizeMetaAdAccountId(metaAccountId)
 
       // 모든 reload 호출에서 seq를 증가시켜 이전 in-flight 요청을 무효화
       const seq = ++requestSeqRef.current

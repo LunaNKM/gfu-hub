@@ -12,6 +12,7 @@ import {
   normalizeMetaInsightRow,
   validateRefreshRequest,
 } from '@/lib/campaigns/metaInsights'
+import { normalizeMetaAdAccountId } from '@/lib/campaigns/metaAccount'
 
 const META_API_BASE = 'https://graph.facebook.com/v20.0'
 
@@ -75,20 +76,26 @@ async function fetchInsightPage(
     throw new Error(`Meta API 네트워크 오류: ${err instanceof Error ? err.message : String(err)}`)
   }
 
-  if (!res.ok) {
-    throw new Error(`Meta API HTTP 오류: ${res.status}`)
-  }
-
+  // JSON body를 먼저 파싱 — Meta는 4xx/5xx에도 항상 JSON error body를 반환하므로
+  // !res.ok보다 먼저 읽어야 실제 오류 메시지를 얻을 수 있다
   let data: Record<string, unknown>
   try {
     data = (await res.json()) as Record<string, unknown>
   } catch {
-    throw new Error('Meta API 응답을 파싱할 수 없습니다.')
+    throw new Error(`Meta API 응답을 파싱할 수 없습니다. (HTTP ${res.status})`)
   }
 
   if (data['error']) {
     const metaErr = data['error'] as Record<string, unknown>
-    throw new Error(`Meta API 오류: ${metaErr['message'] ?? '알 수 없는 오류'}`)
+    const msg = (metaErr['message'] as string | undefined) ?? '알 수 없는 오류'
+    const code = metaErr['code'] as number | undefined
+    const subcode = metaErr['error_subcode'] as number | undefined
+    const detail = subcode ? `[${code}/${subcode}]` : code ? `[${code}]` : ''
+    throw new Error(`Meta API 오류 ${detail}: ${msg}`)
+  }
+
+  if (!res.ok) {
+    throw new Error(`Meta API HTTP 오류: ${res.status}`)
   }
 
   const rows = (data['data'] as Record<string, unknown>[] | undefined) ?? []
@@ -170,8 +177,10 @@ export async function POST(
     return NextResponse.json({ error: validation.error }, { status: 400 })
   }
 
-  const { mappingId, metaAccountId, levels, dateStart, dateStop, metaCampaignIds, metaAdsetIds, metaAdIds } =
+  const { mappingId, levels, dateStart, dateStop, metaCampaignIds, metaAdsetIds, metaAdIds } =
     validation.data
+  // act_ prefix가 없을 경우를 대비해 정규화 — Meta API는 act_ 없이 요청하면 400을 반환한다
+  const metaAccountId = normalizeMetaAdAccountId(validation.data.metaAccountId)
 
   // ── Mapping 검증 ──────────────────────────────────────────────────
   const mapping = await getDocument<CampaignMetaMapping>(
@@ -188,7 +197,7 @@ export async function POST(
   if (!mapping.enabled) {
     return NextResponse.json({ error: 'mapping이 비활성화되어 있습니다.' }, { status: 400 })
   }
-  if (mapping.metaAccountId !== metaAccountId) {
+  if (normalizeMetaAdAccountId(mapping.metaAccountId) !== metaAccountId) {
     return NextResponse.json(
       { error: 'metaAccountId가 mapping과 일치하지 않습니다.' },
       { status: 400 }
@@ -264,6 +273,14 @@ export async function POST(
       )
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Meta API 오류'
+      // access_token과 전체 URL은 절대 로그에 포함하지 않음
+      console.error('Meta insights fetch 오류', {
+        campaignId,
+        mappingId,
+        level,
+        filterIdsCount: filterIds.length,
+        error: msg,
+      })
       return NextResponse.json(
         { error: 'Meta insights를 불러오지 못했습니다.', detail: msg },
         { status: 502 }

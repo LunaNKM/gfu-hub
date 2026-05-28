@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, isAuthResponse } from '@/lib/server/auth'
+import { normalizeMetaAdAccountId } from '@/lib/campaigns/metaAccount'
 import type {
   MetaCampaignObject,
   MetaAdsetObject,
@@ -71,14 +72,12 @@ export async function GET(req: NextRequest) {
   if (isAuthResponse(auth)) return auth
 
   const { searchParams } = new URL(req.url)
-  let accountId = (searchParams.get('accountId') ?? '').trim()
+  const rawAccountId = (searchParams.get('accountId') ?? '').trim()
 
-  if (!accountId) {
+  if (!rawAccountId) {
     return NextResponse.json({ error: 'accountId가 필요합니다.' }, { status: 400 })
   }
-  if (!accountId.startsWith('act_')) {
-    accountId = `act_${accountId}`
-  }
+  const accountId = normalizeMetaAdAccountId(rawAccountId)
 
   const accessToken = process.env.META_ACCESS_TOKEN
   if (!accessToken) {
