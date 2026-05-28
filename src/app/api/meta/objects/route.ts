@@ -10,7 +10,9 @@ import type {
 const META_API_BASE = 'https://graph.facebook.com/v20.0'
 const MAX_PAGES = 20
 
-// Follows paging.next until exhausted or MAX_PAGES reached
+// Follows paging.next until exhausted or MAX_PAGES reached.
+// Parses the JSON body first so Meta's error message is always surfaced,
+// even on 4xx responses (Meta always returns JSON with an 'error' field).
 async function fetchAllPages(
   initialUrl: string
 ): Promise<Record<string, unknown>[]> {
@@ -29,22 +31,26 @@ async function fetchAllPages(
       )
     }
 
-    if (!res.ok) {
-      throw new Error(`Meta API HTTP 오류: ${res.status}`)
-    }
-
+    // Always parse the body first — Meta returns JSON even on 4xx/5xx
     let data: Record<string, unknown>
     try {
       data = (await res.json()) as Record<string, unknown>
     } catch {
-      throw new Error('Meta API 응답을 파싱할 수 없습니다.')
+      throw new Error(`Meta API 응답을 파싱할 수 없습니다. (HTTP ${res.status})`)
     }
 
+    // Surface the actual Meta error message (present on both ok and error responses)
     if (data['error']) {
       const metaErr = data['error'] as Record<string, unknown>
-      throw new Error(
-        `Meta API 오류: ${metaErr['message'] ?? '알 수 없는 오류'}`
-      )
+      const msg = (metaErr['message'] as string | undefined) ?? '알 수 없는 오류'
+      const code = metaErr['code'] as number | undefined
+      const subcode = metaErr['error_subcode'] as number | undefined
+      const detail = subcode ? `[${code}/${subcode}]` : code ? `[${code}]` : ''
+      throw new Error(`Meta API 오류 ${detail}: ${msg}`)
+    }
+
+    if (!res.ok) {
+      throw new Error(`Meta API HTTP 오류: ${res.status}`)
     }
 
     const rows = (data['data'] as Record<string, unknown>[] | undefined) ?? []
