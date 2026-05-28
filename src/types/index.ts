@@ -444,6 +444,7 @@ export interface CampaignOverviewMetric {
   value: string | number
   unit?: string
   hint?: string
+  pill?: { text: string; variant: 'up' | 'warn' | 'flat' }
 }
 
 export interface CampaignOverviewChart {
@@ -456,6 +457,12 @@ export interface CampaignOverviewChart {
 export interface CampaignOverview {
   metrics: CampaignOverviewMetric[]
   charts: CampaignOverviewChart[]
+  summary?: import('./campaignDashboard').CampaignDashboardSummary
+  contentPerformance?: import('./campaignDashboard').CampaignContentPerformanceSummary
+  adPerformance?: import('./campaignDashboard').CampaignAdPerformanceSummary
+  rosterProgress?: import('./campaignDashboard').CampaignRosterProgressSummary
+  budget?: import('./campaignDashboard').CampaignBudgetSummary
+  dataQuality?: import('./campaignDashboard').CampaignDataQualitySummary
 }
 
 export type CampaignColumnType =
@@ -585,6 +592,17 @@ export type {
   CampaignSharePermission,
   CampaignShareReport,
 } from './campaignShare'
+
+export type {
+  ProgressColor,
+  CampaignStatusProgress,
+  CampaignRosterProgressSummary,
+  CampaignContentPerformanceSummary,
+  CampaignAdPerformanceSummary,
+  CampaignBudgetSummary,
+  CampaignDataQualitySummary,
+  CampaignDashboardSummary,
+} from './campaignDashboard'
 
 export {
   isDocumentCampaignSection,

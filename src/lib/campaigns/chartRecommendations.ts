@@ -5,14 +5,23 @@ import type {
   CampaignOverview,
   CampaignOverviewChart,
   CampaignOverviewMetric,
+  CampaignDashboardSummary,
+  CampaignRosterProgressSummary,
+  CampaignContentPerformanceSummary,
+  CampaignAdPerformanceSummary,
+  CampaignBudgetSummary,
+  CampaignDataQualitySummary,
+  CampaignStatusProgress,
 } from '@/types'
 import { computeInfluencerEr } from './databaseTemplates'
+
+// ── Helpers ───────────────────────────────────────────────────────
 
 export function numericValue(row: CampaignDataRow, colId: string): number | null {
   const value = row.cells[colId]
   if (value === null || value === undefined) return null
-  const numberValue = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(numberValue) ? numberValue : null
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) ? n : null
 }
 
 export function findColumn(
@@ -20,10 +29,11 @@ export function findColumn(
   names: string[],
   role?: CampaignDataColumn['role']
 ): CampaignDataColumn | undefined {
-  return (
-    columns.find((column) => role && column.role === role) ??
-    columns.find((column) => names.includes(column.id) || names.includes(column.name))
-  )
+  // Search by id/name first (most specific), then fall back to role
+  const byName = columns.find((c) => names.includes(c.id) || names.includes(c.name))
+  if (byName) return byName
+  if (role) return columns.find((c) => c.role === role)
+  return undefined
 }
 
 export function groupRowsByColumn(
@@ -57,8 +67,15 @@ export function rankRowsByMetric(
 
 function average(values: number[]): number {
   if (values.length === 0) return 0
-  return values.reduce((sum, value) => sum + value, 0) / values.length
+  return values.reduce((sum, v) => sum + v, 0) / values.length
 }
+
+function colSum(rows: CampaignDataRow[], col: CampaignDataColumn | undefined): number {
+  if (!col) return 0
+  return rows.reduce((acc, row) => acc + (numericValue(row, col.id) ?? 0), 0)
+}
+
+// ── Per-database chart recommendations ───────────────────────────
 
 export function buildDatabaseChartRecommendations(
   database: CampaignDatabase
@@ -136,115 +153,370 @@ export function buildDatabaseChartRecommendations(
   return options.filter((option) => option.data.length > 0)
 }
 
+// ── Sub-summary builders ──────────────────────────────────────────
+
+function buildRosterProgress(confirmed: CampaignDatabase | undefined): CampaignRosterProgressSummary {
+  const rows = confirmed?.rows ?? []
+  const columns = confirmed?.columns ?? []
+  const total = rows.length
+
+  const statusCol = findColumn(columns, ['현재 상태', 'status'], 'status')
+  const platformCol = findColumn(columns, ['플랫폼', 'platform'], 'platform')
+
+  const statusGroups: Record<string, number> = {}
+  if (statusCol) {
+    for (const row of rows) {
+      const s = String(row.cells[statusCol.id] ?? '미입력')
+      statusGroups[s] = (statusGroups[s] ?? 0) + 1
+    }
+  }
+
+  const STATUS_COLORS: Record<string, CampaignStatusProgress['color']> = {
+    '업로드완료': 'green',
+    '검수중': 'blue',
+    '초안대기': 'orange',
+    '계약완료': 'blue',
+    '계약전': 'gray',
+  }
+
+  const statuses: CampaignStatusProgress[] = Object.entries(statusGroups)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => ({
+      name,
+      count,
+      pct: total > 0 ? Math.round((count / total) * 100) : 0,
+      color: STATUS_COLORS[name] ?? 'gray',
+    }))
+
+  const platformGroups: Record<string, number> = {}
+  if (platformCol) {
+    for (const row of rows) {
+      const p = String(row.cells[platformCol.id] ?? '미입력')
+      platformGroups[p] = (platformGroups[p] ?? 0) + 1
+    }
+  }
+
+  const PLATFORM_COLORS: Record<string, CampaignStatusProgress['color']> = {
+    Instagram: 'blue',
+    TikTok: 'green',
+    YouTube: 'orange',
+    X: 'gray',
+  }
+
+  const platforms: CampaignStatusProgress[] = Object.entries(platformGroups)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => ({
+      name,
+      count,
+      pct: total > 0 ? Math.round((count / total) * 100) : 0,
+      color: PLATFORM_COLORS[name] ?? 'gray',
+    }))
+
+  return { statuses, platforms, totalConfirmed: total }
+}
+
+function buildBarData(
+  performance: CampaignDatabase | undefined
+): { data: { label: string; pct: number }[]; hasDate: boolean } {
+  const rows = performance?.rows ?? []
+  const columns = performance?.columns ?? []
+  if (rows.length === 0) return { data: [], hasDate: false }
+
+  const publishedAtCol = columns.find((c) => c.id === 'published_at' || c.name === '게시일')
+  const viewsCol = findColumn(columns, ['조회수', 'views'], 'performance')
+  const nameCol = findColumn(columns, ['계정명', 'name'], 'dimension')
+
+  if (publishedAtCol && viewsCol) {
+    const groups: Record<string, number> = {}
+    for (const row of rows) {
+      const date = String(row.cells[publishedAtCol.id] ?? '')
+      if (!date) continue
+      const v = numericValue(row, viewsCol.id) ?? 0
+      groups[date] = (groups[date] ?? 0) + v
+    }
+    const entries = Object.entries(groups)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12)
+    if (entries.length > 0) {
+      const max = Math.max(...entries.map(([, v]) => v))
+      return {
+        data: entries.map(([date, v]) => ({
+          label: date.length >= 5 ? date.slice(-5) : date,
+          pct: max > 0 ? Math.round((v / max) * 100) : 0,
+        })),
+        hasDate: true,
+      }
+    }
+  }
+
+  if (nameCol && viewsCol) {
+    const sorted = rankRowsByMetric(rows, nameCol, viewsCol).slice(0, 12)
+    const max = sorted[0]?.value ?? 1
+    return {
+      data: sorted.map((r) => ({
+        label: r.name.replace(/^@/, '').slice(0, 5),
+        pct: max > 0 ? Math.round((r.value / max) * 100) : 0,
+      })),
+      hasDate: false,
+    }
+  }
+
+  return { data: [], hasDate: false }
+}
+
+function buildContentPerformance(
+  performance: CampaignDatabase | undefined
+): CampaignContentPerformanceSummary {
+  const rows = performance?.rows ?? []
+  const columns = performance?.columns ?? []
+
+  const nameCol = findColumn(columns, ['계정명', 'name'], 'dimension')
+  const viewsCol = findColumn(columns, ['조회수', 'views'], 'performance')
+
+  const totalViews = colSum(rows, viewsCol)
+
+  const top5ByViews =
+    nameCol && viewsCol
+      ? rankRowsByMetric(rows, nameCol, viewsCol)
+          .slice(0, 5)
+          .map((r) => ({ name: r.name, views: r.value }))
+      : []
+
+  const { data: barData, hasDate } = buildBarData(performance)
+
+  return {
+    totalViews,
+    uploadCount: rows.length,
+    top5ByViews,
+    barData,
+    barMode: barData.length === 0 ? 'empty' : hasDate ? 'date' : 'influencer',
+  }
+}
+
+function buildAdPerformance(meta: CampaignDatabase | undefined): CampaignAdPerformanceSummary {
+  const rows = meta?.rows ?? []
+  const columns = meta?.columns ?? []
+
+  const spendCol = findColumn(columns, ['Spend', 'spend'], 'cost')
+  const impressionsCol = findColumn(columns, ['Impressions', 'impressions'], 'performance')
+  const reachCol = findColumn(columns, ['Reach', 'reach'], 'performance')
+  const clicksCol = findColumn(columns, ['Clicks', 'clicks'], 'performance')
+  const ctrCol = findColumn(columns, ['CTR', 'ctr'], 'metric')
+  const cpcCol = findColumn(columns, ['CPC', 'cpc'], 'metric')
+  const cpmCol = findColumn(columns, ['CPM', 'cpm'], 'metric')
+  const conversionsCol = findColumn(columns, ['Conversions', 'conversions'], 'performance')
+
+  const totalSpend = colSum(rows, spendCol)
+  const totalImpressions = colSum(rows, impressionsCol)
+  const totalReach = colSum(rows, reachCol)
+  const totalClicks = colSum(rows, clicksCol)
+  const totalConversions = colSum(rows, conversionsCol)
+
+  let ctr = 0
+  if (ctrCol && totalImpressions > 0) {
+    const weighted = rows.reduce((acc, row) => {
+      const impr = impressionsCol ? (numericValue(row, impressionsCol.id) ?? 0) : 0
+      const rowCtr = numericValue(row, ctrCol.id) ?? 0
+      return acc + rowCtr * impr
+    }, 0)
+    ctr = weighted / totalImpressions
+  } else if (totalImpressions > 0) {
+    ctr = (totalClicks / totalImpressions) * 100
+  }
+
+  let cpc = 0
+  if (cpcCol && totalClicks > 0) {
+    const weighted = rows.reduce((acc, row) => {
+      const clicks = clicksCol ? (numericValue(row, clicksCol.id) ?? 0) : 0
+      const rowCpc = numericValue(row, cpcCol.id) ?? 0
+      return acc + rowCpc * clicks
+    }, 0)
+    cpc = weighted / totalClicks
+  } else if (totalClicks > 0) {
+    cpc = totalSpend / totalClicks
+  }
+
+  let cpm = 0
+  if (cpmCol && totalImpressions > 0) {
+    const weighted = rows.reduce((acc, row) => {
+      const impr = impressionsCol ? (numericValue(row, impressionsCol.id) ?? 0) : 0
+      const rowCpm = numericValue(row, cpmCol.id) ?? 0
+      return acc + rowCpm * impr
+    }, 0)
+    cpm = weighted / totalImpressions
+  } else if (totalImpressions > 0) {
+    cpm = (totalSpend / totalImpressions) * 1000
+  }
+
+  return {
+    spend: totalSpend,
+    impressions: totalImpressions,
+    reach: totalReach,
+    clicks: totalClicks,
+    ctr,
+    cpc,
+    cpm,
+    conversions: totalConversions,
+  }
+}
+
+function buildBudgetSummary(
+  adBudget: CampaignDatabase | undefined,
+  actualSpend: number
+): CampaignBudgetSummary {
+  const rows = adBudget?.rows ?? []
+  const columns = adBudget?.columns ?? []
+  const budgetCol = findColumn(columns, ['예산', 'budget'], 'cost')
+  const plannedBudget = colSum(rows, budgetCol)
+  const remainingBudget = plannedBudget - actualSpend
+  const burnRate = plannedBudget > 0 ? (actualSpend / plannedBudget) * 100 : 0
+  return { plannedBudget, actualSpend, remainingBudget, burnRate }
+}
+
+function buildDataQualitySummary(
+  confirmedRows: CampaignDataRow[],
+  performanceRows: CampaignDataRow[]
+): CampaignDataQualitySummary {
+  const confirmedCount = confirmedRows.length
+  const performanceRowCount = performanceRows.length
+  const performanceCollectionRate =
+    confirmedCount > 0 ? (performanceRowCount / confirmedCount) * 100 : 0
+  return { confirmedCount, performanceRowCount, performanceCollectionRate }
+}
+
+// ── Main overview builder ─────────────────────────────────────────
+
 export function buildCampaignOverviewFromDatabases(databases: CampaignDatabase[]): CampaignOverview {
-  const confirmed = databases.find((database) => database.businessType === 'confirmed_influencers')
-  const performance = databases.find((database) => database.businessType === 'influencer_performance')
-  const candidates = databases.find((database) => database.businessType === 'influencer_candidates')
-  const adBudget = databases.find((database) => database.businessType === 'ad_budget')
-  const meta = databases.find((database) => database.businessType === 'meta_analytics')
+  const confirmed = databases.find((db) => db.businessType === 'confirmed_influencers')
+  const performance = databases.find((db) => db.businessType === 'influencer_performance')
+  const adBudget = databases.find((db) => db.businessType === 'ad_budget')
+  const meta = databases.find((db) => db.businessType === 'meta_analytics')
 
   const confirmedRows = confirmed?.rows ?? []
   const performanceRows = performance?.rows ?? []
-  const candidateRows = candidates?.rows ?? []
 
-  const statusCol = confirmed ? findColumn(confirmed.columns, ['현재 상태', 'status'], 'status') : undefined
+  const rosterProgress = buildRosterProgress(confirmed)
+  const contentPerformance = buildContentPerformance(performance)
+  const adPerformance = buildAdPerformance(meta)
+  const budget = buildBudgetSummary(adBudget, adPerformance.spend)
+  const dataQuality = buildDataQualitySummary(confirmedRows, performanceRows)
+
+  // Upload stats
+  const confirmedCols = confirmed?.columns ?? []
+  const statusCol = findColumn(confirmedCols, ['현재 상태', 'status'], 'status')
   const uploadedCount = statusCol
     ? confirmedRows.filter((row) => row.cells[statusCol.id] === '업로드완료').length
     : 0
-  const uploadRate = confirmedRows.length > 0 ? Math.round((uploadedCount / confirmedRows.length) * 100) : 0
+  const uploadRate =
+    confirmedRows.length > 0 ? Math.round((uploadedCount / confirmedRows.length) * 100) : 0
 
-  const viewsCol = performance
-    ? findColumn(performance.columns, ['조회수', 'views'], 'performance')
-    : undefined
+  // Avg views from performance DB
+  const performanceCols = performance?.columns ?? []
+  const viewsCol = findColumn(performanceCols, ['조회수', 'views'], 'performance')
   const viewValues = viewsCol
-    ? performanceRows.map((row) => numericValue(row, viewsCol.id)).filter((value): value is number => value !== null)
+    ? performanceRows
+        .map((row) => numericValue(row, viewsCol.id))
+        .filter((v): v is number => v !== null)
     : []
-  const avgViews = Math.round(average(viewValues))
+  const avgViews = viewValues.length > 0 ? Math.round(average(viewValues)) : 0
 
-  const erCol = performance ? findColumn(performance.columns, ['ER', 'er'], 'metric') : undefined
+  // Avg ER from performance DB only
+  const erCol = findColumn(performanceCols, ['ER', 'er'], 'metric')
   const erValues = performanceRows
-    .map((row) => {
-      if (erCol) return numericValue(row, erCol.id)
-      return computeInfluencerEr(row)
-    })
-    .filter((value): value is number => value !== null)
+    .map((row) => (erCol ? numericValue(row, erCol.id) : computeInfluencerEr(row)))
+    .filter((v): v is number => v !== null)
   const avgEr = erValues.length > 0 ? Math.round(average(erValues) * 100) / 100 : 0
 
-  const budgetCol = adBudget ? findColumn(adBudget.columns, ['예산', 'budget'], 'cost') : undefined
-  const totalBudget = budgetCol
-    ? (adBudget?.rows ?? [])
-        .map((row) => numericValue(row, budgetCol.id))
-        .filter((value): value is number => value !== null)
-        .reduce((sum, value) => sum + value, 0)
-    : 0
+  const summary: CampaignDashboardSummary = {
+    confirmedCount: confirmedRows.length,
+    uploadedCount,
+    uploadRate,
+    performanceCollectionRate: dataQuality.performanceCollectionRate,
+    avgViews,
+    avgEr,
+    metaSpend: adPerformance.spend,
+    metaCtr: adPerformance.ctr,
+    metaCpc: adPerformance.cpc,
+    metaCpm: adPerformance.cpm,
+    totalAdBudget: budget.plannedBudget,
+    totalViews: contentPerformance.totalViews,
+    adClicks: adPerformance.clicks,
+  }
 
-  const metaSpendCol = meta ? findColumn(meta.columns, ['Spend', 'spend'], 'cost') : undefined
-  const metaSpend = meta && metaSpendCol
-    ? meta.rows
-        .map((row) => numericValue(row, metaSpendCol.id))
-        .filter((value): value is number => value !== null)
-        .reduce((sum, value) => sum + value, 0)
-    : 0
+  const fmt = (n: number) => n.toLocaleString()
 
   const metrics: CampaignOverviewMetric[] = [
-    { id: 'confirmed_count', label: '확정 인원 수', value: confirmedRows.length, unit: '명' },
+    {
+      id: 'confirmed_count',
+      label: '확정 인원 수',
+      value: confirmedRows.length > 0 ? confirmedRows.length : '-',
+      unit: confirmedRows.length > 0 ? '명' : undefined,
+    },
     {
       id: 'upload_rate',
-      label: '콘텐츠 업로드 진행률',
+      label: '업로드 진행률',
       value: confirmedRows.length > 0 ? `${uploadRate}%` : '-',
+      pill:
+        confirmedRows.length > 0
+          ? { text: `${uploadedCount} / ${confirmedRows.length}`, variant: 'flat' }
+          : undefined,
+    },
+    {
+      id: 'performance_collection_rate',
+      label: '성과 수집률',
+      value:
+        confirmedRows.length > 0
+          ? `${Math.round(dataQuality.performanceCollectionRate)}%`
+          : '-',
+      pill:
+        confirmedRows.length > 0
+          ? {
+              text: `${performanceRows.length}건`,
+              variant: dataQuality.performanceCollectionRate >= 70 ? 'up' : 'warn',
+            }
+          : undefined,
     },
     {
       id: 'avg_views',
       label: '평균 조회수',
-      value: viewValues.length > 0 ? avgViews.toLocaleString() : '-',
+      value: viewValues.length > 0 ? fmt(avgViews) : '-',
     },
     {
       id: 'avg_er',
       label: '평균 ER',
       value: erValues.length > 0 ? `${avgEr}%` : '-',
+      pill:
+        erValues.length > 0
+          ? { text: avgEr >= 4 ? '양호' : '점검', variant: avgEr >= 4 ? 'up' : 'warn' }
+          : undefined,
     },
     {
       id: 'meta_spend',
       label: 'Meta 광고비',
-      value: metaSpend > 0 ? metaSpend.toLocaleString() : '-',
+      value: adPerformance.spend > 0 ? fmt(adPerformance.spend) : '-',
+      pill:
+        budget.plannedBudget > 0
+          ? { text: `${Math.round(budget.burnRate)}% 소진`, variant: 'flat' }
+          : undefined,
     },
-    { id: 'meta_ctr', label: 'Meta CTR', value: '-' },
-    { id: 'meta_cpc', label: 'Meta CPC', value: '-' },
-    { id: 'meta_cpm', label: 'Meta CPM', value: '-' },
   ]
 
-  if (totalBudget > 0) {
-    metrics.push({
-      id: 'total_ad_budget',
-      label: '광고 예산 합계',
-      value: totalBudget.toLocaleString(),
-    })
-  }
-
-  const charts = [
+  // Charts: confirmed + performance (content only) + meta (ad only)
+  // candidate_confirmation_rate chart is not generated
+  const charts: CampaignOverviewChart[] = [
     ...(confirmed ? buildDatabaseChartRecommendations(confirmed) : []),
     ...(performance ? buildDatabaseChartRecommendations(performance) : []),
-    ...(candidates ? buildDatabaseChartRecommendations(candidates) : []),
     ...(meta ? buildDatabaseChartRecommendations(meta) : []),
   ]
 
-  if (candidateRows.length > 0) {
-    const confirmedCheckCol = candidates
-      ? findColumn(candidates.columns, ['확정 여부', 'confirmed'], 'status')
-      : undefined
-    if (confirmedCheckCol) {
-      const confirmedCount = candidateRows.filter((row) => row.cells[confirmedCheckCol.id] === true).length
-      charts.push({
-        id: 'candidate_confirmation_rate',
-        title: '후보자 확정 현황',
-        type: 'pie',
-        data: [
-          { name: '확정', value: confirmedCount },
-          { name: '미확정', value: candidateRows.length - confirmedCount },
-        ].filter((item) => item.value > 0),
-      })
-    }
+  return {
+    metrics,
+    charts,
+    summary,
+    contentPerformance,
+    adPerformance,
+    rosterProgress,
+    budget,
+    dataQuality,
   }
-
-  return { metrics, charts }
 }
