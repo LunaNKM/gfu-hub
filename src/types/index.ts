@@ -622,4 +622,6 @@ export type {
   CampaignMetaMapping,
   CampaignMetaInsightSnapshot,
   CampaignInsightAsset,
+  CampaignMetaRefreshRequest,
+  CampaignMetaRefreshResult,
 } from './campaignMeta'

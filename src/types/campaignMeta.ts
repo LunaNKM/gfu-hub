@@ -38,6 +38,29 @@ export interface CampaignMetaInsightSnapshot {
   sourceHash?: string
 }
 
+export interface CampaignMetaRefreshRequest {
+  metaAccountId: string
+  mappingId?: string
+  levels: CampaignMetaInsightLevel[]
+  dateStart: string
+  dateStop: string
+  metaCampaignIds?: string[]
+  metaAdsetIds?: string[]
+  metaAdIds?: string[]
+}
+
+export interface CampaignMetaRefreshResult {
+  campaignId: string
+  metaAccountId: string
+  fetchedCount: number
+  upsertedCount: number
+  skippedCount: number
+  levels: CampaignMetaInsightLevel[]
+  dateStart: string
+  dateStop: string
+  fetchedAt: string
+}
+
 export interface CampaignInsightAsset {
   id: string
   campaignId: string

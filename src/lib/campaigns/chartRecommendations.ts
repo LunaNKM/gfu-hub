@@ -20,6 +20,7 @@ import type {
   CampaignDetailTabSummary,
   CampaignDetailTables,
 } from '@/types'
+import type { CampaignMetaInsightSnapshot } from '@/types/campaignMeta'
 import { computeInfluencerEr } from './databaseTemplates'
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -889,4 +890,141 @@ export function buildCampaignOverviewFromDatabases(databases: CampaignDatabase[]
     dataQuality,
     detailTables,
   }
+}
+
+// ── Snapshot-aware overview builder ──────────────────────────────
+// Accepts metaSnapshots for ad performance when available.
+// Falls back to meta_analytics database when snapshots are empty.
+
+function buildAdPerformanceFromSnapshots(
+  snapshots: CampaignMetaInsightSnapshot[]
+): CampaignAdPerformanceSummary {
+  const totalSpend       = snapshots.reduce((a, s) => a + s.spend,       0)
+  const totalImpressions = snapshots.reduce((a, s) => a + s.impressions, 0)
+  const totalReach       = snapshots.reduce((a, s) => a + s.reach,       0)
+  const totalClicks      = snapshots.reduce((a, s) => a + s.clicks,      0)
+  const totalConversions = snapshots.reduce((a, s) => a + s.conversions, 0)
+  const totalVideoPlay   = snapshots.reduce((a, s) => a + s.videoPlay,   0)
+  const totalThruPlay    = snapshots.reduce((a, s) => a + s.thruPlay,    0)
+
+  const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
+  const cpc = totalClicks      > 0 ? totalSpend / totalClicks           : 0
+  const cpm = totalImpressions > 0 ? (totalSpend / totalImpressions) * 1000 : 0
+
+  const LEVEL_COLORS: Record<string, CampaignStatusProgress['color']> = {
+    campaign: 'blue',
+    adset: 'green',
+    ad: 'orange',
+  }
+  const levelGroups: Record<string, number> = {}
+  for (const s of snapshots) {
+    levelGroups[s.level] = (levelGroups[s.level] ?? 0) + 1
+  }
+  const total = snapshots.length
+  const byLevel: CampaignStatusProgress[] = Object.entries(levelGroups).map(([name, count]) => ({
+    name,
+    count,
+    pct: total > 0 ? Math.round((count / total) * 100) : 0,
+    color: LEVEL_COLORS[name] ?? 'gray',
+  }))
+
+  const top5BySpend = [...snapshots]
+    .sort((a, b) => b.spend - a.spend)
+    .slice(0, 5)
+    .map((s) => ({ name: s.metaObjectName || s.metaObjectId, spend: s.spend }))
+
+  const top5ByCtr = [...snapshots]
+    .sort((a, b) => b.ctr - a.ctr)
+    .slice(0, 5)
+    .map((s) => ({ name: s.metaObjectName || s.metaObjectId, ctr: s.ctr }))
+
+  return {
+    spend: totalSpend,
+    impressions: totalImpressions,
+    reach: totalReach,
+    clicks: totalClicks,
+    ctr,
+    cpc,
+    cpm,
+    conversions: totalConversions,
+    videoPlay: totalVideoPlay,
+    thruPlay: totalThruPlay,
+    byLevel,
+    top5BySpend,
+    top5ByCtr,
+  }
+}
+
+export function buildCampaignOverviewFromSources(params: {
+  databases: CampaignDatabase[]
+  metaSnapshots?: CampaignMetaInsightSnapshot[]
+}): CampaignOverview {
+  const { databases, metaSnapshots } = params
+
+  if (metaSnapshots && metaSnapshots.length > 0) {
+    // Use snapshot-based ad performance; everything else comes from databases.
+    const baseOverview = buildCampaignOverviewFromDatabases(databases)
+    const adPerformance = buildAdPerformanceFromSnapshots(metaSnapshots)
+
+    const adBudget = databases.find((db) => db.businessType === 'ad_budget')
+    const budget = buildBudgetSummary(adBudget, adPerformance.spend)
+
+    const summary: CampaignDashboardSummary = {
+      ...baseOverview.summary!,
+      metaSpend: adPerformance.spend,
+      metaCtr: adPerformance.ctr,
+      metaCpc: adPerformance.cpc,
+      metaCpm: adPerformance.cpm,
+      totalAdBudget: budget.plannedBudget,
+      adClicks: adPerformance.clicks,
+    }
+
+    const fmtN = (n: number) => n.toLocaleString()
+    const fmtPct = (n: number) => `${n.toFixed(2)}%`
+
+    const updatedMetrics = baseOverview.metrics.map((m): CampaignOverviewMetric => {
+      if (m.id === 'meta_spend') {
+        return {
+          ...m,
+          value: adPerformance.spend > 0 ? fmtN(adPerformance.spend) : '-',
+          pill: budget.plannedBudget > 0
+            ? { text: `${Math.round(budget.burnRate)}% 소진`, variant: 'flat' }
+            : undefined,
+        }
+      }
+      if (m.id === 'meta_ctr') {
+        return {
+          ...m,
+          value: adPerformance.ctr > 0 ? fmtPct(adPerformance.ctr) : '-',
+          pill: adPerformance.ctr > 0
+            ? { text: adPerformance.ctr >= 1.5 ? '양호' : '관찰', variant: adPerformance.ctr >= 1.5 ? 'up' : 'warn' }
+            : undefined,
+        }
+      }
+      if (m.id === 'meta_cpc') {
+        return {
+          ...m,
+          value: adPerformance.cpc > 0 ? fmtN(Math.round(adPerformance.cpc)) : '-',
+        }
+      }
+      if (m.id === 'meta_cpm') {
+        return {
+          ...m,
+          value: adPerformance.cpm > 0 ? fmtN(Math.round(adPerformance.cpm)) : '-',
+        }
+      }
+      return m
+    })
+
+    return {
+      ...baseOverview,
+      metrics: updatedMetrics,
+      adPerformance,
+      budget,
+      summary,
+    }
+  }
+
+  // No snapshots — fall back to database-based overview
+  return buildCampaignOverviewFromDatabases(databases)
 }
