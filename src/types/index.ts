@@ -624,4 +624,8 @@ export type {
   CampaignInsightAsset,
   CampaignMetaRefreshRequest,
   CampaignMetaRefreshResult,
+  MetaCampaignObject,
+  MetaAdsetObject,
+  MetaAdObject,
+  MetaObjectsResponse,
 } from './campaignMeta'

@@ -62,6 +62,46 @@ export interface CampaignMetaRefreshResult {
   fetchedAt: string
 }
 
+// ── Meta Object 조회 타입 (선택 UI용, mapping에는 ID만 저장) ──────────
+
+export interface MetaCampaignObject {
+  id: string
+  name: string
+  status?: string
+  effectiveStatus?: string
+  objective?: string
+  createdTime?: string
+  updatedTime?: string
+}
+
+export interface MetaAdsetObject {
+  id: string
+  name: string
+  campaignId: string
+  status?: string
+  effectiveStatus?: string
+  createdTime?: string
+  updatedTime?: string
+}
+
+export interface MetaAdObject {
+  id: string
+  name: string
+  campaignId?: string
+  adsetId: string
+  status?: string
+  effectiveStatus?: string
+  createdTime?: string
+  updatedTime?: string
+}
+
+export interface MetaObjectsResponse {
+  campaigns: MetaCampaignObject[]
+  adsets: MetaAdsetObject[]
+  ads: MetaAdObject[]
+  fetchedAt: string
+}
+
 export interface CampaignInsightAsset {
   id: string
   campaignId: string

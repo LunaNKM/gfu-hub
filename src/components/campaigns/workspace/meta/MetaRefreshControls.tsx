@@ -146,14 +146,14 @@ export function MetaRefreshControls({
       {!canRefresh && !refreshing && (
         <p style={{ margin: '0 0 10px', color: '#b57a00', fontSize: 11 }}>
           {!mappingId
-            ? 'mapping을 먼저 저장해 주세요.'
+            ? 'mapping을 먼저 저장한 뒤 새로고침할 수 있습니다.'
             : selectedLevels.length === 0
               ? '수집 Level을 하나 이상 선택해 주세요.'
               : !metaAccountId.trim()
                 ? 'Meta Account ID를 입력해 주세요.'
                 : missingIdsHint(selectedLevels, metaCampaignIds, metaAdsetIds, metaAdIds)
-                  ? missingIdsHint(selectedLevels, metaCampaignIds, metaAdsetIds, metaAdIds)
-                  : 'Object ID를 입력해 주세요.'
+                  ? `선택한 레벨에 해당하는 Meta 항목을 선택하고 저장한 뒤 새로고침할 수 있습니다. (${missingIdsHint(selectedLevels, metaCampaignIds, metaAdsetIds, metaAdIds)})`
+                  : '선택한 레벨에 해당하는 Meta 항목을 선택하고 저장한 뒤 새로고침할 수 있습니다.'
           }
         </p>
       )}

@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "verify:campaign": "node scripts/verify-campaign-architecture.mjs",
+    "verify:campaign-full": "npm run verify:campaign && npm run lint && npm run build",
     "eval": "node scripts/eval-rag.mjs"
   },
   "dependencies": {

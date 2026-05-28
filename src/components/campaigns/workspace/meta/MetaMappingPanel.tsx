@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import type { CampaignMetaInsightLevel } from '@/types'
 import { useCampaignMetaMapping, type MetaMappingFormState } from '../hooks/useCampaignMetaMapping'
-import { MetaObjectIdsEditor } from './MetaObjectIdsEditor'
+import { MetaObjectSelector } from './MetaObjectSelector'
 import { MetaRefreshControls } from './MetaRefreshControls'
 
 // ── 상수 ─────────────────────────────────────────────────────────
@@ -325,36 +325,30 @@ export function MetaMappingPanel({
             </div>
           </Section>
 
-          {/* ── Section 3: Object IDs ────────────────────────── */}
-          <Section title="Meta Object IDs">
-            <p style={{ margin: '0 0 10px', fontSize: 11, color: '#8b95a7', lineHeight: 1.5 }}>
-              ID를 직접 입력하세요. 줄바꿈 또는 쉼표로 구분합니다.
-            </p>
-            <MetaObjectIdsEditor
-              key={`campaign-${formKey}`}
-              label="Campaign IDs"
-              value={form.metaCampaignIds}
-              placeholder="120214700000000000"
-              onChange={(ids) => setForm((p) => ({ ...p, metaCampaignIds: ids }))}
-            />
-            <div style={{ marginTop: 10 }}>
-              <MetaObjectIdsEditor
-                key={`adset-${formKey}`}
-                label="Ad Set IDs"
-                value={form.metaAdsetIds}
-                placeholder="120214800000000000"
-                onChange={(ids) => setForm((p) => ({ ...p, metaAdsetIds: ids }))}
+          {/* ── Section 3: Object 선택 ──────────────────────────── */}
+          <Section title="Meta Object 선택">
+            {form.metaAccountId.trim() ? (
+              <MetaObjectSelector
+                key={`selector-${formKey}`}
+                metaAccountId={form.metaAccountId}
+                selectedLevels={form.selectedLevels}
+                selectedCampaignIds={form.metaCampaignIds}
+                selectedAdsetIds={form.metaAdsetIds}
+                selectedAdIds={form.metaAdIds}
+                onChange={(next) =>
+                  setForm((p) => ({
+                    ...p,
+                    metaCampaignIds: next.metaCampaignIds,
+                    metaAdsetIds: next.metaAdsetIds,
+                    metaAdIds: next.metaAdIds,
+                  }))
+                }
               />
-            </div>
-            <div style={{ marginTop: 10 }}>
-              <MetaObjectIdsEditor
-                key={`ad-${formKey}`}
-                label="Ad IDs"
-                value={form.metaAdIds}
-                placeholder="120214900000000000"
-                onChange={(ids) => setForm((p) => ({ ...p, metaAdIds: ids }))}
-              />
-            </div>
+            ) : (
+              <p style={{ margin: 0, fontSize: 12, color: '#8b95a7', lineHeight: 1.5 }}>
+                Meta Account ID를 입력하면 캠페인 목록을 불러올 수 있습니다.
+              </p>
+            )}
           </Section>
 
           {/* ── 저장 버튼 ───────────────────────────────────── */}
