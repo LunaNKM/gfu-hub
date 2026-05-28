@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>종합 대시보드 — 디자인 시안 4종</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root { font-family: 'Inter', 'Noto Sans KR', sans-serif; }
+  body { background: #e7e9ee; color: #111; padding: 40px 32px 80px; }
+
+  .page-head { max-width: 1600px; margin: 0 auto 36px; }
+  .page-head h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: #1a1a1a; }
+  .page-head p { font-size: 14px; color: #6b7280; margin-top: 6px; }
+
+  .grid {
+    max-width: 1600px; margin: 0 auto;
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 32px;
+  }
+  @media (max-width: 1200px) { .grid { grid-template-columns: 1fr; } }
+
+  .frame { display: flex; flex-direction: column; }
+  .frame-label {
+    display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; padding-left: 4px;
+  }
+  .frame-label .tag {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    background: #1a1a1a; color: #fff; padding: 4px 9px; border-radius: 6px;
+  }
+  .frame-label .name { font-size: 15px; font-weight: 700; color: #1f2937; }
+  .frame-label .desc { font-size: 12px; color: #8b90a0; }
+
+  .screen {
+    border-radius: 16px; overflow: hidden;
+    box-shadow: 0 20px 50px -20px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.06);
+    aspect-ratio: 4 / 3.1; position: relative;
+  }
+  .screen-inner { position: absolute; inset: 0; overflow: hidden; }
+
+  /* ============ SHARED tiny helpers ============ */
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+  .serif { font-family: 'Playfair Display', serif; }
+
+  /* =====================================================================
+     시안 A — EXECUTIVE BRIEF (에디토리얼 / 저밀도 / 모노톤 + 1 액센트)
+     ===================================================================== */
+  .a { background: #fbfbf9; color: #1a1a18; padding: 34px 38px; height: 100%; overflow: hidden; }
+  .a .kicker { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: #b08d57; font-weight: 700; }
+  .a h2 { font-family: 'Playfair Display', serif; font-size: 30px; font-weight: 700; line-height: 1.1; margin-top: 8px; color: #1a1a18; }
+  .a .sub { font-size: 13px; color: #8a8678; margin-top: 8px; max-width: 380px; line-height: 1.5; }
+  .a .rule { height: 1px; background: #e3e0d6; margin: 26px 0; }
+  .a .hero { display: flex; align-items: flex-end; gap: 40px; }
+  .a .hero .big { font-family: 'Playfair Display', serif; font-size: 64px; font-weight: 800; line-height: 0.9; color: #1a1a18; }
+  .a .hero .big small { font-size: 22px; color: #b08d57; font-weight: 700; }
+  .a .hero .herolabel { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #a09b8c; }
+  .a .hero .delta { font-size: 13px; color: #4a7c59; font-weight: 600; margin-top: 6px; }
+  .a .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+  .a .stats > div { padding: 0 22px; border-left: 1px solid #e3e0d6; }
+  .a .stats > div:first-child { padding-left: 0; border-left: none; }
+  .a .stats .v { font-family: 'Playfair Display', serif; font-size: 26px; font-weight: 700; }
+  .a .stats .l { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #a09b8c; margin-top: 4px; }
+  .a .platlist { margin-top: 4px; }
+  .a .platrow { display: flex; align-items: center; gap: 14px; padding: 9px 0; border-bottom: 1px solid #efece3; }
+  .a .platrow:last-child { border-bottom: none; }
+  .a .platrow .nm { font-size: 13px; font-weight: 600; width: 90px; }
+  .a .platrow .track { flex: 1; height: 2px; background: #e3e0d6; position: relative; }
+  .a .platrow .fill { position: absolute; left: 0; top: -1px; height: 4px; background: #1a1a18; }
+  .a .platrow .pc { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 700; width: 48px; text-align: right; }
+
+  /* =====================================================================
+     시안 B — OPS CONSOLE (고밀도 / 다크 / 터미널 느낌)
+     ===================================================================== */
+  .b { background: #0c0e14; color: #c9d1e0; padding: 16px 18px; height: 100%; font-size: 12px; overflow: hidden; }
+  .b .topbar { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1d212c; padding-bottom: 10px; }
+  .b .topbar .t { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5eead4; letter-spacing: 0.05em; }
+  .b .topbar .t .dim { color: #4b5263; }
+  .b .topbar .live { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #34d399; display: flex; align-items: center; gap: 5px; }
+  .b .topbar .live .dot { width: 6px; height: 6px; border-radius: 50%; background: #34d399; box-shadow: 0 0 8px #34d399; }
+  .b .kstrip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #1d212c; border: 1px solid #1d212c; margin: 12px 0; }
+  .b .kstrip .cell { background: #11141c; padding: 9px 11px; }
+  .b .kstrip .l { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: #5b6376; }
+  .b .kstrip .v { font-family: 'IBM Plex Mono', monospace; font-size: 19px; font-weight: 600; color: #e7edf7; margin-top: 3px; }
+  .b .kstrip .v.up { color: #34d399; } .b .kstrip .v.warn { color: #fbbf24; }
+  .b .kstrip .d { font-family: 'IBM Plex Mono', monospace; font-size: 9px; margin-top: 2px; }
+  .b .d.pos { color: #34d399; } .b .d.neg { color: #f87171; }
+  .b .panels { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; }
+  .b .panel { background: #11141c; border: 1px solid #1d212c; border-radius: 4px; padding: 10px 12px; }
+  .b .panel .ph { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #6b7488; margin-bottom: 9px; }
+  .b table { width: 100%; border-collapse: collapse; font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
+  .b th { text-align: right; color: #5b6376; font-weight: 500; padding: 4px 6px; border-bottom: 1px solid #1d212c; font-size: 9px; letter-spacing: 0.05em; }
+  .b th:first-child, .b td:first-child { text-align: left; }
+  .b td { padding: 5px 6px; border-bottom: 1px solid #161a23; color: #aeb6c7; }
+  .b td .nm { color: #e7edf7; }
+  .b td .hi { color: #5eead4; }
+  .b .spark { display: flex; align-items: flex-end; gap: 2px; height: 64px; }
+  .b .spark .bar { flex: 1; background: linear-gradient(180deg, #5eead4, #2563eb); border-radius: 1px 1px 0 0; min-height: 3px; }
+  .b .ring { display: flex; gap: 10px; align-items: center; }
+  .b .ring svg { transform: rotate(-90deg); }
+  .b .ring .legend { font-family: 'IBM Plex Mono', monospace; font-size: 10px; line-height: 1.7; }
+  .b .ring .legend i { display: inline-block; width: 7px; height: 7px; border-radius: 1px; margin-right: 6px; }
+
+  /* =====================================================================
+     시안 C — BENTO (모던 / 컬러풀 / 카드 크기 가변)
+     ===================================================================== */
+  .c { background: #f4f5fb; padding: 18px; height: 100%; overflow: hidden; }
+  .c .chead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .c .chead h2 { font-size: 17px; font-weight: 800; color: #1e1b4b; letter-spacing: -0.01em; }
+  .c .chead .seg { display: flex; gap: 3px; background: #e6e7f4; padding: 3px; border-radius: 10px; }
+  .c .chead .seg span { font-size: 11px; font-weight: 600; color: #6b6b8a; padding: 4px 10px; border-radius: 7px; }
+  .c .chead .seg span.on { background: #fff; color: #4338ca; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .c .bento { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 78px; gap: 12px; }
+  .c .box { border-radius: 18px; padding: 15px; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .c .box .lab { font-size: 11px; font-weight: 600; opacity: 0.85; }
+  .c .box .val { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; margin-top: auto; line-height: 1; }
+  .c .box .val small { font-size: 13px; font-weight: 700; opacity: 0.7; }
+  .c .box .chip { font-size: 10px; font-weight: 700; margin-top: 6px; opacity: 0.9; }
+  .c .grad1 { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; }
+  .c .grad2 { background: linear-gradient(135deg, #ec4899, #f43f5e); color: #fff; }
+  .c .grad3 { background: linear-gradient(135deg, #06b6d4, #0ea5e9); color: #fff; }
+  .c .white { background: #fff; color: #1e1b4b; box-shadow: 0 2px 8px rgba(30,27,75,0.05); }
+  .c .span2 { grid-column: span 2; } .c .row2 { grid-row: span 2; }
+  .c .donut { display: flex; align-items: center; gap: 12px; height: 100%; }
+  .c .donut .lg { font-size: 11px; line-height: 1.8; color: #4b4b6a; font-weight: 500; }
+  .c .donut .lg i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+  .c .barz { display: flex; flex-direction: column; gap: 9px; margin-top: 10px; }
+  .c .barz .r { display: flex; align-items: center; gap: 10px; }
+  .c .barz .r .n { font-size: 11px; color: #4b4b6a; width: 64px; font-weight: 600; }
+  .c .barz .r .t { flex: 1; height: 8px; background: #eef0f9; border-radius: 99px; overflow: hidden; }
+  .c .barz .r .t i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg,#818cf8,#6366f1); }
+  .c .barz .r .p { font-size: 11px; font-weight: 700; color: #4338ca; width: 40px; text-align: right; }
+
+  /* =====================================================================
+     시안 D — REPORT DOC (문서형 / 스캔 가능 / Notion 톤)
+     ===================================================================== */
+  .d { background: #fff; padding: 30px 40px; height: 100%; overflow: hidden; color: #37352f; }
+  .d .docttl { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; color: #37352f; display: flex; align-items: center; gap: 10px; }
+  .d .docttl .ic { width: 30px; height: 30px; border-radius: 7px; background: #eef3ff; display: grid; place-items: center; font-size: 17px; }
+  .d .meta { font-size: 12px; color: #9b9a97; margin-top: 6px; display: flex; gap: 14px; }
+  .d .meta b { color: #6b6a66; font-weight: 600; }
+  .d .seclabel { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #9b9a97; margin: 26px 0 12px; display: flex; align-items: center; gap: 8px; }
+  .d .seclabel::after { content: ""; flex: 1; height: 1px; background: #eceae5; }
+  .d .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border: 1px solid #ecebe8; border-radius: 8px; overflow: hidden; }
+  .d .kpis > div { padding: 13px 16px; border-right: 1px solid #ecebe8; }
+  .d .kpis > div:last-child { border-right: none; }
+  .d .kpis .l { font-size: 11px; color: #9b9a97; }
+  .d .kpis .v { font-size: 22px; font-weight: 700; color: #37352f; margin-top: 4px; }
+  .d .kpis .v small { font-size: 12px; color: #9b9a97; font-weight: 500; }
+  .d .kpis .t { font-size: 11px; font-weight: 600; margin-top: 3px; }
+  .d .t.up { color: #2f855a; } .d .t.down { color: #c05621; }
+  .d .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .d .tbl th { text-align: left; font-size: 11px; font-weight: 600; color: #9b9a97; padding: 7px 8px; border-bottom: 2px solid #ecebe8; }
+  .d .tbl th.r, .d .tbl td.r { text-align: right; }
+  .d .tbl td { padding: 8px; border-bottom: 1px solid #f3f2ef; }
+  .d .tbl td .nm { font-weight: 600; color: #37352f; display: flex; align-items: center; gap: 8px; }
+  .d .tbl td .dotg { width: 8px; height: 8px; border-radius: 50%; }
+  .d .tbl td .minibar { display: inline-block; height: 6px; background: #4263eb; border-radius: 3px; vertical-align: middle; margin-left: 8px; }
+  .d .pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 5px; background: #f1f0ed; color: #6b6a66; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>종합 대시보드 — 디자인 시안 4종</h1>
+  <p>같은 캠페인 데이터(인플루언서 마케팅)를 네 가지 전혀 다른 접근으로 구성했습니다. 톤·정보 밀도·레이아웃이 모두 다릅니다.</p>
+</div>
+
+<div class="grid">
+
+  <!-- ============ 시안 A ============ -->
+  <div class="frame">
+    <div class="frame-label">
+      <span class="tag">A</span>
+      <span class="name">Executive Brief</span>
+      <span class="desc">에디토리얼 · 저밀도 · 세리프 · 모노톤 + 골드 액센트</span>
+    </div>
+    <div class="screen"><div class="screen-inner"><div class="a">
+      <div class="kicker">Campaign Overview</div>
+      <h2>2026 봄 신제품<br>인플루언서 캠페인</h2>
+      <p class="sub">총 24명의 크리에이터가 참여했으며, 목표 도달 대비 118%를 달성했습니다.</p>
+      <div class="rule"></div>
+      <div class="hero">
+        <div>
+          <div class="big">3.24<small>M</small></div>
+          <div class="herolabel" style="margin-top:10px">총 도달 (Reach)</div>
+          <div class="delta">▲ 목표 대비 +18.2%</div>
+        </div>
+        <div class="stats" style="flex:1">
+          <div><div class="v">5.8%</div><div class="l">참여율</div></div>
+          <div><div class="v">24</div><div class="l">크리에이터</div></div>
+          <div><div class="v">112</div><div class="l">콘텐츠</div></div>
+        </div>
+      </div>
+      <div class="rule"></div>
+      <div class="kicker" style="color:#a09b8c">플랫폼별 도달 비중</div>
+      <div class="platlist">
+        <div class="platrow"><span class="nm">Instagram</span><span class="track"><span class="fill" style="width:62%"></span></span><span class="pc">62%</span></div>
+        <div class="platrow"><span class="nm">YouTube</span><span class="track"><span class="fill" style="width:24%"></span></span><span class="pc">24%</span></div>
+        <div class="platrow"><span class="nm">TikTok</span><span class="track"><span class="fill" style="width:14%"></span></span><span class="pc">14%</span></div>
+      </div>
+    </div></div></div>
+  </div>
+
+  <!-- ============ 시안 B ============ -->
+  <div class="frame">
+    <div class="frame-label">
+      <span class="tag">B</span>
+      <span class="name">Ops Console</span>
+      <span class="desc">고밀도 · 다크 · 모노스페이스 · 테이블 + 스파크라인</span>
+    </div>
+    <div class="screen"><div class="screen-inner"><div class="b">
+      <div class="topbar">
+        <div class="t">campaign:<span style="color:#e7edf7">spring_2026</span> <span class="dim">/ overview</span></div>
+        <div class="live"><span class="dot"></span>SYNCED 14:32</div>
+      </div>
+      <div class="kstrip">
+        <div class="cell"><div class="l">REACH</div><div class="v">3.24M</div><div class="d pos">+18.2%</div></div>
+        <div class="cell"><div class="l">ENGAGE</div><div class="v up">187K</div><div class="d pos">+9.4%</div></div>
+        <div class="cell"><div class="l">ENG_RATE</div><div class="v">5.78%</div><div class="d neg">-0.3%</div></div>
+        <div class="cell"><div class="l">SPEND</div><div class="v warn">₩42.8M</div><div class="d pos">94% 집행</div></div>
+      </div>
+      <div class="panels">
+        <div class="panel">
+          <div class="ph">// top creators by reach</div>
+          <table>
+            <thead><tr><th>CREATOR</th><th>REACH</th><th>ENG%</th><th>POSTS</th></tr></thead>
+            <tbody>
+              <tr><td><span class="nm">@yuna.style</span></td><td class="hi">842K</td><td>6.9%</td><td>8</td></tr>
+              <tr><td><span class="nm">@daily_jun</span></td><td class="hi">610K</td><td>5.2%</td><td>6</td></tr>
+              <tr><td><span class="nm">@beautymin</span></td><td>488K</td><td>7.1%</td><td>5</td></tr>
+              <tr><td><span class="nm">@trip.sora</span></td><td>391K</td><td>4.8%</td><td>9</td></tr>
+              <tr><td><span class="nm">@food_kkim</span></td><td>274K</td><td>5.5%</td><td>7</td></tr>
+              <tr><td><span class="nm">@m.review</span></td><td>198K</td><td>6.0%</td><td>4</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="panel">
+            <div class="ph">// daily reach (14d)</div>
+            <div class="spark">
+              <span class="bar" style="height:40%"></span><span class="bar" style="height:55%"></span>
+              <span class="bar" style="height:48%"></span><span class="bar" style="height:70%"></span>
+              <span class="bar" style="height:62%"></span><span class="bar" style="height:85%"></span>
+              <span class="bar" style="height:78%"></span><span class="bar" style="height:92%"></span>
+              <span class="bar" style="height:71%"></span><span class="bar" style="height:100%"></span>
+              <span class="bar" style="height:88%"></span><span class="bar" style="height:64%"></span>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="ph">// platform split</div>
+            <div class="ring">
+              <svg width="62" height="62" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#1d212c" stroke-width="4"/>
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#5eead4" stroke-width="4" stroke-dasharray="62 38"/>
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#2563eb" stroke-width="4" stroke-dasharray="24 76" stroke-dashoffset="-62"/>
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#a855f7" stroke-width="4" stroke-dasharray="14 86" stroke-dashoffset="-86"/>
+              </svg>
+              <div class="legend">
+                <div><i style="background:#5eead4"></i>IG 62%</div>
+                <div><i style="background:#2563eb"></i>YT 24%</div>
+                <div><i style="background:#a855f7"></i>TT 14%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+  </div>
+
+  <!-- ============ 시안 C ============ -->
+  <div class="frame">
+    <div class="frame-label">
+      <span class="tag">C</span>
+      <span class="name">Bento Grid</span>
+      <span class="desc">모던 · 컬러풀 · 그라데이션 · 가변 카드 크기</span>
+    </div>
+    <div class="screen"><div class="screen-inner"><div class="c">
+      <div class="chead">
+        <h2>봄 신제품 캠페인</h2>
+        <div class="seg"><span class="on">개요</span><span>크리에이터</span><span>콘텐츠</span></div>
+      </div>
+      <div class="bento">
+        <div class="box grad1 span2 row2">
+          <div class="lab">총 도달 (Reach)</div>
+          <div class="val">3.24<small>M</small></div>
+          <div class="chip">▲ 18.2% vs 목표</div>
+        </div>
+        <div class="box grad2"><div class="lab">참여 수</div><div class="val">187K</div></div>
+        <div class="box grad3"><div class="lab">참여율</div><div class="val">5.8<small>%</small></div></div>
+        <div class="box white"><div class="lab" style="color:#8b8ba7">크리에이터</div><div class="val">24</div></div>
+        <div class="box white"><div class="lab" style="color:#8b8ba7">콘텐츠</div><div class="val">112</div></div>
+        <div class="box white span2 row2">
+          <div class="lab" style="color:#8b8ba7;font-weight:700">플랫폼별 도달</div>
+          <div class="donut">
+            <svg width="86" height="86" viewBox="0 0 36 36">
+              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#6366f1" stroke-width="5" stroke-dasharray="62 38"/>
+              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#ec4899" stroke-width="5" stroke-dasharray="24 76" stroke-dashoffset="-62" transform="rotate(-90 18 18)"/>
+              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#06b6d4" stroke-width="5" stroke-dasharray="14 86" stroke-dashoffset="-86" transform="rotate(-90 18 18)"/>
+            </svg>
+            <div class="lg">
+              <div><i style="background:#6366f1"></i>Instagram 62%</div>
+              <div><i style="background:#ec4899"></i>YouTube 24%</div>
+              <div><i style="background:#06b6d4"></i>TikTok 14%</div>
+            </div>
+          </div>
+        </div>
+        <div class="box white span2">
+          <div class="lab" style="color:#8b8ba7;font-weight:700">상위 크리에이터</div>
+          <div class="barz">
+            <div class="r"><span class="n">@yuna.style</span><span class="t"><i style="width:100%"></i></span><span class="p">842K</span></div>
+            <div class="r"><span class="n">@daily_jun</span><span class="t"><i style="width:72%"></i></span><span class="p">610K</span></div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+  </div>
+
+  <!-- ============ 시안 D ============ -->
+  <div class="frame">
+    <div class="frame-label">
+      <span class="tag">D</span>
+      <span class="name">Report Doc</span>
+      <span class="desc">문서형 · 스캔 가능 · Notion 톤 · 표 중심</span>
+    </div>
+    <div class="screen"><div class="screen-inner"><div class="d">
+      <div class="docttl"><span class="ic">📊</span> 봄 신제품 캠페인 리포트</div>
+      <div class="meta"><span>클라이언트 <b>코스메틱 A</b></span><span>기간 <b>2026.03.01 – 03.31</b></span><span>상태 <b>진행중</b></span></div>
+
+      <div class="seclabel">핵심 지표</div>
+      <div class="kpis">
+        <div><div class="l">총 도달</div><div class="v">3.24<small>M</small></div><div class="t up">▲ 18.2%</div></div>
+        <div><div class="l">참여 수</div><div class="v">187K</div><div class="t up">▲ 9.4%</div></div>
+        <div><div class="l">참여율</div><div class="v">5.8%</div><div class="t down">▼ 0.3%</div></div>
+        <div><div class="l">집행 비용</div><div class="v">₩42.8M</div><div class="t">94% 집행</div></div>
+      </div>
+
+      <div class="seclabel">크리에이터별 성과</div>
+      <table class="tbl">
+        <thead><tr><th>크리에이터</th><th class="r">도달</th><th class="r">참여율</th><th>플랫폼</th></tr></thead>
+        <tbody>
+          <tr><td><span class="nm"><span class="dotg" style="background:#6366f1"></span>@yuna.style</span></td><td class="r">842K<span class="minibar" style="width:48px"></span></td><td class="r">6.9%</td><td><span class="pill">Instagram</span></td></tr>
+          <tr><td><span class="nm"><span class="dotg" style="background:#ec4899"></span>@daily_jun</span></td><td class="r">610K<span class="minibar" style="width:35px"></span></td><td class="r">5.2%</td><td><span class="pill">YouTube</span></td></tr>
+          <tr><td><span class="nm"><span class="dotg" style="background:#06b6d4"></span>@beautymin</span></td><td class="r">488K<span class="minibar" style="width:28px"></span></td><td class="r">7.1%</td><td><span class="pill">Instagram</span></td></tr>
+          <tr><td><span class="nm"><span class="dotg" style="background:#f59e0b"></span>@trip.sora</span></td><td class="r">391K<span class="minibar" style="width:22px"></span></td><td class="r">4.8%</td><td><span class="pill">TikTok</span></td></tr>
+          <tr><td><span class="nm"><span class="dotg" style="background:#10b981"></span>@food_kkim</span></td><td class="r">274K<span class="minibar" style="width:16px"></span></td><td class="r">5.5%</td><td><span class="pill">Instagram</span></td></tr>
+        </tbody>
+      </table>
+    </div></div></div>
+  </div>
+
+</div>
+</body>
+</html>

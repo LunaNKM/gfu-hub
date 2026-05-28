@@ -21,6 +21,13 @@ function sortByOrder<T extends { order?: number }>(items: T[]): T[] {
   return [...items].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
 }
 
+function isFirestorePermissionError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (/permission/i.test(error.message) || /\(403\)/.test(error.message))
+  )
+}
+
 function defaultSectionContent(
   type: string,
   params?: { title?: string; crmSyncType?: CampaignCrmSyncType }
@@ -230,12 +237,24 @@ export async function GET(
 
     // meta insight snapshots 조회 — snapshot이 있으면 광고 KPI/표를 snapshot 기준으로 사용
     // MVP: campaignId 기준 전체 조회. 데이터가 많아지면 기간 필터/페이징 필요 (후속 작업)
-    const metaSnapshots = await queryCollectionByField<CampaignMetaInsightSnapshot>(
-      auth.token,
-      'campaignMetaInsightSnapshots',
-      'campaignId',
-      id
-    )
+    let metaSnapshots: CampaignMetaInsightSnapshot[] = []
+    try {
+      metaSnapshots = await queryCollectionByField<CampaignMetaInsightSnapshot>(
+        auth.token,
+        'campaignMetaInsightSnapshots',
+        'campaignId',
+        id
+      )
+    } catch (snapshotError) {
+      // Snapshot collection 권한/규칙 미반영 상태에서도 workspace는 내려오게 유지.
+      if (!isFirestorePermissionError(snapshotError)) {
+        throw snapshotError
+      }
+      console.warn(
+        'campaignMetaInsightSnapshots 조회 권한이 없어 DB fallback으로 진행합니다:',
+        snapshotError
+      )
+    }
 
     // snapshot이 있으면 snapshot 기반, 없으면 meta_analytics database fallback
     const overview = buildCampaignOverviewFromSources({ databases, metaSnapshots })
