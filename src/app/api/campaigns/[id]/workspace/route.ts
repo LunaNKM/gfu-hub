@@ -9,12 +9,13 @@ import {
 } from '@/lib/server/firestoreRest'
 import { Campaign, CampaignSection, CampaignBlock, CampaignDatabase, CampaignCrmSyncType, CampaignDataRow } from '@/types'
 import { CampaignDatabaseRow } from '@/types/campaignDatabase'
+import type { CampaignMetaInsightSnapshot } from '@/types/campaignMeta'
 import {
   createDefaultDatabase,
   createDefaultTableContent,
   DEFAULT_DATABASE_TYPES,
 } from '@/lib/campaigns/databaseTemplates'
-import { buildCampaignOverview } from '@/lib/campaigns/overview'
+import { buildCampaignOverviewFromSources } from '@/lib/campaigns/overview'
 
 function sortByOrder<T extends { order?: number }>(items: T[]): T[] {
   return [...items].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
@@ -227,8 +228,17 @@ export async function GET(
       return { ...db, rows }
     })
 
-    // overview 계산
-    const overview = buildCampaignOverview(databases)
+    // meta insight snapshots 조회 — snapshot이 있으면 광고 KPI/표를 snapshot 기준으로 사용
+    // MVP: campaignId 기준 전체 조회. 데이터가 많아지면 기간 필터/페이징 필요 (후속 작업)
+    const metaSnapshots = await queryCollectionByField<CampaignMetaInsightSnapshot>(
+      auth.token,
+      'campaignMetaInsightSnapshots',
+      'campaignId',
+      id
+    )
+
+    // snapshot이 있으면 snapshot 기반, 없으면 meta_analytics database fallback
+    const overview = buildCampaignOverviewFromSources({ databases, metaSnapshots })
 
     return NextResponse.json({ campaign, sections, blocks, databases, overview })
   } catch (err) {

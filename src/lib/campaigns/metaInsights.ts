@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import type {
   CampaignMetaInsightLevel,
   CampaignMetaInsightSnapshot,
@@ -28,7 +29,15 @@ export function createMetaInsightSnapshotId(
   return parts.join('_')
 }
 
-// ── Safe number conversion ────────────────────────────────────────
+// ── Source hash ───────────────────────────────────────────────────
+// Hash covers the identity fields + raw numeric metrics.
+// Does NOT include access token or URL.
+
+export function createSourceHash(payload: unknown): string {
+  return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex')
+}
+
+// ── Safe conversions ──────────────────────────────────────────────
 
 function safeNum(value: unknown): number {
   if (value === null || value === undefined || value === '') return 0
@@ -82,7 +91,6 @@ export function normalizeMetaInsightRow(params: {
   const dateStart = safeStr(row['date_start'])
   const dateStop = safeStr(row['date_stop'])
 
-  // video_play_actions is an array of action objects: [{ action_type, value }]
   const videoPlayActions = Array.isArray(row['video_play_actions'])
     ? (row['video_play_actions'] as { value?: unknown }[])
     : []
@@ -93,7 +101,6 @@ export function normalizeMetaInsightRow(params: {
     : []
   const thruPlay = thruPlayActions.reduce((acc, a) => acc + safeNum(a?.value), 0)
 
-  // conversions from actions array if present, else direct field
   let conversions = 0
   if (Array.isArray(row['actions'])) {
     const actions = row['actions'] as { action_type?: unknown; value?: unknown }[]
@@ -103,6 +110,34 @@ export function normalizeMetaInsightRow(params: {
   } else {
     conversions = safeNum(row['conversions'])
   }
+
+  const spend = safeNum(row['spend'])
+  const impressions = safeNum(row['impressions'])
+  const reach = safeNum(row['reach'])
+  const clicks = safeNum(row['clicks'])
+  const ctr = safeNum(row['ctr'])
+  const cpc = safeNum(row['cpc'])
+  const cpm = safeNum(row['cpm'])
+  const currency = safeStr(row['currency']) || undefined
+
+  const sourceHash = createSourceHash({
+    campaignId,
+    metaAccountId,
+    level,
+    metaObjectId,
+    dateStart,
+    dateStop,
+    spend,
+    impressions,
+    reach,
+    clicks,
+    ctr,
+    cpc,
+    cpm,
+    conversions,
+    videoPlay,
+    thruPlay,
+  })
 
   const snapshot: CampaignMetaInsightSnapshot = {
     id: '',
@@ -114,18 +149,19 @@ export function normalizeMetaInsightRow(params: {
     metaObjectName,
     dateStart,
     dateStop,
-    spend: safeNum(row['spend']),
-    impressions: safeNum(row['impressions']),
-    reach: safeNum(row['reach']),
-    clicks: safeNum(row['clicks']),
-    ctr: safeNum(row['ctr']),
-    cpc: safeNum(row['cpc']),
-    cpm: safeNum(row['cpm']),
+    spend,
+    impressions,
+    reach,
+    clicks,
+    ctr,
+    cpc,
+    cpm,
     conversions,
     videoPlay,
     thruPlay,
-    currency: safeStr(row['currency']) || undefined,
+    currency,
     fetchedAt,
+    sourceHash,
   }
 
   snapshot.id = createMetaInsightSnapshotId(snapshot)
@@ -142,6 +178,9 @@ export function validateRefreshRequest(
   }
   const b = body as Record<string, unknown>
 
+  if (typeof b['mappingId'] !== 'string' || !b['mappingId']) {
+    return { valid: false, error: 'mappingId가 필요합니다.' }
+  }
   if (typeof b['metaAccountId'] !== 'string' || !b['metaAccountId']) {
     return { valid: false, error: 'metaAccountId가 필요합니다.' }
   }
@@ -161,21 +200,23 @@ export function validateRefreshRequest(
     return { valid: false, error: 'dateStop가 필요합니다.' }
   }
 
+  const safeStringArray = (v: unknown): string[] | undefined => {
+    if (!Array.isArray(v)) return undefined
+    const filtered = v.filter((x): x is string => typeof x === 'string' && x.length > 0)
+    return filtered.length > 0 ? filtered : undefined
+  }
+
   return {
     valid: true,
     data: {
+      mappingId: b['mappingId'] as string,
       metaAccountId: b['metaAccountId'] as string,
-      mappingId: typeof b['mappingId'] === 'string' ? b['mappingId'] : undefined,
       levels: b['levels'] as CampaignMetaInsightLevel[],
       dateStart: b['dateStart'] as string,
       dateStop: b['dateStop'] as string,
-      metaCampaignIds: Array.isArray(b['metaCampaignIds'])
-        ? (b['metaCampaignIds'] as string[])
-        : undefined,
-      metaAdsetIds: Array.isArray(b['metaAdsetIds'])
-        ? (b['metaAdsetIds'] as string[])
-        : undefined,
-      metaAdIds: Array.isArray(b['metaAdIds']) ? (b['metaAdIds'] as string[]) : undefined,
+      metaCampaignIds: safeStringArray(b['metaCampaignIds']),
+      metaAdsetIds: safeStringArray(b['metaAdsetIds']),
+      metaAdIds: safeStringArray(b['metaAdIds']),
     },
   }
 }

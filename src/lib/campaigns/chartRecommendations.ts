@@ -955,6 +955,73 @@ function buildAdPerformanceFromSnapshots(
   }
 }
 
+function buildAdDetailFromSnapshots(
+  snapshots: CampaignMetaInsightSnapshot[]
+): Pick<CampaignDetailTables, 'ad' | 'adSummary' | 'adNote' | 'metaSpendSpark'> {
+  const ad: CampaignAdPerformanceRow[] = [...snapshots]
+    .sort((a, b) => {
+      if (b.spend !== a.spend) return b.spend - a.spend
+      return b.dateStart.localeCompare(a.dateStart)
+    })
+    .map((s) => ({
+      level: s.level,
+      name: s.metaObjectName || s.metaObjectId,
+      spend: s.spend,
+      impressions: s.impressions,
+      reach: s.reach,
+      clicks: s.clicks,
+      ctr: s.ctr,
+      cpc: s.cpc,
+      cpm: s.cpm,
+      thruPlay: s.thruPlay,
+      metaObjectId: s.metaObjectId,
+      metaAccountId: s.metaAccountId,
+      dateStart: s.dateStart,
+      dateStop: s.dateStop,
+      currency: s.currency,
+      fetchedAt:
+        typeof s.fetchedAt === 'string' ? s.fetchedAt : (s.fetchedAt as Date).toISOString(),
+      sourceHash: s.sourceHash,
+    }))
+
+  const maxSpend = Math.max(...ad.map((r) => r.spend ?? 0), 1)
+  const maxCtr = Math.max(...ad.map((r) => r.ctr ?? 0), 0.01)
+  const maxCpc = Math.max(...ad.map((r) => r.cpc ?? 0), 1)
+  const topByCtr = [...ad].sort((a, b) => (b.ctr ?? 0) - (a.ctr ?? 0))[0]
+  const topByCpc = [...ad].sort((a, b) => (b.cpc ?? 0) - (a.cpc ?? 0))[0]
+
+  const adSummary: CampaignDetailTabSummary[] =
+    ad.length > 0
+      ? [
+          { label: 'Spend Top', pct: 100, value: fmtCompact(maxSpend), color: 'blue' },
+          {
+            label: 'CTR Top',
+            pct: Math.round(Math.min(100, ((topByCtr?.ctr ?? 0) / maxCtr) * 100)),
+            value: `${(topByCtr?.ctr ?? 0).toFixed(2)}%`,
+            color: 'green',
+          },
+          {
+            label: 'CPC Watch',
+            pct: Math.round(Math.min(100, ((topByCpc?.cpc ?? 0) / maxCpc) * 100)),
+            value: fmtCompact(topByCpc?.cpc ?? 0),
+            color: 'orange',
+          },
+        ]
+      : []
+
+  const sparkRaw = ad.slice(0, 7).map((r) => r.spend ?? 0)
+  const sparkMax = Math.max(...sparkRaw, 1)
+  const metaSpendSpark = sparkRaw.map((v) => Math.max(8, Math.round((v / sparkMax) * 100)))
+
+  return {
+    ad,
+    adSummary,
+    adNote:
+      'Meta API snapshot 기반 데이터입니다. level, spend, impressions, clicks, CTR, CPC, CPM, ThruPlay를 포함합니다.',
+    metaSpendSpark,
+  }
+}
+
 export function buildCampaignOverviewFromSources(params: {
   databases: CampaignDatabase[]
   metaSnapshots?: CampaignMetaInsightSnapshot[]
@@ -987,18 +1054,23 @@ export function buildCampaignOverviewFromSources(params: {
         return {
           ...m,
           value: adPerformance.spend > 0 ? fmtN(adPerformance.spend) : '-',
-          pill: budget.plannedBudget > 0
-            ? { text: `${Math.round(budget.burnRate)}% 소진`, variant: 'flat' }
-            : undefined,
+          pill:
+            budget.plannedBudget > 0
+              ? { text: `${Math.round(budget.burnRate)}% 소진`, variant: 'flat' }
+              : undefined,
         }
       }
       if (m.id === 'meta_ctr') {
         return {
           ...m,
           value: adPerformance.ctr > 0 ? fmtPct(adPerformance.ctr) : '-',
-          pill: adPerformance.ctr > 0
-            ? { text: adPerformance.ctr >= 1.5 ? '양호' : '관찰', variant: adPerformance.ctr >= 1.5 ? 'up' : 'warn' }
-            : undefined,
+          pill:
+            adPerformance.ctr > 0
+              ? {
+                  text: adPerformance.ctr >= 1.5 ? '양호' : '관찰',
+                  variant: adPerformance.ctr >= 1.5 ? 'up' : 'warn',
+                }
+              : undefined,
         }
       }
       if (m.id === 'meta_cpc') {
@@ -1016,12 +1088,23 @@ export function buildCampaignOverviewFromSources(params: {
       return m
     })
 
+    // snapshot 기반 상세 광고 표 교체
+    const adDetail = buildAdDetailFromSnapshots(metaSnapshots)
+    const detailTables: CampaignDetailTables = {
+      ...baseOverview.detailTables!,
+      ad: adDetail.ad,
+      adSummary: adDetail.adSummary,
+      adNote: adDetail.adNote,
+      metaSpendSpark: adDetail.metaSpendSpark,
+    }
+
     return {
       ...baseOverview,
       metrics: updatedMetrics,
       adPerformance,
       budget,
       summary,
+      detailTables,
     }
   }
 

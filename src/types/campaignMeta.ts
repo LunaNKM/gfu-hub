@@ -40,7 +40,7 @@ export interface CampaignMetaInsightSnapshot {
 
 export interface CampaignMetaRefreshRequest {
   metaAccountId: string
-  mappingId?: string
+  mappingId: string
   levels: CampaignMetaInsightLevel[]
   dateStart: string
   dateStop: string
@@ -52,6 +52,7 @@ export interface CampaignMetaRefreshRequest {
 export interface CampaignMetaRefreshResult {
   campaignId: string
   metaAccountId: string
+  rawFetchedCount: number
   fetchedCount: number
   upsertedCount: number
   skippedCount: number

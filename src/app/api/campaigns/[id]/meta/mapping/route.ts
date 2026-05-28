@@ -14,6 +14,16 @@ import type {
 
 const VALID_LEVELS: CampaignMetaInsightLevel[] = ['campaign', 'adset', 'ad']
 
+// Ensures value is a deduped, non-empty-string-only array
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return [
+    ...new Set(
+      value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    ),
+  ]
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -70,21 +80,25 @@ export async function POST(
 
   const b = body as Record<string, unknown>
 
-  if (typeof b['metaAccountId'] !== 'string' || !b['metaAccountId']) {
+  if (typeof b['metaAccountId'] !== 'string' || !b['metaAccountId'].trim()) {
     return NextResponse.json({ error: 'metaAccountId가 필요합니다.' }, { status: 400 })
   }
+
   if (!Array.isArray(b['selectedLevels']) || b['selectedLevels'].length === 0) {
     return NextResponse.json({ error: 'selectedLevels가 필요합니다.' }, { status: 400 })
   }
-  for (const lv of b['selectedLevels'] as unknown[]) {
-    if (!VALID_LEVELS.includes(lv as CampaignMetaInsightLevel)) {
-      return NextResponse.json({ error: `유효하지 않은 level: ${lv}` }, { status: 400 })
-    }
+  const selectedLevels = (b['selectedLevels'] as unknown[]).filter(
+    (lv): lv is CampaignMetaInsightLevel => VALID_LEVELS.includes(lv as CampaignMetaInsightLevel)
+  )
+  if (selectedLevels.length === 0) {
+    return NextResponse.json({ error: '유효한 selectedLevels 값이 없습니다.' }, { status: 400 })
   }
 
-  const now = new Date().toISOString()
+  const metaCampaignIds = stringArray(b['metaCampaignIds'])
+  const metaAdsetIds = stringArray(b['metaAdsetIds'])
+  const metaAdIds = stringArray(b['metaAdIds'])
 
-  // mappingId가 있으면 update, 없으면 create
+  const now = new Date().toISOString()
   const existingMappingId = typeof b['mappingId'] === 'string' ? b['mappingId'] : undefined
 
   try {
@@ -100,10 +114,10 @@ export async function POST(
 
       const updateData: Record<string, unknown> = {
         metaAccountId: b['metaAccountId'],
-        selectedLevels: b['selectedLevels'],
-        metaCampaignIds: Array.isArray(b['metaCampaignIds']) ? b['metaCampaignIds'] : [],
-        metaAdsetIds: Array.isArray(b['metaAdsetIds']) ? b['metaAdsetIds'] : [],
-        metaAdIds: Array.isArray(b['metaAdIds']) ? b['metaAdIds'] : [],
+        selectedLevels,
+        metaCampaignIds,
+        metaAdsetIds,
+        metaAdIds,
         enabled: b['enabled'] !== false,
         updatedAt: now,
       }
@@ -114,10 +128,10 @@ export async function POST(
     const data: Record<string, unknown> = {
       campaignId: id,
       metaAccountId: b['metaAccountId'],
-      selectedLevels: b['selectedLevels'],
-      metaCampaignIds: Array.isArray(b['metaCampaignIds']) ? b['metaCampaignIds'] : [],
-      metaAdsetIds: Array.isArray(b['metaAdsetIds']) ? b['metaAdsetIds'] : [],
-      metaAdIds: Array.isArray(b['metaAdIds']) ? b['metaAdIds'] : [],
+      selectedLevels,
+      metaCampaignIds,
+      metaAdsetIds,
+      metaAdIds,
       enabled: b['enabled'] !== false,
       createdAt: now,
       updatedAt: now,

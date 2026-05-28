@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, isAuthResponse } from '@/lib/server/auth'
 import { getDocument, commitWrites } from '@/lib/server/firestoreRest'
 import type { Campaign } from '@/types'
-import type { CampaignMetaInsightSnapshot, CampaignMetaRefreshResult } from '@/types/campaignMeta'
+import type {
+  CampaignMetaMapping,
+  CampaignMetaInsightLevel,
+  CampaignMetaInsightSnapshot,
+  CampaignMetaRefreshResult,
+} from '@/types/campaignMeta'
 import {
   normalizeMetaInsightRow,
   validateRefreshRequest,
@@ -31,15 +36,20 @@ const INSIGHT_FIELDS: Record<string, string[]> = {
   ],
 }
 
+// filterIds must be non-empty — prevents fetching entire ad account
 async function fetchInsightPage(
   accountId: string,
   accessToken: string,
   level: string,
   dateStart: string,
   dateStop: string,
-  filterIds: string[] | undefined,
+  filterIds: string[],
   afterCursor?: string
 ): Promise<{ rows: Record<string, unknown>[]; nextCursor?: string }> {
+  if (filterIds.length === 0) {
+    throw new Error(`${level} refresh에는 object id 필터가 필요합니다.`)
+  }
+
   const fields = INSIGHT_FIELDS[level]?.join(',') ?? ''
   const params = new URLSearchParams({
     access_token: accessToken,
@@ -48,34 +58,44 @@ async function fetchInsightPage(
     time_range: JSON.stringify({ since: dateStart, until: dateStop }),
     time_increment: '1',
     limit: '100',
-  })
-
-  if (filterIds && filterIds.length > 0) {
-    params.set('filtering', JSON.stringify([{
+    filtering: JSON.stringify([{
       field: `${level}.id`,
       operator: 'IN',
       value: filterIds,
-    }]))
-  }
-
-  if (afterCursor) {
-    params.set('after', afterCursor)
-  }
+    }]),
+  })
+  if (afterCursor) params.set('after', afterCursor)
 
   const url = `${META_API_BASE}/${accountId}/insights?${params.toString()}`
-  let data: Record<string, unknown>
+
+  let res: Response
   try {
-    const res = await fetch(url)
-    data = await res.json() as Record<string, unknown>
-  } catch {
-    return { rows: [] }
+    res = await fetch(url)
+  } catch (err) {
+    throw new Error(`Meta API 네트워크 오류: ${err instanceof Error ? err.message : String(err)}`)
   }
 
-  if (data['error']) return { rows: [] }
+  if (!res.ok) {
+    throw new Error(`Meta API HTTP 오류: ${res.status}`)
+  }
+
+  let data: Record<string, unknown>
+  try {
+    data = (await res.json()) as Record<string, unknown>
+  } catch {
+    throw new Error('Meta API 응답을 파싱할 수 없습니다.')
+  }
+
+  if (data['error']) {
+    const metaErr = data['error'] as Record<string, unknown>
+    throw new Error(`Meta API 오류: ${metaErr['message'] ?? '알 수 없는 오류'}`)
+  }
 
   const rows = (data['data'] as Record<string, unknown>[] | undefined) ?? []
   const paging = data['paging'] as Record<string, unknown> | undefined
-  const nextCursor = (paging?.['cursors'] as Record<string, unknown> | undefined)?.['after'] as string | undefined
+  const nextCursor = (paging?.['cursors'] as Record<string, unknown> | undefined)?.['after'] as
+    | string
+    | undefined
 
   return { rows, nextCursor }
 }
@@ -86,7 +106,7 @@ async function fetchAllInsightRows(
   level: string,
   dateStart: string,
   dateStop: string,
-  filterIds: string[] | undefined
+  filterIds: string[]
 ): Promise<Record<string, unknown>[]> {
   const allRows: Record<string, unknown>[] = []
   let cursor: string | undefined = undefined
@@ -101,6 +121,27 @@ async function fetchAllInsightRows(
   }
 
   return allRows
+}
+
+// Returns requested ∩ allowed. If requested is empty, returns allowed.
+// Throws if any requested id is not in allowed.
+function resolveSubset(
+  requested: string[] | undefined,
+  allowed: string[],
+  label: string
+): string[] {
+  if (!requested || requested.length === 0) return allowed
+  const invalid = requested.filter((id) => !allowed.includes(id))
+  if (invalid.length > 0) {
+    throw new Error(`${label}에 허용되지 않은 id가 포함되어 있습니다: ${invalid.join(', ')}`)
+  }
+  return requested
+}
+
+const LEVEL_ID_MAP: Record<CampaignMetaInsightLevel, keyof CampaignMetaMapping> = {
+  campaign: 'metaCampaignIds',
+  adset: 'metaAdsetIds',
+  ad: 'metaAdIds',
 }
 
 export async function POST(
@@ -129,32 +170,107 @@ export async function POST(
     return NextResponse.json({ error: validation.error }, { status: 400 })
   }
 
-  const { metaAccountId, mappingId, levels, dateStart, dateStop, metaCampaignIds, metaAdsetIds, metaAdIds } =
+  const { mappingId, metaAccountId, levels, dateStart, dateStop, metaCampaignIds, metaAdsetIds, metaAdIds } =
     validation.data
+
+  // ── Mapping 검증 ──────────────────────────────────────────────────
+  const mapping = await getDocument<CampaignMetaMapping>(
+    auth.token,
+    'campaignMetaMappings',
+    mappingId
+  )
+  if (!mapping) {
+    return NextResponse.json({ error: 'mapping을 찾을 수 없습니다.' }, { status: 404 })
+  }
+  if (mapping.campaignId !== campaignId) {
+    return NextResponse.json({ error: '해당 캠페인의 mapping이 아닙니다.' }, { status: 403 })
+  }
+  if (!mapping.enabled) {
+    return NextResponse.json({ error: 'mapping이 비활성화되어 있습니다.' }, { status: 400 })
+  }
+  if (mapping.metaAccountId !== metaAccountId) {
+    return NextResponse.json(
+      { error: 'metaAccountId가 mapping과 일치하지 않습니다.' },
+      { status: 400 }
+    )
+  }
+
+  // levels는 mapping.selectedLevels의 subset이어야 함
+  const invalidLevels = levels.filter((lv) => !mapping.selectedLevels.includes(lv))
+  if (invalidLevels.length > 0) {
+    return NextResponse.json(
+      { error: `mapping에 포함되지 않은 level: ${invalidLevels.join(', ')}` },
+      { status: 400 }
+    )
+  }
 
   const accessToken = process.env.META_ACCESS_TOKEN
   if (!accessToken) {
     return NextResponse.json({ error: 'META_ACCESS_TOKEN이 설정되지 않았습니다.' }, { status: 503 })
   }
 
-  const fetchedAt = new Date().toISOString()
-  const snapshots: CampaignMetaInsightSnapshot[] = []
-
-  const filterIdsByLevel: Record<string, string[] | undefined> = {
+  // ── level별 유효 ids 결정 ─────────────────────────────────────────
+  const bodyIdsByLevel: Record<string, string[] | undefined> = {
     campaign: metaCampaignIds,
     adset: metaAdsetIds,
     ad: metaAdIds,
   }
 
+  const effectiveIdsByLevel: Partial<Record<CampaignMetaInsightLevel, string[]>> = {}
   for (const level of levels) {
-    const rows = await fetchAllInsightRows(
-      metaAccountId,
-      accessToken,
-      level,
-      dateStart,
-      dateStop,
-      filterIdsByLevel[level]
+    const mappingField = LEVEL_ID_MAP[level]
+    const allowedIds = (mapping[mappingField] as string[]) ?? []
+
+    if (allowedIds.length === 0) {
+      // mapping에 해당 level의 id가 없으므로 skip
+      continue
+    }
+
+    let resolvedIds: string[]
+    try {
+      resolvedIds = resolveSubset(bodyIdsByLevel[level], allowedIds, level)
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : 'id 검증 오류' },
+        { status: 400 }
+      )
+    }
+
+    if (resolvedIds.length > 0) {
+      effectiveIdsByLevel[level] = resolvedIds
+    }
+  }
+
+  const activeLevels = Object.keys(effectiveIdsByLevel) as CampaignMetaInsightLevel[]
+  if (activeLevels.length === 0) {
+    return NextResponse.json(
+      { error: 'refresh 가능한 object id가 없습니다. mapping에 id를 먼저 등록하세요.' },
+      { status: 400 }
     )
+  }
+
+  // ── Meta API fetch ────────────────────────────────────────────────
+  const fetchedAt = new Date().toISOString()
+  const snapshots: CampaignMetaInsightSnapshot[] = []
+  let rawFetchedCount = 0
+  let skippedCount = 0
+
+  for (const level of activeLevels) {
+    const filterIds = effectiveIdsByLevel[level]!
+    let rows: Record<string, unknown>[]
+    try {
+      rows = await fetchAllInsightRows(
+        metaAccountId, accessToken, level, dateStart, dateStop, filterIds
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Meta API 오류'
+      return NextResponse.json(
+        { error: 'Meta insights를 불러오지 못했습니다.', detail: msg },
+        { status: 502 }
+      )
+    }
+
+    rawFetchedCount += rows.length
 
     for (const row of rows) {
       const snapshot = normalizeMetaInsightRow({
@@ -165,59 +281,66 @@ export async function POST(
         row,
         fetchedAt,
       })
-      // skip rows with no metaObjectId (malformed response)
-      if (!snapshot.metaObjectId) continue
+      if (!snapshot.metaObjectId || !snapshot.dateStart || !snapshot.dateStop) {
+        skippedCount++
+        continue
+      }
       snapshots.push(snapshot)
     }
   }
 
-  const fetchedCount = snapshots.length
+  // ── Firestore upsert ──────────────────────────────────────────────
   let upsertedCount = 0
-
   if (snapshots.length > 0) {
-    // batch upsert in chunks of 500 (Firestore commit limit)
     const BATCH_SIZE = 500
-    for (let i = 0; i < snapshots.length; i += BATCH_SIZE) {
-      const chunk = snapshots.slice(i, i + BATCH_SIZE)
-      const writes = chunk.map((s) => ({
-        type: 'upsert' as const,
-        collection: 'campaignMetaInsightSnapshots',
-        documentId: s.id,
-        data: {
-          campaignId: s.campaignId,
-          mappingId: s.mappingId ?? null,
-          metaAccountId: s.metaAccountId,
-          level: s.level,
-          metaObjectId: s.metaObjectId,
-          metaObjectName: s.metaObjectName,
-          dateStart: s.dateStart,
-          dateStop: s.dateStop,
-          spend: s.spend,
-          impressions: s.impressions,
-          reach: s.reach,
-          clicks: s.clicks,
-          ctr: s.ctr,
-          cpc: s.cpc,
-          cpm: s.cpm,
-          conversions: s.conversions,
-          videoPlay: s.videoPlay,
-          thruPlay: s.thruPlay,
-          currency: s.currency ?? null,
-          fetchedAt: s.fetchedAt,
-        } as Record<string, unknown>,
-      }))
-      await commitWrites(auth.token, writes)
-      upsertedCount += chunk.length
+    try {
+      for (let i = 0; i < snapshots.length; i += BATCH_SIZE) {
+        const chunk = snapshots.slice(i, i + BATCH_SIZE)
+        const writes = chunk.map((s) => ({
+          type: 'upsert' as const,
+          collection: 'campaignMetaInsightSnapshots',
+          documentId: s.id,
+          data: {
+            campaignId: s.campaignId,
+            mappingId: s.mappingId ?? null,
+            metaAccountId: s.metaAccountId,
+            level: s.level,
+            metaObjectId: s.metaObjectId,
+            metaObjectName: s.metaObjectName,
+            dateStart: s.dateStart,
+            dateStop: s.dateStop,
+            spend: s.spend,
+            impressions: s.impressions,
+            reach: s.reach,
+            clicks: s.clicks,
+            ctr: s.ctr,
+            cpc: s.cpc,
+            cpm: s.cpm,
+            conversions: s.conversions,
+            videoPlay: s.videoPlay,
+            thruPlay: s.thruPlay,
+            currency: s.currency ?? null,
+            fetchedAt: s.fetchedAt,
+            sourceHash: s.sourceHash ?? null,
+          } as Record<string, unknown>,
+        }))
+        await commitWrites(auth.token, writes)
+        upsertedCount += chunk.length
+      }
+    } catch (err) {
+      console.error('snapshot upsert 오류:', err)
+      return NextResponse.json({ error: 'snapshot 저장 중 오류가 발생했습니다.' }, { status: 500 })
     }
   }
 
   const result: CampaignMetaRefreshResult = {
     campaignId,
     metaAccountId,
-    fetchedCount,
+    rawFetchedCount,
+    fetchedCount: snapshots.length,
     upsertedCount,
-    skippedCount: fetchedCount - upsertedCount,
-    levels,
+    skippedCount,
+    levels: activeLevels,
     dateStart,
     dateStop,
     fetchedAt,
