@@ -57,27 +57,27 @@ export function MetaMappingPanel({
     refreshMapping,
     reloadMappings,
     lastRefreshResult,
+    clearStatus,
   } = useCampaignMetaMapping(campaignId, onRefreshSuccess)
 
   const [form, setForm] = useState<MetaMappingFormState>(emptyForm)
   // form key: mapping이 바뀌면 id editors remount
   const [formKey, setFormKey] = useState(0)
 
-  // 선택된 mapping → form 동기화
+  // 선택된 mapping → form 동기화 (activeMapping이 null이면 새 Mapping 모드이므로 덮어쓰지 않음)
   useEffect(() => {
-    if (activeMapping) {
-      setForm({
-        mappingId: activeMapping.id,
-        metaAccountId: activeMapping.metaAccountId ?? '',
-        selectedLevels: activeMapping.selectedLevels ?? ['campaign'],
-        metaCampaignIds: activeMapping.metaCampaignIds ?? [],
-        metaAdsetIds: activeMapping.metaAdsetIds ?? [],
-        metaAdIds: activeMapping.metaAdIds ?? [],
-        enabled: activeMapping.enabled !== false,
-      })
-      setFormKey((k) => k + 1)
-    }
-  }, [activeMapping?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!activeMapping) return
+    setForm({
+      mappingId: activeMapping.id,
+      metaAccountId: activeMapping.metaAccountId ?? '',
+      selectedLevels: activeMapping.selectedLevels ?? ['campaign'],
+      metaCampaignIds: activeMapping.metaCampaignIds ?? [],
+      metaAdsetIds: activeMapping.metaAdsetIds ?? [],
+      metaAdIds: activeMapping.metaAdIds ?? [],
+      enabled: activeMapping.enabled !== false,
+    })
+    setFormKey((k) => k + 1)
+  }, [activeMapping]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 패널 열릴 때 mappings 재조회
   useEffect(() => {
@@ -91,6 +91,18 @@ export function MetaMappingPanel({
         ? prev.selectedLevels.filter((l) => l !== level)
         : [...prev.selectedLevels, level],
     }))
+  }
+
+  function handleCreateNewMapping() {
+    setActiveMappingId(undefined)
+    setForm(emptyForm())
+    setFormKey((k) => k + 1)
+    clearStatus()
+  }
+
+  function handleSelectMapping(id: string) {
+    setActiveMappingId(id)
+    clearStatus()
   }
 
   async function handleSave() {
@@ -204,13 +216,20 @@ export function MetaMappingPanel({
             </div>
           )}
 
-          {/* Mapping 선택 드롭다운 (있을 때만) */}
-          {mappings.length > 1 && (
+          {/* Mapping 선택 드롭다운 (저장된 mapping이 1개 이상이면 표시) */}
+          {mappings.length >= 1 && (
             <div>
               <label style={labelSt}>저장된 Mapping</label>
               <select
                 value={activeMappingId ?? ''}
-                onChange={(e) => setActiveMappingId(e.target.value || undefined)}
+                onChange={(e) => {
+                  const val = e.target.value
+                  if (val === '') {
+                    handleCreateNewMapping()
+                  } else {
+                    handleSelectMapping(val)
+                  }
+                }}
                 style={selectSt}
               >
                 {mappings.map((m) => (
@@ -363,6 +382,9 @@ export function MetaMappingPanel({
               mappingId={form.mappingId}
               selectedLevels={form.selectedLevels}
               metaAccountId={form.metaAccountId}
+              metaCampaignIds={form.metaCampaignIds}
+              metaAdsetIds={form.metaAdsetIds}
+              metaAdIds={form.metaAdIds}
               refreshing={refreshing}
               lastResult={lastRefreshResult}
               onRefresh={handleRefresh}

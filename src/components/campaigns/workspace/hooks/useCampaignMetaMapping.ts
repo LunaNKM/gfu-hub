@@ -52,7 +52,7 @@ export function useCampaignMetaMapping(
   const [lastRefreshResult, setLastRefreshResult] = useState<CampaignMetaRefreshResult | null>(null)
 
   const activeMapping =
-    mappings.find((m) => m.id === activeMappingId) ?? mappings[0] ?? null
+    mappings.find((m) => m.id === activeMappingId) ?? null
 
   const reloadMappings = useCallback(async () => {
     if (!user) return
@@ -109,6 +109,11 @@ export function useCampaignMetaMapping(
     [campaignId, user, reloadMappings]
   )
 
+  const clearStatus = useCallback(() => {
+    setLastRefreshResult(null)
+    setError(null)
+  }, [])
+
   const refreshMapping = useCallback(
     async (request: CampaignMetaRefreshRequest) => {
       if (!user) return
@@ -154,5 +159,6 @@ export function useCampaignMetaMapping(
     refreshMapping,
     reloadMappings,
     lastRefreshResult,
+    clearStatus,
   }
 }

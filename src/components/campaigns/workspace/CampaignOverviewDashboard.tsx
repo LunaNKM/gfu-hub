@@ -585,10 +585,7 @@ export function CampaignOverviewDashboard({ overview, campaignId, onReloadWorksp
         campaignId={campaignId}
         isOpen={metaPanelOpen}
         onClose={() => setMetaPanelOpen(false)}
-        onRefreshSuccess={() => {
-          setMetaPanelOpen(false)
-          onReloadWorkspace()
-        }}
+        onRefreshSuccess={onReloadWorkspace}
       />
     </div>
   )

@@ -14,6 +14,13 @@ import type {
 
 const VALID_LEVELS: CampaignMetaInsightLevel[] = ['campaign', 'adset', 'ad']
 
+function isFirestorePermissionError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (/permission/i.test(error.message) || /\(403\)/.test(error.message))
+  )
+}
+
 // Ensures value is a deduped, non-empty-string-only array
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -49,6 +56,12 @@ export async function GET(
     return NextResponse.json({ mappings: enabled })
   } catch (err) {
     console.error('meta mapping 조회 오류:', err)
+    if (isFirestorePermissionError(err)) {
+      return NextResponse.json(
+        { error: 'campaignMetaMappings 컬렉션 권한이 없어 조회할 수 없습니다.' },
+        { status: 403 }
+      )
+    }
     return NextResponse.json({ error: 'mapping을 불러올 수 없습니다.' }, { status: 500 })
   }
 }
@@ -140,6 +153,12 @@ export async function POST(
     return NextResponse.json({ mappingId }, { status: 201 })
   } catch (err) {
     console.error('meta mapping 저장 오류:', err)
+    if (isFirestorePermissionError(err)) {
+      return NextResponse.json(
+        { error: 'campaignMetaMappings 컬렉션 권한이 없어 저장할 수 없습니다.' },
+        { status: 403 }
+      )
+    }
     return NextResponse.json({ error: 'mapping을 저장할 수 없습니다.' }, { status: 500 })
   }
 }

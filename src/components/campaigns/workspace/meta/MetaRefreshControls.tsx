@@ -36,6 +36,9 @@ interface MetaRefreshControlsProps {
   mappingId: string | undefined
   selectedLevels: CampaignMetaInsightLevel[]
   metaAccountId: string
+  metaCampaignIds: string[]
+  metaAdsetIds: string[]
+  metaAdIds: string[]
   refreshing: boolean
   lastResult: CampaignMetaRefreshResult | null
   onRefresh: (params: {
@@ -47,20 +50,56 @@ interface MetaRefreshControlsProps {
   }) => void
 }
 
+// level별로 최소 1개의 object ID가 있는지 검사
+function levelHasIds(
+  levels: CampaignMetaInsightLevel[],
+  campaignIds: string[],
+  adsetIds: string[],
+  adIds: string[],
+): boolean {
+  return levels.every((level) => {
+    if (level === 'campaign') return campaignIds.length > 0
+    if (level === 'adset')    return adsetIds.length > 0
+    if (level === 'ad')       return adIds.length > 0
+    return false
+  })
+}
+
+// 누락된 level ID를 알려주는 안내 문구
+function missingIdsHint(
+  levels: CampaignMetaInsightLevel[],
+  campaignIds: string[],
+  adsetIds: string[],
+  adIds: string[],
+): string {
+  const missing: string[] = []
+  if (levels.includes('campaign') && campaignIds.length === 0) missing.push('Campaign ID')
+  if (levels.includes('adset')    && adsetIds.length    === 0) missing.push('Ad Set ID')
+  if (levels.includes('ad')       && adIds.length       === 0) missing.push('Ad ID')
+  return missing.length > 0
+    ? `누락된 Object ID: ${missing.join(', ')}`
+    : ''
+}
+
 export function MetaRefreshControls({
   mappingId,
   selectedLevels,
   metaAccountId,
+  metaCampaignIds,
+  metaAdsetIds,
+  metaAdIds,
   refreshing,
   lastResult,
   onRefresh,
 }: MetaRefreshControlsProps) {
   const [dates, setDates] = useState(defaultDates)
 
+  const idsValid = levelHasIds(selectedLevels, metaCampaignIds, metaAdsetIds, metaAdIds)
   const canRefresh =
     !!mappingId &&
     selectedLevels.length > 0 &&
     metaAccountId.trim().length > 0 &&
+    idsValid &&
     !refreshing
 
   function handleRefresh() {
@@ -106,7 +145,16 @@ export function MetaRefreshControls({
       {/* 안내 */}
       {!canRefresh && !refreshing && (
         <p style={{ margin: '0 0 10px', color: '#b57a00', fontSize: 11 }}>
-          새로고침하려면 mapping을 저장하고, level과 object ID가 최소 하나 이상 필요합니다.
+          {!mappingId
+            ? 'mapping을 먼저 저장해 주세요.'
+            : selectedLevels.length === 0
+              ? '수집 Level을 하나 이상 선택해 주세요.'
+              : !metaAccountId.trim()
+                ? 'Meta Account ID를 입력해 주세요.'
+                : missingIdsHint(selectedLevels, metaCampaignIds, metaAdsetIds, metaAdIds)
+                  ? missingIdsHint(selectedLevels, metaCampaignIds, metaAdsetIds, metaAdIds)
+                  : 'Object ID를 입력해 주세요.'
+          }
         </p>
       )}
 
