@@ -309,11 +309,36 @@ export function MetaObjectSelector({
                     disabled={!campaignEnabled}
                     onChange={() => {
                       if (!campaignEnabled) return
-                      onChange({
-                        metaCampaignIds: toggle(selectedCampaignIds, campaign.id),
-                        metaAdsetIds: selectedAdsetIds,
-                        metaAdIds: selectedAdIds,
-                      })
+                      const adding = !isChecked
+                      const newCampaignIds = toggle(selectedCampaignIds, campaign.id)
+                      if (adding) {
+                        // 하위 adset/ad 자동 선택 (해당 level이 활성화된 경우에만)
+                        const newAdsetIds = adsetEnabled
+                          ? [...new Set([...selectedAdsetIds, ...campaignAdsets.map((a) => a.id)])]
+                          : selectedAdsetIds
+                        const cascadeAdIds = adEnabled
+                          ? campaignAdsets.flatMap((a) =>
+                              ads.filter((ad) => ad.adsetId === a.id).map((ad) => ad.id)
+                            )
+                          : []
+                        const newAdIds = adEnabled
+                          ? [...new Set([...selectedAdIds, ...cascadeAdIds])]
+                          : selectedAdIds
+                        onChange({ metaCampaignIds: newCampaignIds, metaAdsetIds: newAdsetIds, metaAdIds: newAdIds })
+                      } else {
+                        // 하위 adset/ad 선택 해제
+                        const childAdsetIds = new Set(campaignAdsets.map((a) => a.id))
+                        const childAdIds = new Set(
+                          campaignAdsets.flatMap((a) =>
+                            ads.filter((ad) => ad.adsetId === a.id).map((ad) => ad.id)
+                          )
+                        )
+                        onChange({
+                          metaCampaignIds: newCampaignIds,
+                          metaAdsetIds: selectedAdsetIds.filter((id) => !childAdsetIds.has(id)),
+                          metaAdIds: selectedAdIds.filter((id) => !childAdIds.has(id)),
+                        })
+                      }
                     }}
                     style={{
                       flexShrink: 0,
@@ -391,11 +416,23 @@ export function MetaObjectSelector({
                             disabled={!adsetEnabled}
                             onChange={() => {
                               if (!adsetEnabled) return
-                              onChange({
-                                metaCampaignIds: selectedCampaignIds,
-                                metaAdsetIds: toggle(selectedAdsetIds, adset.id),
-                                metaAdIds: selectedAdIds,
-                              })
+                              const adding = !isAdsetChecked
+                              const newAdsetIds = toggle(selectedAdsetIds, adset.id)
+                              if (adding) {
+                                // 하위 ad 자동 선택 (ad level이 활성화된 경우에만)
+                                const newAdIds = adEnabled
+                                  ? [...new Set([...selectedAdIds, ...adsetAds.map((ad) => ad.id)])]
+                                  : selectedAdIds
+                                onChange({ metaCampaignIds: selectedCampaignIds, metaAdsetIds: newAdsetIds, metaAdIds: newAdIds })
+                              } else {
+                                // 하위 ad 선택 해제
+                                const childAdIds = new Set(adsetAds.map((ad) => ad.id))
+                                onChange({
+                                  metaCampaignIds: selectedCampaignIds,
+                                  metaAdsetIds: newAdsetIds,
+                                  metaAdIds: selectedAdIds.filter((id) => !childAdIds.has(id)),
+                                })
+                              }
                             }}
                             style={{
                               flexShrink: 0,
