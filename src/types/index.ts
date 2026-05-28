@@ -616,3 +616,10 @@ export {
   isDocumentCampaignSection,
   isLegacyCampaignSection,
 } from './campaignWorkspace'
+
+export type {
+  CampaignMetaInsightLevel,
+  CampaignMetaMapping,
+  CampaignMetaInsightSnapshot,
+  CampaignInsightAsset,
+} from './campaignMeta'

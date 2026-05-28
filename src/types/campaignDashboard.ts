@@ -79,12 +79,14 @@ export interface CampaignDashboardSummary {
 export interface CampaignContentPerformanceRow {
   name: string
   platform: string
+  format: string
   category: string
   followers: number | null
   views: number | null
   likes: number | null
   saves: number | null
   comments: number | null
+  shares: number | null
   er: number | null
 }
 
@@ -93,11 +95,21 @@ export interface CampaignAdPerformanceRow {
   name: string
   spend: number | null
   impressions: number | null
+  reach: number | null
   clicks: number | null
   ctr: number | null
   cpc: number | null
   cpm: number | null
   thruPlay: number | null
+
+  // Meta API snapshot 확장 필드 (향후 CampaignMetaInsightSnapshot 기반 전환 대비)
+  metaObjectId?: string
+  metaAccountId?: string
+  dateStart?: string
+  dateStop?: string
+  currency?: string
+  fetchedAt?: string
+  sourceHash?: string
 }
 
 export interface CampaignRosterDetailRow {

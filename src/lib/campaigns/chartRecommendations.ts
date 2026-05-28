@@ -501,19 +501,23 @@ function buildDetailTables(databases: CampaignDatabase[]): CampaignDetailTables 
   const pfLikes     = findColumn(perfCols, ['좋아요', 'likes'], 'performance')
   const pfSaves     = findColumn(perfCols, ['저장', 'saves'], 'performance')
   const pfComments  = findColumn(perfCols, ['댓글', 'comments'], 'performance')
+  const pfShares    = findColumn(perfCols, ['공유', 'shares'], 'performance')
   const pfEr        = findColumn(perfCols, ['ER', 'er'], 'metric')
+  const pfFormat    = perfCols.find((c) => c.id === 'content_format' || c.name === '콘텐츠 형식')
 
   const post: CampaignContentPerformanceRow[] = [...perfRows]
     .sort((a, b) => (pfViews ? (numericValue(b, pfViews.id) ?? 0) - (numericValue(a, pfViews.id) ?? 0) : 0))
     .map((row) => ({
       name:      String(row.cells[pfName?.id     ?? ''] ?? ''),
       platform:  String(row.cells[pfPlatform?.id ?? ''] ?? ''),
+      format:    pfFormat ? String(row.cells[pfFormat.id] ?? '') : '',
       category:  String(row.cells[pfCategory?.id ?? ''] ?? ''),
       followers: pfFollowers ? numericValue(row, pfFollowers.id) : null,
       views:     pfViews     ? numericValue(row, pfViews.id)     : null,
       likes:     pfLikes     ? numericValue(row, pfLikes.id)     : null,
       saves:     pfSaves     ? numericValue(row, pfSaves.id)     : null,
       comments:  pfComments  ? numericValue(row, pfComments.id)  : null,
+      shares:    pfShares    ? numericValue(row, pfShares.id)    : null,
       er:        pfEr        ? numericValue(row, pfEr.id) : computeInfluencerEr(row),
     }))
 
@@ -532,28 +536,45 @@ function buildDetailTables(databases: CampaignDatabase[]): CampaignDetailTables 
   // ── Ad tab ─────────────────────────────────────────────────────
   const metaRows = meta?.rows ?? []
   const metaCols = meta?.columns ?? []
-  const maLevel       = findColumn(metaCols, ['Level', 'level'], 'dimension')
-  const maName        = findColumn(metaCols, ['Name', 'name'], 'dimension')
-  const maSpend       = findColumn(metaCols, ['Spend', 'spend'], 'cost')
-  const maImpressions = findColumn(metaCols, ['Impressions', 'impressions'], 'performance')
-  const maClicks      = findColumn(metaCols, ['Clicks', 'clicks'], 'performance')
-  const maCtr         = findColumn(metaCols, ['CTR', 'ctr'], 'metric')
-  const maCpc         = findColumn(metaCols, ['CPC', 'cpc'], 'metric')
-  const maCpm         = findColumn(metaCols, ['CPM', 'cpm'], 'metric')
-  const maThruPlay    = findColumn(metaCols, ['ThruPlay', 'thruplay'], 'performance')
+  const maLevel        = findColumn(metaCols, ['Level', 'level'], 'dimension')
+  const maName         = findColumn(metaCols, ['Name', 'name'], 'dimension')
+  const maSpend        = findColumn(metaCols, ['Spend', 'spend'], 'cost')
+  const maImpressions  = findColumn(metaCols, ['Impressions', 'impressions'], 'performance')
+  const maReach        = findColumn(metaCols, ['Reach', 'reach'], 'performance')
+  const maClicks       = findColumn(metaCols, ['Clicks', 'clicks'], 'performance')
+  const maCtr          = findColumn(metaCols, ['CTR', 'ctr'], 'metric')
+  const maCpc          = findColumn(metaCols, ['CPC', 'cpc'], 'metric')
+  const maCpm          = findColumn(metaCols, ['CPM', 'cpm'], 'metric')
+  const maThruPlay     = findColumn(metaCols, ['ThruPlay', 'thruplay'], 'performance')
+  // Meta API snapshot 확장 필드 (현재 수동 DB에 없을 수 있음 — 모두 optional)
+  const maMetaObjectId  = metaCols.find((c) => ['metaObjectId', 'meta_object_id'].includes(c.id) || c.name === 'Meta Object ID')
+  const maMetaAccountId = metaCols.find((c) => ['metaAccountId', 'meta_account_id'].includes(c.id) || c.name === 'Meta Account ID')
+  const maDateStart     = metaCols.find((c) => ['dateStart', 'date_start'].includes(c.id) || c.name === 'Date Start')
+  const maDateStop      = metaCols.find((c) => ['dateStop', 'date_stop'].includes(c.id) || c.name === 'Date Stop')
+  const maCurrency      = metaCols.find((c) => c.id === 'currency' || c.name === 'Currency')
+  const maFetchedAt     = metaCols.find((c) => ['fetchedAt', 'fetched_at'].includes(c.id) || c.name === 'Fetched At')
+  const maSourceHash    = metaCols.find((c) => ['sourceHash', 'source_hash'].includes(c.id) || c.name === 'Source Hash')
 
   const ad: CampaignAdPerformanceRow[] = [...metaRows]
     .sort((a, b) => (maSpend ? (numericValue(b, maSpend.id) ?? 0) - (numericValue(a, maSpend.id) ?? 0) : 0))
     .map((row) => ({
-      level:       String(row.cells[maLevel?.id ?? ''] ?? ''),
-      name:        String(row.cells[maName?.id  ?? ''] ?? ''),
-      spend:       maSpend       ? numericValue(row, maSpend.id)       : null,
-      impressions: maImpressions ? numericValue(row, maImpressions.id) : null,
-      clicks:      maClicks      ? numericValue(row, maClicks.id)      : null,
-      ctr:         maCtr         ? numericValue(row, maCtr.id)         : null,
-      cpc:         maCpc         ? numericValue(row, maCpc.id)         : null,
-      cpm:         maCpm         ? numericValue(row, maCpm.id)         : null,
-      thruPlay:    maThruPlay    ? numericValue(row, maThruPlay.id)    : null,
+      level:        String(row.cells[maLevel?.id ?? ''] ?? ''),
+      name:         String(row.cells[maName?.id  ?? ''] ?? ''),
+      spend:        maSpend       ? numericValue(row, maSpend.id)       : null,
+      impressions:  maImpressions ? numericValue(row, maImpressions.id) : null,
+      reach:        maReach       ? numericValue(row, maReach.id)       : null,
+      clicks:       maClicks      ? numericValue(row, maClicks.id)      : null,
+      ctr:          maCtr         ? numericValue(row, maCtr.id)         : null,
+      cpc:          maCpc         ? numericValue(row, maCpc.id)         : null,
+      cpm:          maCpm         ? numericValue(row, maCpm.id)         : null,
+      thruPlay:     maThruPlay    ? numericValue(row, maThruPlay.id)    : null,
+      metaObjectId:  maMetaObjectId  ? String(row.cells[maMetaObjectId.id]  ?? '') || undefined : undefined,
+      metaAccountId: maMetaAccountId ? String(row.cells[maMetaAccountId.id] ?? '') || undefined : undefined,
+      dateStart:     maDateStart     ? String(row.cells[maDateStart.id]     ?? '') || undefined : undefined,
+      dateStop:      maDateStop      ? String(row.cells[maDateStop.id]      ?? '') || undefined : undefined,
+      currency:      maCurrency      ? String(row.cells[maCurrency.id]      ?? '') || undefined : undefined,
+      fetchedAt:     maFetchedAt     ? String(row.cells[maFetchedAt.id]     ?? '') || undefined : undefined,
+      sourceHash:    maSourceHash    ? String(row.cells[maSourceHash.id]    ?? '') || undefined : undefined,
     }))
 
   const maxSpend = Math.max(...ad.map((r) => r.spend ?? 0), 1)

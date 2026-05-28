@@ -132,8 +132,8 @@ function SideSummaryBars({ items }: { items: CampaignDetailTabSummary[] }) {
 
 function PostSheet({ tables }: { tables: CampaignDetailTables | undefined }) {
   const rows = tables?.post ?? []
-  const grid = '46px 1.15fr .75fr .8fr .75fr .8fr .7fr .7fr .7fr .7fr'
-  const headers = ['#', '계정명', '플랫폼', '카테고리', '팔로워', '조회수', '좋아요', '저장', '댓글', 'ER']
+  const grid = '46px 1.15fr .75fr .75fr .8fr .7fr .7fr .7fr .7fr .7fr'
+  const headers = ['#', '계정명', '플랫폼', '형식', '조회수', '좋아요', '저장', '댓글', '공유', 'ER']
 
   return (
     <div style={{ minWidth: 960 }}>
@@ -147,12 +147,12 @@ function PostSheet({ tables }: { tables: CampaignDetailTables | undefined }) {
           String(i + 1),
           row.name,
           row.platform,
-          row.category,
-          nn(row.followers),
+          row.format || '-',
           nn(row.views),
           nn(row.likes),
           nn(row.saves),
           nn(row.comments),
+          nn(row.shares),
           row.er !== null ? `${row.er.toFixed(1)}%` : '-',
         ]} />
       ))}
@@ -162,8 +162,8 @@ function PostSheet({ tables }: { tables: CampaignDetailTables | undefined }) {
 
 function AdSheet({ tables }: { tables: CampaignDetailTables | undefined }) {
   const rows = tables?.ad ?? []
-  const grid = '46px .75fr 1.3fr .85fr .85fr .8fr .7fr .7fr .7fr .8fr'
-  const headers = ['#', 'Level', 'Name', 'Spend', 'Impressions', 'Clicks', 'CTR', 'CPC', 'CPM', 'ThruPlay']
+  const grid = '46px .75fr 1.3fr .85fr .85fr .85fr .8fr .7fr .7fr .7fr'
+  const headers = ['#', 'Level', 'Name', 'Spend', 'Impressions', 'Reach', 'Clicks', 'CTR', 'CPC', 'CPM']
 
   return (
     <div style={{ minWidth: 1080 }}>
@@ -179,11 +179,11 @@ function AdSheet({ tables }: { tables: CampaignDetailTables | undefined }) {
           row.name,
           nn(row.spend, fmtMoney),
           nn(row.impressions),
+          nn(row.reach),
           nn(row.clicks),
-          row.ctr   !== null ? `${row.ctr.toFixed(2)}%` : '-',
+          row.ctr !== null ? `${row.ctr.toFixed(2)}%` : '-',
           nn(row.cpc, fmtMoney),
           nn(row.cpm, fmtMoney),
-          nn(row.thruPlay),
         ]} />
       ))}
     </div>
@@ -387,6 +387,7 @@ export function CampaignPerformanceDetailView({ overview, onBack }: Props) {
               <button
                 key={tab}
                 type="button"
+                aria-pressed={activeTab === tab}
                 onClick={() => setActiveTab(tab)}
                 style={{
                   height: 28, border: 0, borderRadius: 6,
@@ -440,11 +441,10 @@ export function CampaignPerformanceDetailView({ overview, onBack }: Props) {
            style={{ flex: 1, minHeight: 700 }}>
 
         {/* 시트 영역 */}
-        <div style={{
-          minWidth: 0,
-          overflow: 'auto',
-          borderRight: '1px solid #d7dde7',
-        }}>
+        <div
+          className="border-b border-[#d7dde7] min-[1180px]:border-b-0 min-[1180px]:border-r min-[1180px]:border-[#d7dde7]"
+          style={{ minWidth: 0, overflow: 'auto' }}
+        >
           {activeTab === 'post'       && <PostSheet       tables={detailTables} />}
           {activeTab === 'ad'         && <AdSheet         tables={detailTables} />}
           {activeTab === 'confirmed'  && <ConfirmedSheet  tables={detailTables} />}
@@ -485,7 +485,7 @@ export function CampaignPerformanceDetailView({ overview, onBack }: Props) {
               gap: 8, marginBottom: 8,
             }}>
               <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#172033' }}>Meta Spend</h3>
-              <span style={{ color: '#8b95a7', fontSize: 11 }}>Daily</span>
+              <span style={{ color: '#8b95a7', fontSize: 11 }}>분포</span>
             </div>
             <p style={{ margin: 0, fontSize: 24, fontWeight: 800, color: '#111827', lineHeight: 1.05 }}>
               {summary?.metaSpend ? fmtN(summary.metaSpend) : '-'}
@@ -505,16 +505,18 @@ export function CampaignPerformanceDetailView({ overview, onBack }: Props) {
             )}
           </section>
 
-          {/* 주의 필요 */}
-          {warnings.length > 0 && (
-            <section style={{ padding: 12, border: '1px solid #e5e9f0', borderRadius: 8, background: '#fff' }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                gap: 8, marginBottom: 8,
-              }}>
-                <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#172033' }}>주의 필요</h3>
-                <span style={{ color: '#8b95a7', fontSize: 11 }}>{warnings.length}</span>
-              </div>
+          {/* 주의 필요 — 항상 렌더링 */}
+          <section style={{ padding: 12, border: '1px solid #e5e9f0', borderRadius: 8, background: '#fff' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 8, marginBottom: 8,
+            }}>
+              <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#172033' }}>주의 필요</h3>
+              <span style={{ color: '#8b95a7', fontSize: 11 }}>{warnings.length}</span>
+            </div>
+            {warnings.length === 0 ? (
+              <p style={{ margin: '10px 0', color: '#8b95a7', fontSize: 12 }}>주의 항목이 없습니다.</p>
+            ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <tbody>
                   {warnings.map((w, i) => (
@@ -534,8 +536,8 @@ export function CampaignPerformanceDetailView({ overview, onBack }: Props) {
                   ))}
                 </tbody>
               </table>
-            </section>
-          )}
+            )}
+          </section>
 
         </aside>
       </div>
