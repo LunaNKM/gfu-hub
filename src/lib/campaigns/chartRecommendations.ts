@@ -29,7 +29,6 @@ export function findColumn(
   names: string[],
   role?: CampaignDataColumn['role']
 ): CampaignDataColumn | undefined {
-  // Search by id/name first (most specific), then fall back to role
   const byName = columns.find((c) => names.includes(c.id) || names.includes(c.name))
   if (byName) return byName
   if (role) return columns.find((c) => c.role === role)
@@ -73,6 +72,19 @@ function average(values: number[]): number {
 function colSum(rows: CampaignDataRow[], col: CampaignDataColumn | undefined): number {
   if (!col) return 0
   return rows.reduce((acc, row) => acc + (numericValue(row, col.id) ?? 0), 0)
+}
+
+function toProgressList(
+  groups: { name: string; value: number }[],
+  total: number,
+  colorMap: Record<string, CampaignStatusProgress['color']>
+): CampaignStatusProgress[] {
+  return groups.map(({ name, value }) => ({
+    name,
+    count: value,
+    pct: total > 0 ? Math.round((value / total) * 100) : 0,
+    color: colorMap[name] ?? 'gray',
+  }))
 }
 
 // ── Per-database chart recommendations ───────────────────────────
@@ -163,14 +175,6 @@ function buildRosterProgress(confirmed: CampaignDatabase | undefined): CampaignR
   const statusCol = findColumn(columns, ['현재 상태', 'status'], 'status')
   const platformCol = findColumn(columns, ['플랫폼', 'platform'], 'platform')
 
-  const statusGroups: Record<string, number> = {}
-  if (statusCol) {
-    for (const row of rows) {
-      const s = String(row.cells[statusCol.id] ?? '미입력')
-      statusGroups[s] = (statusGroups[s] ?? 0) + 1
-    }
-  }
-
   const STATUS_COLORS: Record<string, CampaignStatusProgress['color']> = {
     '업로드완료': 'green',
     '검수중': 'blue',
@@ -179,22 +183,8 @@ function buildRosterProgress(confirmed: CampaignDatabase | undefined): CampaignR
     '계약전': 'gray',
   }
 
-  const statuses: CampaignStatusProgress[] = Object.entries(statusGroups)
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, count]) => ({
-      name,
-      count,
-      pct: total > 0 ? Math.round((count / total) * 100) : 0,
-      color: STATUS_COLORS[name] ?? 'gray',
-    }))
-
-  const platformGroups: Record<string, number> = {}
-  if (platformCol) {
-    for (const row of rows) {
-      const p = String(row.cells[platformCol.id] ?? '미입력')
-      platformGroups[p] = (platformGroups[p] ?? 0) + 1
-    }
-  }
+  const statusGroups = statusCol ? groupRowsByColumn(rows, statusCol) : []
+  const statuses = toProgressList(statusGroups, total, STATUS_COLORS)
 
   const PLATFORM_COLORS: Record<string, CampaignStatusProgress['color']> = {
     Instagram: 'blue',
@@ -203,14 +193,8 @@ function buildRosterProgress(confirmed: CampaignDatabase | undefined): CampaignR
     X: 'gray',
   }
 
-  const platforms: CampaignStatusProgress[] = Object.entries(platformGroups)
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, count]) => ({
-      name,
-      count,
-      pct: total > 0 ? Math.round((count / total) * 100) : 0,
-      color: PLATFORM_COLORS[name] ?? 'gray',
-    }))
+  const platformGroups = platformCol ? groupRowsByColumn(rows, platformCol) : []
+  const platforms = toProgressList(platformGroups, total, PLATFORM_COLORS)
 
   return { statuses, platforms, totalConfirmed: total }
 }
@@ -265,15 +249,29 @@ function buildBarData(
 }
 
 function buildContentPerformance(
-  performance: CampaignDatabase | undefined
+  performance: CampaignDatabase | undefined,
+  collectionRate = 0
 ): CampaignContentPerformanceSummary {
   const rows = performance?.rows ?? []
   const columns = performance?.columns ?? []
 
   const nameCol = findColumn(columns, ['계정명', 'name'], 'dimension')
   const viewsCol = findColumn(columns, ['조회수', 'views'], 'performance')
+  const erCol = findColumn(columns, ['ER', 'er'], 'metric')
+  const platformCol = findColumn(columns, ['플랫폼', 'platform'], 'platform')
+  const formatCol = columns.find((c) => c.id === 'content_format' || c.name === '콘텐츠 형식')
 
   const totalViews = colSum(rows, viewsCol)
+
+  const viewValues = viewsCol
+    ? rows.map((row) => numericValue(row, viewsCol.id)).filter((v): v is number => v !== null)
+    : []
+  const avgViews = viewValues.length > 0 ? Math.round(average(viewValues)) : 0
+
+  const erValues = rows
+    .map((row) => (erCol ? numericValue(row, erCol.id) : computeInfluencerEr(row)))
+    .filter((v): v is number => v !== null)
+  const avgEr = erValues.length > 0 ? Math.round(average(erValues) * 100) / 100 : 0
 
   const top5ByViews =
     nameCol && viewsCol
@@ -282,12 +280,48 @@ function buildContentPerformance(
           .map((r) => ({ name: r.name, views: r.value }))
       : []
 
+  const top5ByEr =
+    nameCol && erCol
+      ? rankRowsByMetric(rows, nameCol, erCol)
+          .slice(0, 5)
+          .map((r) => ({ name: r.name, er: r.value }))
+      : []
+
+  const PLATFORM_COLORS: Record<string, CampaignStatusProgress['color']> = {
+    Instagram: 'blue',
+    TikTok: 'green',
+    YouTube: 'orange',
+    X: 'gray',
+  }
+
+  const byPlatform = platformCol
+    ? toProgressList(groupRowsByColumn(rows, platformCol), rows.length, PLATFORM_COLORS)
+    : []
+
+  const FORMAT_COLORS: Record<string, CampaignStatusProgress['color']> = {
+    Reels: 'blue',
+    Feed: 'green',
+    TikTok: 'orange',
+    Shorts: 'blue',
+    Story: 'orange',
+  }
+
+  const byFormat = formatCol
+    ? toProgressList(groupRowsByColumn(rows, formatCol), rows.length, FORMAT_COLORS)
+    : []
+
   const { data: barData, hasDate } = buildBarData(performance)
 
   return {
     totalViews,
     uploadCount: rows.length,
+    avgViews,
+    avgEr,
+    collectionRate,
     top5ByViews,
+    top5ByEr,
+    byPlatform,
+    byFormat,
     barData,
     barMode: barData.length === 0 ? 'empty' : hasDate ? 'date' : 'influencer',
   }
@@ -297,20 +331,26 @@ function buildAdPerformance(meta: CampaignDatabase | undefined): CampaignAdPerfo
   const rows = meta?.rows ?? []
   const columns = meta?.columns ?? []
 
-  const spendCol = findColumn(columns, ['Spend', 'spend'], 'cost')
+  const spendCol      = findColumn(columns, ['Spend', 'spend'], 'cost')
   const impressionsCol = findColumn(columns, ['Impressions', 'impressions'], 'performance')
-  const reachCol = findColumn(columns, ['Reach', 'reach'], 'performance')
-  const clicksCol = findColumn(columns, ['Clicks', 'clicks'], 'performance')
-  const ctrCol = findColumn(columns, ['CTR', 'ctr'], 'metric')
-  const cpcCol = findColumn(columns, ['CPC', 'cpc'], 'metric')
-  const cpmCol = findColumn(columns, ['CPM', 'cpm'], 'metric')
+  const reachCol      = findColumn(columns, ['Reach', 'reach'], 'performance')
+  const clicksCol     = findColumn(columns, ['Clicks', 'clicks'], 'performance')
+  const ctrCol        = findColumn(columns, ['CTR', 'ctr'], 'metric')
+  const cpcCol        = findColumn(columns, ['CPC', 'cpc'], 'metric')
+  const cpmCol        = findColumn(columns, ['CPM', 'cpm'], 'metric')
   const conversionsCol = findColumn(columns, ['Conversions', 'conversions'], 'performance')
+  const videoPlayCol  = findColumn(columns, ['Video Play', 'video_play'], 'performance')
+  const thruPlayCol   = findColumn(columns, ['ThruPlay', 'thruplay'], 'performance')
+  const levelCol      = findColumn(columns, ['Level', 'level'], 'dimension')
+  const nameCol       = findColumn(columns, ['Name', 'name'], 'dimension')
 
-  const totalSpend = colSum(rows, spendCol)
+  const totalSpend       = colSum(rows, spendCol)
   const totalImpressions = colSum(rows, impressionsCol)
-  const totalReach = colSum(rows, reachCol)
-  const totalClicks = colSum(rows, clicksCol)
+  const totalReach       = colSum(rows, reachCol)
+  const totalClicks      = colSum(rows, clicksCol)
   const totalConversions = colSum(rows, conversionsCol)
+  const totalVideoPlay   = colSum(rows, videoPlayCol)
+  const totalThruPlay    = colSum(rows, thruPlayCol)
 
   let ctr = 0
   if (ctrCol && totalImpressions > 0) {
@@ -348,6 +388,30 @@ function buildAdPerformance(meta: CampaignDatabase | undefined): CampaignAdPerfo
     cpm = (totalSpend / totalImpressions) * 1000
   }
 
+  const LEVEL_COLORS: Record<string, CampaignStatusProgress['color']> = {
+    campaign: 'blue',
+    adset: 'green',
+    ad: 'orange',
+  }
+
+  const byLevel = levelCol
+    ? toProgressList(groupRowsByColumn(rows, levelCol), rows.length, LEVEL_COLORS)
+    : []
+
+  const top5BySpend =
+    nameCol && spendCol
+      ? rankRowsByMetric(rows, nameCol, spendCol)
+          .slice(0, 5)
+          .map((r) => ({ name: r.name, spend: r.value }))
+      : []
+
+  const top5ByCtr =
+    nameCol && ctrCol
+      ? rankRowsByMetric(rows, nameCol, ctrCol)
+          .slice(0, 5)
+          .map((r) => ({ name: r.name, ctr: r.value }))
+      : []
+
   return {
     spend: totalSpend,
     impressions: totalImpressions,
@@ -357,6 +421,11 @@ function buildAdPerformance(meta: CampaignDatabase | undefined): CampaignAdPerfo
     cpc,
     cpm,
     conversions: totalConversions,
+    videoPlay: totalVideoPlay,
+    thruPlay: totalThruPlay,
+    byLevel,
+    top5BySpend,
+    top5ByCtr,
   }
 }
 
@@ -381,7 +450,22 @@ function buildDataQualitySummary(
   const performanceRowCount = performanceRows.length
   const performanceCollectionRate =
     confirmedCount > 0 ? (performanceRowCount / confirmedCount) * 100 : 0
-  return { confirmedCount, performanceRowCount, performanceCollectionRate }
+  const confirmedWithoutPerformanceCount = Math.max(confirmedCount - performanceRowCount, 0)
+
+  const warnings: string[] = []
+  if (confirmedCount > 0 && performanceRowCount === 0) {
+    warnings.push('확정 인원 대비 성과 데이터가 아직 입력되지 않았습니다.')
+  } else if (confirmedCount > 0 && performanceCollectionRate < 70) {
+    warnings.push('성과 수집률이 낮아 대시보드 해석에 주의가 필요합니다.')
+  }
+
+  return {
+    confirmedCount,
+    performanceRowCount,
+    performanceCollectionRate,
+    confirmedWithoutPerformanceCount,
+    warnings,
+  }
 }
 
 // ── Main overview builder ─────────────────────────────────────────
@@ -395,13 +479,14 @@ export function buildCampaignOverviewFromDatabases(databases: CampaignDatabase[]
   const confirmedRows = confirmed?.rows ?? []
   const performanceRows = performance?.rows ?? []
 
+  // data quality comes first so we can pass collectionRate to content builder
+  const dataQuality = buildDataQualitySummary(confirmedRows, performanceRows)
   const rosterProgress = buildRosterProgress(confirmed)
-  const contentPerformance = buildContentPerformance(performance)
+  const contentPerformance = buildContentPerformance(performance, dataQuality.performanceCollectionRate)
   const adPerformance = buildAdPerformance(meta)
   const budget = buildBudgetSummary(adBudget, adPerformance.spend)
-  const dataQuality = buildDataQualitySummary(confirmedRows, performanceRows)
 
-  // Upload stats
+  // Upload stats from confirmed_influencers
   const confirmedCols = confirmed?.columns ?? []
   const statusCol = findColumn(confirmedCols, ['현재 상태', 'status'], 'status')
   const uploadedCount = statusCol
@@ -410,7 +495,7 @@ export function buildCampaignOverviewFromDatabases(databases: CampaignDatabase[]
   const uploadRate =
     confirmedRows.length > 0 ? Math.round((uploadedCount / confirmedRows.length) * 100) : 0
 
-  // Avg views from performance DB
+  // Avg views/ER from influencer_performance only
   const performanceCols = performance?.columns ?? []
   const viewsCol = findColumn(performanceCols, ['조회수', 'views'], 'performance')
   const viewValues = viewsCol
@@ -418,14 +503,13 @@ export function buildCampaignOverviewFromDatabases(databases: CampaignDatabase[]
         .map((row) => numericValue(row, viewsCol.id))
         .filter((v): v is number => v !== null)
     : []
-  const avgViews = viewValues.length > 0 ? Math.round(average(viewValues)) : 0
+  const avgViews = viewValues.length > 0 ? Math.round(contentPerformance.avgViews) : 0
 
-  // Avg ER from performance DB only
   const erCol = findColumn(performanceCols, ['ER', 'er'], 'metric')
   const erValues = performanceRows
     .map((row) => (erCol ? numericValue(row, erCol.id) : computeInfluencerEr(row)))
     .filter((v): v is number => v !== null)
-  const avgEr = erValues.length > 0 ? Math.round(average(erValues) * 100) / 100 : 0
+  const avgEr = contentPerformance.avgEr
 
   const summary: CampaignDashboardSummary = {
     confirmedCount: confirmedRows.length,
@@ -443,7 +527,8 @@ export function buildCampaignOverviewFromDatabases(databases: CampaignDatabase[]
     adClicks: adPerformance.clicks,
   }
 
-  const fmt = (n: number) => n.toLocaleString()
+  const fmtN = (n: number) => n.toLocaleString()
+  const fmtPct = (n: number) => `${n.toFixed(2)}%`
 
   const metrics: CampaignOverviewMetric[] = [
     {
@@ -479,7 +564,7 @@ export function buildCampaignOverviewFromDatabases(databases: CampaignDatabase[]
     {
       id: 'avg_views',
       label: '평균 조회수',
-      value: viewValues.length > 0 ? fmt(avgViews) : '-',
+      value: viewValues.length > 0 ? fmtN(avgViews) : '-',
     },
     {
       id: 'avg_er',
@@ -493,16 +578,40 @@ export function buildCampaignOverviewFromDatabases(databases: CampaignDatabase[]
     {
       id: 'meta_spend',
       label: 'Meta 광고비',
-      value: adPerformance.spend > 0 ? fmt(adPerformance.spend) : '-',
+      value: adPerformance.spend > 0 ? fmtN(adPerformance.spend) : '-',
       pill:
         budget.plannedBudget > 0
           ? { text: `${Math.round(budget.burnRate)}% 소진`, variant: 'flat' }
           : undefined,
     },
+    {
+      id: 'meta_ctr',
+      label: '광고 CTR',
+      value: adPerformance.ctr > 0 ? fmtPct(adPerformance.ctr) : '-',
+      pill:
+        adPerformance.ctr > 0
+          ? {
+              text: adPerformance.ctr >= 1.5 ? '양호' : '관찰',
+              variant: adPerformance.ctr >= 1.5 ? 'up' : 'warn',
+            }
+          : undefined,
+    },
+    {
+      id: 'meta_cpc',
+      label: '광고 CPC',
+      value: adPerformance.cpc > 0 ? fmtN(Math.round(adPerformance.cpc)) : '-',
+      pill: adPerformance.cpc > 0 ? { text: '클릭 단가', variant: 'flat' } : undefined,
+    },
+    {
+      id: 'meta_cpm',
+      label: '광고 CPM',
+      value: adPerformance.cpm > 0 ? fmtN(Math.round(adPerformance.cpm)) : '-',
+      pill: adPerformance.cpm > 0 ? { text: '노출 단가', variant: 'flat' } : undefined,
+    },
   ]
 
   // Charts: confirmed + performance (content only) + meta (ad only)
-  // candidate_confirmation_rate chart is not generated
+  // candidate_confirmation_rate chart is NOT generated
   const charts: CampaignOverviewChart[] = [
     ...(confirmed ? buildDatabaseChartRecommendations(confirmed) : []),
     ...(performance ? buildDatabaseChartRecommendations(performance) : []),

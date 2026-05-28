@@ -239,23 +239,13 @@ export function CampaignOverviewDashboard({ overview }: Props) {
           })}
         </div>
 
-        {/* ── KPI 그리드 ──────────────────────────────────── */}
-        {/*
-          Tailwind 반응형:
-          - 기본(mobile): 2열
-          - sm(640px): 3열
-          - lg(1024px): 6열 (시안 기준 1180px과 근접)
-        */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-[10px] mb-[12px]">
+        {/* ── KPI 그리드 (HTML 시안 breakpoint: 720px/1180px) ── */}
+        <div className="grid grid-cols-2 min-[720px]:grid-cols-3 min-[1180px]:grid-cols-6 gap-[10px] mb-[12px]">
           {metrics.map((m) => <KpiCard key={m.id} metric={m} />)}
         </div>
 
-        {/* ── 메인 레이아웃 ─────────────────────────────── */}
-        {/*
-          lg(1024px)+ → 1.35fr : .65fr 2열
-          lg 이하     → 1열
-        */}
-        <div className="grid gap-[12px] grid-cols-1 lg:[grid-template-columns:minmax(0,1.35fr)_minmax(340px,.65fr)]">
+        {/* ── 메인 레이아웃 (1180px 기준 2열) ─────────────── */}
+        <div className="grid gap-[12px] grid-cols-1 min-[1180px]:[grid-template-columns:minmax(0,1.35fr)_minmax(340px,.65fr)]">
 
           {/* ── 왼쪽: 캠페인 성과 요약 ─────────────────── */}
           <section style={{
@@ -278,21 +268,25 @@ export function CampaignOverviewDashboard({ overview }: Props) {
                 </h2>
                 <span style={{ color: '#8b95a7', fontSize: 11 }}>콘텐츠 + 광고</span>
               </div>
-              <button style={{
-                border: 0,
-                background: 'transparent',
-                color: '#3578f6',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-                padding: '4px 0',
-              }}>
+              <button
+                type="button"
+                aria-label="성과 상세 분석 보기"
+                style={{
+                  border: 0,
+                  background: 'transparent',
+                  color: '#3578f6',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  padding: '4px 0',
+                }}
+              >
                 자세히 보기
               </button>
             </div>
 
-            {/* chart-area: lg+ → 1fr 220px, lg 이하 → 1열 */}
-            <div className="grid gap-[16px] items-stretch grid-cols-1 lg:[grid-template-columns:minmax(0,1fr)_220px]">
+            {/* chart-area: 1180px+ → 1fr 220px */}
+            <div className="grid gap-[16px] items-stretch grid-cols-1 min-[1180px]:[grid-template-columns:minmax(0,1fr)_220px]">
 
               {/* CSS 막대 차트 */}
               <div style={{
@@ -451,7 +445,7 @@ export function CampaignOverviewDashboard({ overview }: Props) {
                 <span style={{ color: '#8b95a7', fontSize: 11 }}>확정 인원</span>
               </div>
               {statuses.length === 0
-                ? <EmptyNote text="성과 데이터가 입력되면 자동으로 요약됩니다." />
+                ? <EmptyNote text="확정 인원 데이터가 입력되면 진행 현황이 표시됩니다." />
                 : statuses.map((s) => <HBarRow key={s.name} {...s} />)
               }
             </section>
@@ -471,7 +465,7 @@ export function CampaignOverviewDashboard({ overview }: Props) {
                 <span style={{ color: '#8b95a7', fontSize: 11 }}>비중</span>
               </div>
               {platforms.length === 0
-                ? <EmptyNote text="성과 데이터가 입력되면 자동으로 요약됩니다." />
+                ? <EmptyNote text="확정 인원 데이터가 입력되면 플랫폼 분포가 표시됩니다." />
                 : platforms.map((p) => <HBarRow key={p.name} {...p} />)
               }
             </section>
@@ -491,7 +485,7 @@ export function CampaignOverviewDashboard({ overview }: Props) {
                 <span style={{ color: '#8b95a7', fontSize: 11 }}>Top 5</span>
               </div>
               {top5.length === 0 ? (
-                <EmptyNote text="성과 데이터가 입력되면 자동으로 요약됩니다." />
+                <EmptyNote text="성과 데이터가 입력되면 조회수 랭킹이 표시됩니다." />
               ) : (
                 <div style={{ display: 'grid', gap: 8 }}>
                   {top5.map((item, i) => (
