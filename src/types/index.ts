@@ -463,6 +463,7 @@ export interface CampaignOverview {
   rosterProgress?: import('./campaignDashboard').CampaignRosterProgressSummary
   budget?: import('./campaignDashboard').CampaignBudgetSummary
   dataQuality?: import('./campaignDashboard').CampaignDataQualitySummary
+  detailTables?: import('./campaignDashboard').CampaignDetailTables
 }
 
 export type CampaignColumnType =
@@ -602,6 +603,13 @@ export type {
   CampaignBudgetSummary,
   CampaignDataQualitySummary,
   CampaignDashboardSummary,
+  CampaignContentPerformanceRow,
+  CampaignAdPerformanceRow,
+  CampaignRosterDetailRow,
+  CampaignCandidateDetailRow,
+  CampaignBudgetDetailRow,
+  CampaignDetailTabSummary,
+  CampaignDetailTables,
 } from './campaignDashboard'
 
 export {

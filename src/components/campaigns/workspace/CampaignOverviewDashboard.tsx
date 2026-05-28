@@ -1,11 +1,12 @@
 'use client'
 
-import React from 'react'
+import React, { useState } from 'react'
 import type {
   CampaignOverview,
   CampaignOverviewMetric,
   CampaignStatusProgress,
 } from '@/types'
+import { CampaignPerformanceDetailView } from './CampaignPerformanceDetailView'
 
 // ── 색상 팔레트 ───────────────────────────────────────────────────
 
@@ -133,6 +134,8 @@ interface Props {
 }
 
 export function CampaignOverviewDashboard({ overview }: Props) {
+  const [viewMode, setViewMode] = useState<'overview' | 'detail'>('overview')
+
   if (!overview) {
     return (
       <div style={{
@@ -144,6 +147,17 @@ export function CampaignOverviewDashboard({ overview }: Props) {
         fontSize: 13,
       }}>
         대시보드를 불러오는 중...
+      </div>
+    )
+  }
+
+  if (viewMode === 'detail') {
+    return (
+      <div className="h-full overflow-y-auto">
+        <CampaignPerformanceDetailView
+          overview={overview}
+          onBack={() => setViewMode('overview')}
+        />
       </div>
     )
   }
@@ -271,6 +285,7 @@ export function CampaignOverviewDashboard({ overview }: Props) {
               <button
                 type="button"
                 aria-label="성과 상세 분석 보기"
+                onClick={() => setViewMode('detail')}
                 style={{
                   border: 0,
                   background: 'transparent',

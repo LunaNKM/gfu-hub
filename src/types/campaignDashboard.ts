@@ -73,3 +73,87 @@ export interface CampaignDashboardSummary {
   totalViews: number
   adClicks: number
 }
+
+// ── 상세 분석 뷰 행 타입 ──────────────────────────────────────────
+
+export interface CampaignContentPerformanceRow {
+  name: string
+  platform: string
+  category: string
+  followers: number | null
+  views: number | null
+  likes: number | null
+  saves: number | null
+  comments: number | null
+  er: number | null
+}
+
+export interface CampaignAdPerformanceRow {
+  level: string
+  name: string
+  spend: number | null
+  impressions: number | null
+  clicks: number | null
+  ctr: number | null
+  cpc: number | null
+  cpm: number | null
+  thruPlay: number | null
+}
+
+export interface CampaignRosterDetailRow {
+  name: string
+  platform: string
+  category: string
+  followers: number | null
+  status: string
+  note: string
+  url: string
+}
+
+export interface CampaignCandidateDetailRow {
+  name: string
+  platform: string
+  category: string
+  followers: number | null
+  confirmed: string
+  note: string
+  url: string
+}
+
+export interface CampaignBudgetDetailRow {
+  item: string
+  channel: string
+  purpose: string
+  budget: number | null
+  estCpm: number | null
+  estCpc: number | null
+  estImpr: number | null
+  estClick: number | null
+  note: string
+}
+
+export interface CampaignDetailTabSummary {
+  label: string
+  pct: number
+  value: string
+  color: ProgressColor
+}
+
+export interface CampaignDetailTables {
+  post: CampaignContentPerformanceRow[]
+  ad: CampaignAdPerformanceRow[]
+  confirmed: CampaignRosterDetailRow[]
+  candidates: CampaignCandidateDetailRow[]
+  budget: CampaignBudgetDetailRow[]
+  postSummary: CampaignDetailTabSummary[]
+  adSummary: CampaignDetailTabSummary[]
+  confirmedSummary: CampaignDetailTabSummary[]
+  candidatesSummary: CampaignDetailTabSummary[]
+  budgetSummary: CampaignDetailTabSummary[]
+  postNote: string
+  adNote: string
+  confirmedNote: string
+  candidatesNote: string
+  budgetNote: string
+  metaSpendSpark: number[]
+}

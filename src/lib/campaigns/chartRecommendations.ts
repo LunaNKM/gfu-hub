@@ -12,6 +12,13 @@ import type {
   CampaignBudgetSummary,
   CampaignDataQualitySummary,
   CampaignStatusProgress,
+  CampaignContentPerformanceRow,
+  CampaignAdPerformanceRow,
+  CampaignRosterDetailRow,
+  CampaignCandidateDetailRow,
+  CampaignBudgetDetailRow,
+  CampaignDetailTabSummary,
+  CampaignDetailTables,
 } from '@/types'
 import { computeInfluencerEr } from './databaseTemplates'
 
@@ -468,6 +475,236 @@ function buildDataQualitySummary(
   }
 }
 
+// ── Detail tables builder ─────────────────────────────────────────
+
+function fmtCompact(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return n.toLocaleString()
+}
+
+function buildDetailTables(databases: CampaignDatabase[]): CampaignDetailTables {
+  const confirmed   = databases.find((db) => db.businessType === 'confirmed_influencers')
+  const candidates  = databases.find((db) => db.businessType === 'influencer_candidates')
+  const performance = databases.find((db) => db.businessType === 'influencer_performance')
+  const adBudget    = databases.find((db) => db.businessType === 'ad_budget')
+  const meta        = databases.find((db) => db.businessType === 'meta_analytics')
+
+  // ── Post tab ───────────────────────────────────────────────────
+  const perfRows = performance?.rows ?? []
+  const perfCols = performance?.columns ?? []
+  const pfName      = findColumn(perfCols, ['계정명', 'name'], 'dimension')
+  const pfPlatform  = findColumn(perfCols, ['플랫폼', 'platform'], 'platform')
+  const pfCategory  = findColumn(perfCols, ['카테고리', 'category'], 'dimension')
+  const pfFollowers = findColumn(perfCols, ['팔로워 수', 'followers'], 'metric')
+  const pfViews     = findColumn(perfCols, ['조회수', 'views'], 'performance')
+  const pfLikes     = findColumn(perfCols, ['좋아요', 'likes'], 'performance')
+  const pfSaves     = findColumn(perfCols, ['저장', 'saves'], 'performance')
+  const pfComments  = findColumn(perfCols, ['댓글', 'comments'], 'performance')
+  const pfEr        = findColumn(perfCols, ['ER', 'er'], 'metric')
+
+  const post: CampaignContentPerformanceRow[] = [...perfRows]
+    .sort((a, b) => (pfViews ? (numericValue(b, pfViews.id) ?? 0) - (numericValue(a, pfViews.id) ?? 0) : 0))
+    .map((row) => ({
+      name:      String(row.cells[pfName?.id     ?? ''] ?? ''),
+      platform:  String(row.cells[pfPlatform?.id ?? ''] ?? ''),
+      category:  String(row.cells[pfCategory?.id ?? ''] ?? ''),
+      followers: pfFollowers ? numericValue(row, pfFollowers.id) : null,
+      views:     pfViews     ? numericValue(row, pfViews.id)     : null,
+      likes:     pfLikes     ? numericValue(row, pfLikes.id)     : null,
+      saves:     pfSaves     ? numericValue(row, pfSaves.id)     : null,
+      comments:  pfComments  ? numericValue(row, pfComments.id)  : null,
+      er:        pfEr        ? numericValue(row, pfEr.id) : computeInfluencerEr(row),
+    }))
+
+  const maxViews  = Math.max(...post.map((r) => r.views  ?? 0), 1)
+  const maxEr     = Math.max(...post.map((r) => r.er     ?? 0), 0.01)
+  const maxSaves  = Math.max(...post.map((r) => r.saves  ?? 0), 1)
+  const topByEr   = [...post].sort((a, b) => (b.er ?? 0)    - (a.er ?? 0))[0]
+  const topBySaves = [...post].sort((a, b) => (b.saves ?? 0) - (a.saves ?? 0))[0]
+
+  const postSummary: CampaignDetailTabSummary[] = post.length > 0 ? [
+    { label: '조회수 Top', pct: 100,   value: fmtCompact(maxViews),                    color: 'blue'   },
+    { label: 'ER Top',    pct: Math.round(Math.min(100, ((topByEr?.er ?? 0) / maxEr) * 100)),   value: `${(topByEr?.er ?? 0).toFixed(1)}%`,   color: 'green'  },
+    { label: '저장 Top',  pct: Math.round(Math.min(100, ((topBySaves?.saves ?? 0) / maxSaves) * 100)), value: fmtCompact(topBySaves?.saves ?? 0), color: 'orange' },
+  ] : []
+
+  // ── Ad tab ─────────────────────────────────────────────────────
+  const metaRows = meta?.rows ?? []
+  const metaCols = meta?.columns ?? []
+  const maLevel       = findColumn(metaCols, ['Level', 'level'], 'dimension')
+  const maName        = findColumn(metaCols, ['Name', 'name'], 'dimension')
+  const maSpend       = findColumn(metaCols, ['Spend', 'spend'], 'cost')
+  const maImpressions = findColumn(metaCols, ['Impressions', 'impressions'], 'performance')
+  const maClicks      = findColumn(metaCols, ['Clicks', 'clicks'], 'performance')
+  const maCtr         = findColumn(metaCols, ['CTR', 'ctr'], 'metric')
+  const maCpc         = findColumn(metaCols, ['CPC', 'cpc'], 'metric')
+  const maCpm         = findColumn(metaCols, ['CPM', 'cpm'], 'metric')
+  const maThruPlay    = findColumn(metaCols, ['ThruPlay', 'thruplay'], 'performance')
+
+  const ad: CampaignAdPerformanceRow[] = [...metaRows]
+    .sort((a, b) => (maSpend ? (numericValue(b, maSpend.id) ?? 0) - (numericValue(a, maSpend.id) ?? 0) : 0))
+    .map((row) => ({
+      level:       String(row.cells[maLevel?.id ?? ''] ?? ''),
+      name:        String(row.cells[maName?.id  ?? ''] ?? ''),
+      spend:       maSpend       ? numericValue(row, maSpend.id)       : null,
+      impressions: maImpressions ? numericValue(row, maImpressions.id) : null,
+      clicks:      maClicks      ? numericValue(row, maClicks.id)      : null,
+      ctr:         maCtr         ? numericValue(row, maCtr.id)         : null,
+      cpc:         maCpc         ? numericValue(row, maCpc.id)         : null,
+      cpm:         maCpm         ? numericValue(row, maCpm.id)         : null,
+      thruPlay:    maThruPlay    ? numericValue(row, maThruPlay.id)    : null,
+    }))
+
+  const maxSpend = Math.max(...ad.map((r) => r.spend ?? 0), 1)
+  const maxCtr   = Math.max(...ad.map((r) => r.ctr   ?? 0), 0.01)
+  const maxCpc   = Math.max(...ad.map((r) => r.cpc   ?? 0), 1)
+  const topByCtr = [...ad].sort((a, b) => (b.ctr ?? 0) - (a.ctr ?? 0))[0]
+  const topByCpc = [...ad].sort((a, b) => (b.cpc ?? 0) - (a.cpc ?? 0))[0]
+
+  const adSummary: CampaignDetailTabSummary[] = ad.length > 0 ? [
+    { label: 'Spend Top', pct: 100, value: fmtCompact(maxSpend), color: 'blue' },
+    { label: 'CTR Top',   pct: Math.round(Math.min(100, ((topByCtr?.ctr ?? 0) / maxCtr) * 100)), value: `${(topByCtr?.ctr ?? 0).toFixed(2)}%`, color: 'green'  },
+    { label: 'CPC Watch', pct: Math.round(Math.min(100, ((topByCpc?.cpc ?? 0) / maxCpc) * 100)), value: fmtCompact(topByCpc?.cpc ?? 0),        color: 'orange' },
+  ] : []
+
+  // ── Confirmed tab ──────────────────────────────────────────────
+  const confRows = confirmed?.rows ?? []
+  const confCols = confirmed?.columns ?? []
+  const cfName      = findColumn(confCols, ['계정명', 'name'], 'dimension')
+  const cfPlatform  = findColumn(confCols, ['플랫폼', 'platform'], 'platform')
+  const cfCategory  = findColumn(confCols, ['카테고리', 'category'], 'dimension')
+  const cfFollowers = findColumn(confCols, ['팔로워 수', 'followers'], 'metric')
+  const cfStatus    = findColumn(confCols, ['현재 상태', 'status'], 'status')
+  const cfNote      = findColumn(confCols, ['비고', 'note'])
+  const cfUrl       = confCols.find((c) => c.type === 'url')
+
+  const STATUS_ORDER = ['업로드완료', '검수중', '초안대기', '계약완료', '계약전']
+  const confirmedRows: CampaignRosterDetailRow[] = [...confRows]
+    .sort((a, b) => {
+      const ai = cfStatus ? STATUS_ORDER.indexOf(String(a.cells[cfStatus.id] ?? '')) : -1
+      const bi = cfStatus ? STATUS_ORDER.indexOf(String(b.cells[cfStatus.id] ?? '')) : -1
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi)
+    })
+    .map((row) => ({
+      name:      String(row.cells[cfName?.id      ?? ''] ?? ''),
+      platform:  String(row.cells[cfPlatform?.id  ?? ''] ?? ''),
+      category:  String(row.cells[cfCategory?.id  ?? ''] ?? ''),
+      followers: cfFollowers ? numericValue(row, cfFollowers.id) : null,
+      status:    String(row.cells[cfStatus?.id    ?? ''] ?? ''),
+      note:      String(row.cells[cfNote?.id      ?? ''] ?? ''),
+      url:       cfUrl ? String(row.cells[cfUrl.id] ?? '') : '',
+    }))
+
+  const totalConf   = confirmedRows.length
+  const uploadedCf  = confirmedRows.filter((r) => r.status === '업로드완료').length
+  const reviewCf    = confirmedRows.filter((r) => r.status === '검수중').length
+  const draftCf     = confirmedRows.filter((r) => r.status === '초안대기').length
+
+  const confirmedSummary: CampaignDetailTabSummary[] = totalConf > 0 ? [
+    { label: '업로드완료', pct: Math.round((uploadedCf / totalConf) * 100), value: `${uploadedCf}명`,  color: 'green'  },
+    { label: '검수중',     pct: Math.round((reviewCf  / totalConf) * 100), value: `${reviewCf}명`,    color: 'blue'   },
+    { label: '초안대기',   pct: Math.round((draftCf   / totalConf) * 100), value: `${draftCf}명`,     color: 'orange' },
+  ] : []
+
+  // ── Candidates tab ─────────────────────────────────────────────
+  const candRows = candidates?.rows ?? []
+  const candCols = candidates?.columns ?? []
+  const caName      = findColumn(candCols, ['계정명', 'name'], 'dimension')
+  const caPlatform  = findColumn(candCols, ['플랫폼', 'platform'], 'platform')
+  const caCategory  = findColumn(candCols, ['카테고리', 'category'], 'dimension')
+  const caFollowers = findColumn(candCols, ['팔로워 수', 'followers'], 'metric')
+  const caConfirmed = findColumn(candCols, ['확정 여부', 'confirmed'], 'status')
+  const caNote      = findColumn(candCols, ['비고', 'note'])
+  const caUrl       = candCols.find((c) => c.type === 'url')
+
+  const candidatesRows: CampaignCandidateDetailRow[] = candRows.map((row) => {
+    const rawConf = row.cells[caConfirmed?.id ?? '']
+    const confirmed = rawConf === true || rawConf === '확정' ? '확정' : '미확정'
+    return {
+      name:      String(row.cells[caName?.id      ?? ''] ?? ''),
+      platform:  String(row.cells[caPlatform?.id  ?? ''] ?? ''),
+      category:  String(row.cells[caCategory?.id  ?? ''] ?? ''),
+      followers: caFollowers ? numericValue(row, caFollowers.id) : null,
+      confirmed,
+      note:      String(row.cells[caNote?.id      ?? ''] ?? ''),
+      url:       caUrl ? String(row.cells[caUrl.id] ?? '') : '',
+    }
+  })
+
+  const totalCand     = candidatesRows.length
+  const confirmedCand = candidatesRows.filter((r) => r.confirmed === '확정').length
+  const pendingCand   = candidatesRows.filter((r) => r.confirmed !== '확정' && r.note).length
+
+  const candidatesSummary: CampaignDetailTabSummary[] = totalCand > 0 ? [
+    { label: '후보자 수',  pct: 85, value: `${totalCand}명`,     color: 'blue'   },
+    { label: '확정 후보', pct: Math.round((confirmedCand / totalCand) * 100), value: `${confirmedCand}명`, color: 'green'  },
+    { label: '협의 필요', pct: Math.round((pendingCand   / totalCand) * 100), value: `${pendingCand}명`,  color: 'orange' },
+  ] : []
+
+  // ── Budget tab ─────────────────────────────────────────────────
+  const budRows = adBudget?.rows ?? []
+  const budCols = adBudget?.columns ?? []
+  const bdItem     = findColumn(budCols, ['항목', 'item'], 'dimension')
+  const bdChannel  = findColumn(budCols, ['채널', 'channel'], 'platform')
+  const bdPurpose  = findColumn(budCols, ['목적', 'purpose'], 'dimension')
+  const bdBudget   = findColumn(budCols, ['예산', 'budget'], 'cost')
+  const bdEstCpm   = findColumn(budCols, ['예상 CPM', 'est_cpm'], 'metric')
+  const bdEstCpc   = findColumn(budCols, ['예상 CPC', 'est_cpc'], 'metric')
+  const bdEstImpr  = findColumn(budCols, ['예상 노출', 'est_impr'], 'metric')
+  const bdEstClick = findColumn(budCols, ['예상 클릭', 'est_click'], 'metric')
+  const bdNote     = findColumn(budCols, ['비고', 'note'])
+
+  const budgetRows: CampaignBudgetDetailRow[] = budRows.map((row) => ({
+    item:     String(row.cells[bdItem?.id     ?? ''] ?? ''),
+    channel:  String(row.cells[bdChannel?.id  ?? ''] ?? ''),
+    purpose:  String(row.cells[bdPurpose?.id  ?? ''] ?? ''),
+    budget:   bdBudget   ? numericValue(row, bdBudget.id)   : null,
+    estCpm:   bdEstCpm   ? numericValue(row, bdEstCpm.id)   : null,
+    estCpc:   bdEstCpc   ? numericValue(row, bdEstCpc.id)   : null,
+    estImpr:  bdEstImpr  ? numericValue(row, bdEstImpr.id)  : null,
+    estClick: bdEstClick ? numericValue(row, bdEstClick.id) : null,
+    note:     String(row.cells[bdNote?.id     ?? ''] ?? ''),
+  }))
+
+  const totalBudget = budgetRows.reduce((acc, r) => acc + (r.budget ?? 0), 0)
+  const byChannel = budgetRows.reduce((acc, r) => {
+    if (r.channel) acc[r.channel] = (acc[r.channel] ?? 0) + (r.budget ?? 0)
+    return acc
+  }, {} as Record<string, number>)
+  const topChannels = Object.entries(byChannel).sort(([, a], [, b]) => b - a)
+
+  const budgetSummary: CampaignDetailTabSummary[] = totalBudget > 0 ? [
+    { label: '예산 합계', pct: 100, value: fmtCompact(totalBudget), color: 'blue' },
+    ...(topChannels[0] ? [{ label: `${topChannels[0][0]} 비중`, pct: Math.round((topChannels[0][1] / totalBudget) * 100), value: fmtCompact(topChannels[0][1]), color: 'green'  as const }] : []),
+    ...(topChannels[1] ? [{ label: `${topChannels[1][0]} 비중`, pct: Math.round((topChannels[1][1] / totalBudget) * 100), value: fmtCompact(topChannels[1][1]), color: 'orange' as const }] : []),
+  ] : []
+
+  // ── Meta spend spark (relative pct from ad rows sorted by spend) ─
+  const sparkRaw = ad.slice(0, 7).map((r) => r.spend ?? 0)
+  const sparkMax = Math.max(...sparkRaw, 1)
+  const metaSpendSpark = sparkRaw.map((v) => Math.max(8, Math.round((v / sparkMax) * 100)))
+
+  return {
+    post,
+    ad,
+    confirmed: confirmedRows,
+    candidates: candidatesRows,
+    budget: budgetRows,
+    postSummary,
+    adSummary,
+    confirmedSummary,
+    candidatesSummary,
+    budgetSummary,
+    postNote: '인플루언서 성과 DB의 조회수, 좋아요, 저장, 댓글, ER만 사용합니다. 광고 지표와 섞지 않습니다.',
+    adNote: 'Meta Analytics DB의 level, spend, impressions, clicks, CTR, CPC, CPM, ThruPlay만 사용합니다. 게시물 반응 수와 분리합니다.',
+    confirmedNote: '확정 인원 리스트 DB의 status, platform, category를 기준으로 진행률과 구성 비율을 만듭니다.',
+    candidatesNote: '후보자 DB는 파이프라인 관리용입니다. 메인 KPI보다는 후보 풀의 규모와 플랫폼/카테고리 분포에 쓰는 것이 좋습니다.',
+    budgetNote: '광고 예산안 DB는 계획값입니다. 실제 광고 성과는 Meta Analytics DB와 비교해서 예산 대비 집행률로 보여주는 것이 좋습니다.',
+    metaSpendSpark,
+  }
+}
+
 // ── Main overview builder ─────────────────────────────────────────
 
 export function buildCampaignOverviewFromDatabases(databases: CampaignDatabase[]): CampaignOverview {
@@ -618,6 +855,8 @@ export function buildCampaignOverviewFromDatabases(databases: CampaignDatabase[]
     ...(meta ? buildDatabaseChartRecommendations(meta) : []),
   ]
 
+  const detailTables = buildDetailTables(databases)
+
   return {
     metrics,
     charts,
@@ -627,5 +866,6 @@ export function buildCampaignOverviewFromDatabases(databases: CampaignDatabase[]
     rosterProgress,
     budget,
     dataQuality,
+    detailTables,
   }
 }
