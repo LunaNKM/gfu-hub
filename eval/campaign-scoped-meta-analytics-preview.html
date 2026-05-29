@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Campaign Scoped Meta Analytics Preview</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --line: #e5e9f0;
+      --line-soft: #eef1f5;
+      --ink: #111827;
+      --muted: #687385;
+      --faint: #98a2b3;
+      --blue: #3578f6;
+      --blue-soft: #edf4ff;
+      --green: #0f9f6e;
+      --green-soft: #e8f8f1;
+      --orange: #c87500;
+      --orange-soft: #fff7e8;
+      --red: #d64545;
+      --shadow: 0 14px 36px rgba(16, 24, 40, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(53, 120, 246, 0.08), transparent 30%),
+        linear-gradient(180deg, #fbfcfe 0%, var(--bg) 42%, #f8fafc 100%);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+    }
+
+    aside {
+      background: #fff;
+      border-right: 1px solid var(--line);
+      padding: 18px 14px;
+    }
+
+    .brand {
+      margin-bottom: 24px;
+      padding: 0 10px;
+    }
+
+    .brand small {
+      display: block;
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .brand strong {
+      display: block;
+      margin-top: 3px;
+      font-size: 14px;
+    }
+
+    .nav-label {
+      margin: 18px 10px 8px;
+      font-size: 11px;
+      color: var(--faint);
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .nav-item {
+      height: 34px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 10px;
+      border-radius: 6px;
+      color: #475467;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .nav-item.active {
+      background: var(--blue-soft);
+      color: #1659d8;
+    }
+
+    main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      height: 44px;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 22px;
+    }
+
+    .crumb {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .crumb b { color: var(--ink); }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      background: var(--green);
+      border-radius: 999px;
+    }
+
+    .page {
+      padding: 24px;
+      overflow: auto;
+    }
+
+    .hero {
+      max-width: 1180px;
+      margin: 0 auto;
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+      box-shadow: none;
+      animation: pageIn .46s cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    .hero-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .sub {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    button, select {
+      height: 32px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      color: #344054;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 0 10px;
+      cursor: pointer;
+      transition: background .15s ease, border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+    }
+
+    button:hover, select:hover {
+      border-color: #cfd6e3;
+      background: #fbfcff;
+      transform: translateY(-1px);
+    }
+
+    button.primary {
+      border-color: var(--blue);
+      background: var(--blue);
+      color: #fff;
+      box-shadow: 0 8px 18px rgba(53, 120, 246, .2);
+    }
+
+    .seg {
+      display: inline-flex;
+      padding: 3px;
+      background: #f1f3f6;
+      border-radius: 12px;
+      gap: 2px;
+    }
+
+    .seg button {
+      border: 0;
+      height: 26px;
+      background: transparent;
+      color: var(--muted);
+      padding: 0 10px;
+    }
+
+    .seg button.active {
+      background: #fff;
+      color: var(--ink);
+      box-shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
+    }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .kpi {
+      border: 1px solid rgba(229, 233, 240, .9);
+      border-radius: 14px;
+      padding: 16px;
+      background: #fff;
+      box-shadow: 0 8px 22px rgba(16, 24, 40, 0.045);
+      animation: riseIn .44s cubic-bezier(.2,.8,.2,1) both;
+      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+
+    .kpi:hover {
+      transform: translateY(-3px);
+      border-color: #d7e3ff;
+      box-shadow: 0 16px 34px rgba(16, 24, 40, 0.075);
+    }
+
+    .kpi:nth-child(1) { animation-delay: .03s; }
+    .kpi:nth-child(2) { animation-delay: .06s; }
+    .kpi:nth-child(3) { animation-delay: .09s; }
+    .kpi:nth-child(4) { animation-delay: .12s; }
+    .kpi:nth-child(5) { animation-delay: .15s; }
+    .kpi:nth-child(6) { animation-delay: .18s; }
+    .kpi::before {
+      content: "";
+      display: block;
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      margin-bottom: 12px;
+      background: var(--blue-soft);
+    }
+
+    .kpi:nth-child(2)::before { background: #eaf8ef; }
+    .kpi:nth-child(3)::before { background: #f3efff; }
+    .kpi:nth-child(4)::before { background: #fff4e5; }
+    .kpi:nth-child(5)::before { background: #eff6ff; }
+    .kpi:nth-child(6)::before { background: #f1f5f9; }
+
+    .kpi span {
+      display: block;
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .kpi strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .kpi small {
+      display: block;
+      margin-top: 6px;
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--line);
+      margin: 0 0 18px;
+      padding: 0;
+      background: transparent;
+    }
+
+    .tab {
+      height: 38px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      color: var(--muted);
+      background: transparent;
+      transform: none;
+    }
+
+    .tab.active {
+      color: var(--blue);
+      border-bottom-color: var(--blue);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr);
+      gap: 14px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid rgba(229, 233, 240, .92);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 8px 24px rgba(16, 24, 40, 0.045);
+      animation: riseIn .38s cubic-bezier(.2,.8,.2,1) both;
+      transition: box-shadow .18s ease, transform .18s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 34px rgba(16, 24, 40, 0.07);
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      gap: 12px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .hint {
+      color: var(--faint);
+      font-size: 12px;
+    }
+
+    .chart {
+      height: 280px;
+      border: 1px solid #f0f2f6;
+      border-radius: 12px;
+      background:
+        linear-gradient(180deg, transparent 24%, rgba(229,233,240,.62) 24% 24.5%, transparent 24.5% 49%, rgba(229,233,240,.62) 49% 49.5%, transparent 49.5% 74%, rgba(229,233,240,.62) 74% 74.5%, transparent 74.5%),
+        #fff;
+      position: relative;
+      padding: 18px 14px 0 46px;
+      overflow: hidden;
+    }
+
+    .bars {
+      height: 210px;
+      display: flex;
+      align-items: flex-end;
+      gap: 12px;
+    }
+
+    .bar {
+      flex: 1;
+      min-width: 18px;
+      background: linear-gradient(180deg, #5c8df7, #3578f6);
+      border-radius: 8px 8px 0 0;
+      position: relative;
+      transform-origin: bottom;
+      animation: growBar .72s cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    .bar:nth-child(1) { animation-delay: .05s; }
+    .bar:nth-child(2) { animation-delay: .09s; }
+    .bar:nth-child(3) { animation-delay: .13s; }
+    .bar:nth-child(4) { animation-delay: .17s; }
+    .bar:nth-child(5) { animation-delay: .21s; }
+    .bar:nth-child(6) { animation-delay: .25s; }
+    .bar:nth-child(7) { animation-delay: .29s; }
+    .bar:nth-child(8) { animation-delay: .33s; }
+
+    .bar::after {
+      content: attr(data-label);
+      position: absolute;
+      left: 50%;
+      bottom: -23px;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: var(--faint);
+      white-space: nowrap;
+    }
+
+    .line {
+      position: absolute;
+      left: 42px;
+      right: 10px;
+      top: 42px;
+      height: 145px;
+      background:
+        linear-gradient(135deg, transparent 0 11%, rgba(15,159,110,.86) 11% 12%, transparent 12% 28%, rgba(15,159,110,.86) 28% 29%, transparent 29% 46%, rgba(15,159,110,.86) 46% 47%, transparent 47% 64%, rgba(15,159,110,.86) 64% 65%, transparent 65% 82%, rgba(15,159,110,.86) 82% 83%, transparent 83%);
+      pointer-events: none;
+      opacity: 0;
+      animation: fadeIn .48s ease .38s forwards;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th {
+      text-align: left;
+      color: var(--faint);
+      font-weight: 800;
+      padding: 8px 6px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    td {
+      padding: 9px 6px;
+      border-bottom: 1px solid var(--line-soft);
+      color: #344054;
+    }
+
+    tbody tr {
+      transition: background .14s ease;
+    }
+
+    tbody tr:hover {
+      background: #f8fbff;
+    }
+
+    .rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 8px;
+      background: #f2f4f7;
+      font-weight: 800;
+      color: var(--muted);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 20px;
+      padding: 0 7px;
+      border-radius: 5px;
+      background: var(--green-soft);
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .heat {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 6px;
+    }
+
+    .heat div {
+      aspect-ratio: 1.6;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+      color: #fff;
+      background: #3578f6;
+    }
+
+    .heat div:nth-child(2n) { background: #93b7ff; color: #194185; }
+    .heat div:nth-child(3n) { background: #e7eefb; color: #667085; }
+
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.28);
+      z-index: 50;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .modal.open { display: flex; }
+
+    .modal-panel {
+      width: min(680px, 100%);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+      transform: translateY(8px) scale(.98);
+      opacity: 0;
+      animation: modalIn .18s ease forwards;
+    }
+
+    .check-row {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr) 90px 90px;
+      gap: 8px;
+      align-items: center;
+      height: 38px;
+      border-bottom: 1px solid var(--line-soft);
+      font-size: 12px;
+    }
+
+    .tab-panel {
+      animation: panelIn .24s ease both;
+    }
+
+    @keyframes pageIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes riseIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes growBar {
+      from { transform: scaleY(0); opacity: .55; }
+      to { transform: scaleY(1); opacity: 1; }
+    }
+
+    @keyframes fadeIn {
+      to { opacity: 1; }
+    }
+
+    @keyframes panelIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes modalIn {
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @media (max-width: 980px) {
+      .app { grid-template-columns: 1fr; }
+      aside { display: none; }
+      .kpis { grid-template-columns: repeat(2, 1fr); }
+      .grid, .split { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand">
+        <small>필로메디</small>
+        <strong>2026 Q2 메가와리</strong>
+      </div>
+      <div class="nav-label">문서</div>
+      <div class="nav-item active">▥ 종합 대시보드</div>
+      <div class="nav-item">□ 후보자 리스트</div>
+      <div class="nav-item">□ 확정 인원 리스트</div>
+      <div class="nav-item">□ 인플루언서 성과</div>
+      <div class="nav-label">광고</div>
+      <div class="nav-item active">▣ Meta 상세 분석</div>
+    </aside>
+
+    <main>
+      <div class="topbar">
+        <div class="crumb">필로메디 / <b>Meta 상세 분석</b></div>
+        <div class="status"><span class="dot"></span> snapshot 186 rows · 2026-05-28 15:42</div>
+      </div>
+
+      <div class="page">
+        <section class="hero">
+          <div class="hero-head">
+            <div>
+              <h1>캠페인별 Meta 광고 애널리틱스</h1>
+              <div class="sub">저장된 Mapping과 campaignMetaInsightSnapshots를 기준으로 분석합니다.</div>
+            </div>
+            <div class="toolbar">
+              <select>
+                <option>1401513060940020 · EASYDEW_26 Q2 메가와리</option>
+              </select>
+              <div class="seg">
+                <button>7일</button>
+                <button>14일</button>
+                <button class="active">30일</button>
+                <button>90일</button>
+              </div>
+              <button onclick="toggleModal()">필터</button>
+              <button class="primary">Meta 새로고침</button>
+            </div>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi"><span>광고비</span><strong>¥1.82M</strong><small>예산 대비 71%</small></div>
+            <div class="kpi"><span>노출</span><strong>2.4M</strong><small>+18.2%</small></div>
+            <div class="kpi"><span>도달</span><strong>984K</strong><small>빈도 2.44</small></div>
+            <div class="kpi"><span>클릭</span><strong>38.2K</strong><small>CTR 1.59%</small></div>
+            <div class="kpi"><span>CPC</span><strong>¥47</strong><small>관찰</small></div>
+            <div class="kpi"><span>ThruPlay</span><strong>91.4K</strong><small>영상 소재 6개</small></div>
+          </div>
+
+          <div class="tabs">
+            <button class="tab active" data-tab="overview" onclick="setTab('overview')">개요</button>
+            <button class="tab" data-tab="audience" onclick="setTab('audience')">오디언스</button>
+            <button class="tab" data-tab="placement" onclick="setTab('placement')">게재위치</button>
+            <button class="tab" data-tab="video" onclick="setTab('video')">영상</button>
+            <button class="tab" data-tab="fatigue" onclick="setTab('fatigue')">피로도</button>
+            <button class="tab" data-tab="hourly" onclick="setTab('hourly')">시간대</button>
+          </div>
+
+          <div id="overview" class="tab-panel">
+            <div class="grid">
+              <div class="card">
+                <div class="card-head">
+                  <div>
+                    <h2>일별 광고 성과 추이</h2>
+                    <div class="hint">광고비와 클릭 흐름을 캠페인 snapshot 기준으로 집계</div>
+                  </div>
+                  <span class="badge">Campaign + Ad Set + Ad</span>
+                </div>
+                <div class="chart">
+                  <div class="line"></div>
+                  <div class="bars">
+                    <div class="bar" data-label="4/29" style="height:52%"></div>
+                    <div class="bar" data-label="5/03" style="height:67%"></div>
+                    <div class="bar" data-label="5/07" style="height:44%"></div>
+                    <div class="bar" data-label="5/11" style="height:80%"></div>
+                    <div class="bar" data-label="5/15" style="height:61%"></div>
+                    <div class="bar" data-label="5/19" style="height:72%"></div>
+                    <div class="bar" data-label="5/23" style="height:92%"></div>
+                    <div class="bar" data-label="5/27" style="height:76%"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-head">
+                  <h2>캠페인별 지출 랭킹</h2>
+                  <span class="hint">상위 6개</span>
+                </div>
+                <table>
+                  <thead><tr><th></th><th>Campaign</th><th>Spend</th><th>CTR</th></tr></thead>
+                  <tbody>
+                    <tr><td><span class="rank">1</span></td><td>EASYDEW Q2</td><td>¥621K</td><td>1.78%</td></tr>
+                    <tr><td><span class="rank">2</span></td><td>REJURAN Q2</td><td>¥482K</td><td>1.41%</td></tr>
+                    <tr><td><span class="rank">3</span></td><td>gfumag</td><td>¥331K</td><td>1.96%</td></tr>
+                    <tr><td><span class="rank">4</span></td><td>리쥬란 26-Q1</td><td>¥207K</td><td>1.12%</td></tr>
+                    <tr><td><span class="rank">5</span></td><td>VIVIDICI</td><td>¥181K</td><td>1.32%</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div id="audience" class="tab-panel" style="display:none">
+            <div class="card">
+              <div class="card-head">
+                <div>
+                  <h2>연령 × 성별 효율 매트릭스</h2>
+                  <div class="hint">Analytics 탭과 동일한 breakdown. 캠페인 refresh 확장 후 snapshot으로 저장됩니다.</div>
+                </div>
+                <div class="seg"><button class="active">CTR</button><button>CPC</button><button>Spend</button></div>
+              </div>
+              <div class="heat">
+                <div>18-24<br>1.8%</div><div>25-34<br>2.1%</div><div>35-44<br>1.1%</div>
+                <div>45-54<br>1.4%</div><div>55-64<br>0.9%</div><div>65+<br>0.6%</div>
+                <div>18-24<br>1.7%</div><div>25-34<br>2.4%</div><div>35-44<br>1.5%</div>
+                <div>45-54<br>1.2%</div><div>55-64<br>0.8%</div><div>65+<br>0.5%</div>
+              </div>
+            </div>
+          </div>
+
+          <div id="placement" class="tab-panel" style="display:none">
+            <div class="card">
+              <div class="card-head">
+                <div>
+                  <h2>게재위치별 성과 비교</h2>
+                  <div class="hint">Instagram Reels / Feed / Story / Audience Network 단위</div>
+                </div>
+                <div class="seg"><button class="active">CPM</button><button>CTR</button><button>CPC</button></div>
+              </div>
+              <table>
+                <thead><tr><th>Placement</th><th>Spend</th><th>CPM</th><th>CTR</th><th>CPC</th></tr></thead>
+                <tbody>
+                  <tr><td>Instagram · Reels</td><td>¥812K</td><td>¥741</td><td>1.92%</td><td>¥39</td></tr>
+                  <tr><td>Instagram · Feed</td><td>¥403K</td><td>¥1,012</td><td>1.31%</td><td>¥61</td></tr>
+                  <tr><td>Facebook · Feed</td><td>¥227K</td><td>¥881</td><td>0.94%</td><td>¥94</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="video" class="tab-panel" style="display:none">
+            <div class="split">
+              <div class="card">
+                <div class="card-head"><h2>영상 광고 시청 퍼널</h2><span class="hint">Hook / Hold</span></div>
+                <table>
+                  <thead><tr><th>Creative</th><th>Play</th><th>ThruPlay</th><th>Hold</th></tr></thead>
+                  <tbody>
+                    <tr><td>Reels Creative A</td><td>41.2K</td><td>17.8K</td><td>43.2%</td></tr>
+                    <tr><td>Reels Creative B</td><td>33.5K</td><td>13.1K</td><td>39.1%</td></tr>
+                    <tr><td>TikTok Cutdown</td><td>16.7K</td><td>5.9K</td><td>35.3%</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="card">
+                <div class="card-head"><h2>소재 교체 후보</h2><span class="badge">자동 감지</span></div>
+                <p class="hint">빈도 3.0 이상, CTR 하락, Hold Rate 30% 미만인 소재를 우선 표시합니다.</p>
+                <table>
+                  <tbody>
+                    <tr><td>VIVIDICI 250903 트래픽</td><td><span class="badge" style="background:var(--orange-soft);color:var(--orange)">관찰</span></td></tr>
+                    <tr><td>체험단 서비스 01</td><td><span class="badge" style="background:var(--orange-soft);color:var(--orange)">교체 검토</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div id="fatigue" class="tab-panel" style="display:none">
+            <div class="grid">
+              <div class="card">
+                <div class="card-head"><h2>빈도 vs CTR</h2><span class="hint">일별 snapshot</span></div>
+                <div class="chart"><div class="line"></div></div>
+              </div>
+              <div class="card">
+                <div class="card-head"><h2>분석 인사이트</h2><span class="badge">AI 후보</span></div>
+                <table>
+                  <tbody>
+                    <tr><td>평균 빈도</td><td>2.44</td></tr>
+                    <tr><td>CTR 저점</td><td>5/24 · 0.91%</td></tr>
+                    <tr><td>교체 권장</td><td>2개 광고</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div id="hourly" class="tab-panel" style="display:none">
+            <div class="card">
+              <div class="card-head">
+                <div><h2>시간대별 성과</h2><div class="hint">광고주 시간대 기준 CTR heatmap</div></div>
+                <span class="hint">breakdown snapshot 필요</span>
+              </div>
+              <div class="heat">
+                <div>00<br>0.8%</div><div>01<br>0.6%</div><div>02<br>0.4%</div><div>03<br>0.3%</div><div>04<br>0.3%</div><div>05<br>0.4%</div>
+                <div>06<br>0.9%</div><div>07<br>1.2%</div><div>08<br>1.5%</div><div>09<br>1.9%</div><div>10<br>2.2%</div><div>11<br>2.0%</div>
+                <div>12<br>1.7%</div><div>13<br>1.6%</div><div>14<br>1.5%</div><div>15<br>1.8%</div><div>16<br>2.1%</div><div>17<br>2.4%</div>
+                <div>18<br>2.7%</div><div>19<br>2.5%</div><div>20<br>2.2%</div><div>21<br>1.9%</div><div>22<br>1.5%</div><div>23<br>1.1%</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="modal" class="modal" onclick="toggleModal(event)">
+    <div class="modal-panel" onclick="event.stopPropagation()">
+      <div class="card-head">
+        <div>
+          <h2>캠페인 / 광고세트 / 광고 필터</h2>
+          <div class="hint">Mapping에 저장된 object만 분석 화면에 표시됩니다.</div>
+        </div>
+        <button onclick="toggleModal()">닫기</button>
+      </div>
+      <div class="check-row"><input type="checkbox" checked><b>EASYDEW_26 Q2 메가와리</b><span>Campaign</span><span>ACTIVE</span></div>
+      <div class="check-row"><input type="checkbox" checked><span style="padding-left:20px">Reels Audience</span><span>Ad Set</span><span>ACTIVE</span></div>
+      <div class="check-row"><input type="checkbox" checked><span style="padding-left:40px">Reels Creative A</span><span>Ad</span><span>ACTIVE</span></div>
+      <div class="check-row"><input type="checkbox"><b>REJURAN_26 Q2 메가포</b><span>Campaign</span><span>ACTIVE</span></div>
+      <div class="check-row"><input type="checkbox"><b>VIVIDICI_250903</b><span>Campaign</span><span>PAUSED</span></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+        <button>초기화</button>
+        <button class="primary" onclick="toggleModal()">적용</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function setTab(id) {
+      document.querySelectorAll('.tab').forEach(function(tab) {
+        tab.classList.toggle('active', tab.dataset.tab === id);
+      });
+      document.querySelectorAll('.tab-panel').forEach(function(panel) {
+        panel.style.display = panel.id === id ? 'block' : 'none';
+      });
+    }
+
+    function toggleModal(event) {
+      if (event && event.target.id !== 'modal') return;
+      document.getElementById('modal').classList.toggle('open');
+    }
+  </script>
+</body>
+</html>
