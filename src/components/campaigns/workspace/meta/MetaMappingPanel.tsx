@@ -52,6 +52,7 @@ export function MetaMappingPanel({
     loading,
     saving,
     refreshing,
+    refreshPhase,
     error,
     saveMapping,
     refreshMapping,
@@ -383,6 +384,7 @@ export function MetaMappingPanel({
               metaAdsetIds={form.metaAdsetIds}
               metaAdIds={form.metaAdIds}
               refreshing={refreshing}
+              refreshPhase={refreshPhase}
               lastResult={lastRefreshResult}
               rateLimitUntil={rateLimitUntil}
               onRefresh={handleRefresh}

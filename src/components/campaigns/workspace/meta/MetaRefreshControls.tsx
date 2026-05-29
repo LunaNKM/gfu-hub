@@ -69,6 +69,7 @@ interface MetaRefreshControlsProps {
   metaAdsetIds: string[]
   metaAdIds: string[]
   refreshing: boolean
+  refreshPhase?: 'idle' | 'fetching' | 'reloading'
   lastResult: CampaignMetaRefreshResult | null
   rateLimitUntil?: number | null
   onRefresh: (params: {
@@ -89,6 +90,7 @@ export function MetaRefreshControls({
   metaAdsetIds,
   metaAdIds,
   refreshing,
+  refreshPhase = 'idle',
   lastResult,
   rateLimitUntil,
   onRefresh,
@@ -198,19 +200,33 @@ export function MetaRefreshControls({
       )}
 
       {/* 상세 breakdown 수집 체크박스 */}
-      <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, cursor: refreshing || isRateLimited ? 'not-allowed' : 'pointer' }}>
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: withBreakdowns ? 6 : 10, cursor: refreshing || isRateLimited ? 'not-allowed' : 'pointer' }}>
         <input
           type="checkbox"
           checked={withBreakdowns}
           disabled={refreshing || isRateLimited}
           onChange={(e) => setWithBreakdowns(e.target.checked)}
-          style={{ cursor: refreshing || isRateLimited ? 'not-allowed' : 'pointer' }}
+          style={{ cursor: refreshing || isRateLimited ? 'not-allowed' : 'pointer', marginTop: 1 }}
         />
         <span style={{ fontSize: 11, color: '#5c6577', lineHeight: 1.4 }}>
           오디언스/게재위치/시간대 상세 데이터도 수집
           <span style={{ marginLeft: 4, color: '#98a2b3', fontSize: 10 }}>(API 호출 증가)</span>
         </span>
       </label>
+      {withBreakdowns && (
+        <p style={{ margin: '0 0 10px', fontSize: 10, color: '#7a8497', paddingLeft: 20 }}>
+          상세 수집은 시간이 더 걸릴 수 있습니다.
+        </p>
+      )}
+
+      {/* 진행 상태 메시지 (3단계) */}
+      {refreshing && (
+        <p style={{ margin: '0 0 8px', fontSize: 11, color: '#2467d6', lineHeight: 1.5 }}>
+          {refreshPhase === 'reloading'
+            ? '저장된 snapshot으로 대시보드를 갱신 중입니다.'
+            : 'Meta API에서 성과 데이터를 수집 중입니다.'}
+        </p>
+      )}
 
       {/* 버튼 */}
       <button
@@ -230,7 +246,9 @@ export function MetaRefreshControls({
           transition: 'background 0.15s',
         }}
       >
-        {refreshing ? '새로고침 중...' : 'Meta 데이터 새로고침'}
+        {refreshing
+          ? (refreshPhase === 'reloading' ? '대시보드 갱신 중...' : '데이터 수집 중...')
+          : 'Meta 데이터 새로고침'}
       </button>
 
       {/* 결과 */}

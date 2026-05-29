@@ -1176,7 +1176,7 @@ export function buildCampaignOverviewFromSources(params: {
       return m
     })
 
-    // snapshot 기반 상세 광고 표 교체
+    // snapshot 기반 상세 광고 표 교체 (breakdown rows 포함)
     const adDetail = buildAdDetailFromSnapshots(metaSnapshots)
     const detailTables: CampaignDetailTables = {
       ...baseOverview.detailTables!,
@@ -1184,6 +1184,9 @@ export function buildCampaignOverviewFromSources(params: {
       adSummary: adDetail.adSummary,
       adNote: adDetail.adNote,
       metaSpendSpark: adDetail.metaSpendSpark,
+      metaAudienceRows: adDetail.metaAudienceRows,
+      metaPlacementRows: adDetail.metaPlacementRows,
+      metaHourlyRows: adDetail.metaHourlyRows,
     }
 
     return {

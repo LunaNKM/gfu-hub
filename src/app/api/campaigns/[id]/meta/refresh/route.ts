@@ -310,6 +310,24 @@ export async function POST(
     ...[...new Set(requestedBreakdowns)],
   ]
 
+  const isDetailRefresh = runs.length > 1
+  if (isDetailRefresh) {
+    const objectCount = activeLevels.reduce(
+      (sum, level) => sum + (effectiveIdsByLevel[level]?.length ?? 0),
+      0
+    )
+    const estimatedWork = objectCount * runs.length
+    if (estimatedWork > 80) {
+      return NextResponse.json(
+        {
+          error:
+            '선택된 Meta Object가 많아 상세 분석 수집을 한 번에 실행할 수 없습니다. Object 수나 기간을 줄여주세요.',
+        },
+        { status: 400 }
+      )
+    }
+  }
+
   for (const level of activeLevels) {
     const filterIds = effectiveIdsByLevel[level]!
 

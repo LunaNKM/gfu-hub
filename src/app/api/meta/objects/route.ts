@@ -11,6 +11,14 @@ import type {
 const META_API_BASE = 'https://graph.facebook.com/v20.0'
 const MAX_PAGES = 20
 
+class MetaObjectsRateLimitError extends Error {
+  readonly isRateLimit = true
+  constructor(message: string) {
+    super(message)
+    this.name = 'MetaObjectsRateLimitError'
+  }
+}
+
 // Follows paging.next until exhausted or MAX_PAGES reached.
 // Parses the JSON body first so Meta's error message is always surfaced,
 // even on 4xx responses (Meta always returns JSON with an 'error' field).
@@ -47,6 +55,9 @@ async function fetchAllPages(
       const code = metaErr['code'] as number | undefined
       const subcode = metaErr['error_subcode'] as number | undefined
       const detail = subcode ? `[${code}/${subcode}]` : code ? `[${code}]` : ''
+      if (code === 17 || subcode === 2446079) {
+        throw new MetaObjectsRateLimitError(`Meta API 오류 ${detail}: ${msg}`)
+      }
       throw new Error(`Meta API 오류 ${detail}: ${msg}`)
     }
 
@@ -161,6 +172,16 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(response)
   } catch (err) {
+    if (err instanceof MetaObjectsRateLimitError) {
+      return NextResponse.json(
+        {
+          error: 'META_RATE_LIMIT',
+          message: 'Meta API request limit reached. Please retry later.',
+          retryAfterSeconds: 60,
+        },
+        { status: 429 }
+      )
+    }
     const msg = err instanceof Error ? err.message : 'Meta objects 조회 실패'
     console.error('Meta objects API 오류:', msg)
     return NextResponse.json(

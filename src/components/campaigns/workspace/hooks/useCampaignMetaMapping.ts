@@ -48,6 +48,7 @@ export function useCampaignMetaMapping(
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshPhase, setRefreshPhase] = useState<'idle' | 'fetching' | 'reloading'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [lastRefreshResult, setLastRefreshResult] = useState<CampaignMetaRefreshResult | null>(null)
   const [rateLimitUntil, setRateLimitUntil] = useState<number | null>(null)
@@ -119,6 +120,7 @@ export function useCampaignMetaMapping(
     async (request: CampaignMetaRefreshRequest) => {
       if (!user) return
       setRefreshing(true)
+      setRefreshPhase('fetching')
       setError(null)
       try {
         const res = await authFetch(
@@ -142,12 +144,14 @@ export function useCampaignMetaMapping(
           const detail = data['detail'] as string | undefined
           throw new Error(detail ? `${base}: ${detail}` : base)
         }
+        setRefreshPhase('reloading')
         setLastRefreshResult(data as unknown as CampaignMetaRefreshResult)
         onRefreshSuccess?.()
       } catch (err) {
         setError(err instanceof Error ? err.message : 'refresh 실패')
       } finally {
         setRefreshing(false)
+        setRefreshPhase('idle')
       }
     },
     [campaignId, user, onRefreshSuccess]
@@ -161,6 +165,7 @@ export function useCampaignMetaMapping(
     loading,
     saving,
     refreshing,
+    refreshPhase,
     error,
     saveMapping,
     refreshMapping,
