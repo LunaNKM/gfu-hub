@@ -38,19 +38,16 @@ const INSIGHT_FIELDS: Record<CampaignMetaInsightLevel, string[]> = {
 const BREAKDOWN_FIELDS: Record<Exclude<CampaignMetaInsightBreakdownType, 'none'>, string[]> = {
   age_gender: [
     'campaign_id', 'campaign_name', 'adset_id', 'adset_name', 'ad_id', 'ad_name',
-    'age', 'gender',
     'spend', 'impressions', 'reach', 'clicks', 'ctr', 'cpc', 'cpm',
     'video_play_actions', 'video_thruplay_watched_actions', 'actions',
   ],
   placement: [
     'campaign_id', 'campaign_name', 'adset_id', 'adset_name', 'ad_id', 'ad_name',
-    'publisher_platform', 'platform_position',
     'spend', 'impressions', 'reach', 'clicks', 'ctr', 'cpc', 'cpm',
     'video_play_actions', 'video_thruplay_watched_actions', 'actions',
   ],
   hourly: [
     'campaign_id', 'campaign_name', 'adset_id', 'adset_name', 'ad_id', 'ad_name',
-    'hourly_stats_aggregated_by_advertiser_time_zone',
     'spend', 'impressions', 'reach', 'clicks', 'ctr', 'cpc', 'cpm',
     'video_play_actions', 'video_thruplay_watched_actions', 'actions',
   ],
@@ -410,4 +407,3 @@ export async function POST(
 
   return NextResponse.json(result)
 }
-
