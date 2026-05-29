@@ -7,8 +7,6 @@ import type {
   CampaignMetaRefreshResult,
 } from '@/types'
 
-// ── 날짜 헬퍼 ────────────────────────────────────────────────────
-
 function toDateStr(date: Date): string {
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
@@ -26,25 +24,22 @@ function defaultDates(): { dateStart: string; dateStop: string } {
 function fmtFetchedAt(raw: string): string {
   try {
     return new Date(raw).toLocaleString('ko-KR', {
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
     })
   } catch {
     return raw
   }
 }
 
-// ── Level 표시 이름 ────────────────────────────────────────────────
-
 const LEVEL_LABELS: Record<CampaignMetaInsightLevel, string> = {
   campaign: 'Campaign',
   adset: 'Ad Set',
   ad: 'Ad',
 }
-
-// ── effectiveRefreshLevels 계산 ────────────────────────────────────
-// selectedLevels 중 실제로 선택된 object ID가 1개 이상인 level만 반환.
-// ID가 없는 level은 refresh를 막지 않고 이번 refresh에서 제외한다.
 
 function getRefreshableLevels(
   selectedLevels: CampaignMetaInsightLevel[],
@@ -54,12 +49,10 @@ function getRefreshableLevels(
 ): CampaignMetaInsightLevel[] {
   const levels: CampaignMetaInsightLevel[] = []
   if (selectedLevels.includes('campaign') && campaignIds.length > 0) levels.push('campaign')
-  if (selectedLevels.includes('adset')    && adsetIds.length > 0)    levels.push('adset')
-  if (selectedLevels.includes('ad')       && adIds.length > 0)       levels.push('ad')
+  if (selectedLevels.includes('adset') && adsetIds.length > 0) levels.push('adset')
+  if (selectedLevels.includes('ad') && adIds.length > 0) levels.push('ad')
   return levels
 }
-
-// ── 컴포넌트 ──────────────────────────────────────────────────────
 
 interface MetaRefreshControlsProps {
   mappingId: string | undefined
@@ -98,16 +91,15 @@ export function MetaRefreshControls({
   const [dates, setDates] = useState(defaultDates)
   const [withBreakdowns, setWithBreakdowns] = useState(false)
 
-  // selectedLevels 중 실제 선택된 ID가 있는 level만 — 이것만 refresh 요청에 포함된다
   const effectiveRefreshLevels = getRefreshableLevels(
-    selectedLevels, metaCampaignIds, metaAdsetIds, metaAdIds
+    selectedLevels,
+    metaCampaignIds,
+    metaAdsetIds,
+    metaAdIds
   )
-
-  // selectedLevels에 있지만 ID가 없어서 이번 refresh에서 제외되는 level
   const excludedLevels = selectedLevels.filter(
-    (lv) => !effectiveRefreshLevels.includes(lv)
+    (level) => !effectiveRefreshLevels.includes(level)
   )
-
   const isRateLimited = !!rateLimitUntil && Date.now() < rateLimitUntil
 
   const canRefresh =
@@ -129,15 +121,13 @@ export function MetaRefreshControls({
     })
   }
 
-  // 수집 Level별 선택 개수 요약 (selectedLevels에 포함된 level만 표시)
   const selectionParts: string[] = []
   if (selectedLevels.includes('campaign')) selectionParts.push(`Campaign ${metaCampaignIds.length}개`)
-  if (selectedLevels.includes('adset'))    selectionParts.push(`Ad Set ${metaAdsetIds.length}개`)
-  if (selectedLevels.includes('ad'))       selectionParts.push(`Ad ${metaAdIds.length}개`)
+  if (selectedLevels.includes('adset')) selectionParts.push(`Ad Set ${metaAdsetIds.length}개`)
+  if (selectedLevels.includes('ad')) selectionParts.push(`Ad ${metaAdIds.length}개`)
 
   return (
     <div>
-      {/* 날짜 범위 */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
         <div>
           <label style={labelStyle}>시작일</label>
@@ -145,7 +135,7 @@ export function MetaRefreshControls({
             type="date"
             value={dates.dateStart}
             max={dates.dateStop}
-            onChange={(e) => setDates((p) => ({ ...p, dateStart: e.target.value }))}
+            onChange={(e) => setDates((prev) => ({ ...prev, dateStart: e.target.value }))}
             disabled={refreshing}
             style={inputStyle(refreshing)}
           />
@@ -157,49 +147,45 @@ export function MetaRefreshControls({
             value={dates.dateStop}
             min={dates.dateStart}
             max={toDateStr(new Date())}
-            onChange={(e) => setDates((p) => ({ ...p, dateStop: e.target.value }))}
+            onChange={(e) => setDates((prev) => ({ ...prev, dateStop: e.target.value }))}
             disabled={refreshing}
             style={inputStyle(refreshing)}
           />
         </div>
       </div>
 
-      {/* 선택 개수 요약 — 사용자가 현재 선택 상태를 파악할 수 있게 함 */}
       {selectionParts.length > 0 && (
         <p style={{ margin: '0 0 8px', fontSize: 11, color: '#6c7587' }}>
           선택됨: {selectionParts.join(' · ')}
         </p>
       )}
 
-      {/* refresh 불가 안내 (canRefresh가 false일 때만) */}
       {!canRefresh && !refreshing && (
-        <p style={{ margin: '0 0 10px', color: '#b57a00', fontSize: 11 }}>
+        <p style={{ margin: '0 0 10px', color: '#b57a00', fontSize: 11, lineHeight: 1.5 }}>
           {!mappingId
-            ? 'mapping을 먼저 저장한 뒤 새로고침할 수 있습니다.'
+            ? 'mapping을 먼저 저장한 후 새로고침할 수 있습니다.'
             : !metaAccountId.trim()
               ? 'Meta Account ID를 입력해 주세요.'
-              : '새로고침할 항목이 없습니다. 수집 Level을 켜고 Meta Object를 선택해 주세요.'
-          }
+              : isRateLimited
+                ? 'Meta API 요청 제한으로 잠시 후 다시 시도해야 합니다.'
+                : '새로고침할 항목이 없습니다. 수집 Level을 켜고 Meta Object를 선택해 주세요.'}
         </p>
       )}
 
-      {/* 일부 level 제외 안내 — 경고가 아닌 보조 정보 (canRefresh여도 표시) */}
       {canRefresh && excludedLevels.length > 0 && (
         <p style={{ margin: '0 0 10px', fontSize: 11, color: '#6c7587', lineHeight: 1.5 }}>
-          이번 새로고침 대상: {effectiveRefreshLevels.map((lv) => LEVEL_LABELS[lv]).join(', ')}
+          이번 새로고침 대상: {effectiveRefreshLevels.map((level) => LEVEL_LABELS[level]).join(', ')}
           <br />
-          제외 (선택 없음): {excludedLevels.map((lv) => LEVEL_LABELS[lv]).join(', ')}
+          제외됨(선택 없음): {excludedLevels.map((level) => LEVEL_LABELS[level]).join(', ')}
         </p>
       )}
 
-      {/* rate limit 안내 */}
       {isRateLimited && (
         <p style={{ margin: '0 0 10px', padding: '8px 10px', borderRadius: 6, background: '#fff8ec', border: '1px solid #ffd98a', color: '#b57a00', fontSize: 11, lineHeight: 1.5 }}>
           Meta API 요청 제한에 도달했습니다. 잠시 후 다시 시도하세요.
         </p>
       )}
 
-      {/* 상세 breakdown 수집 체크박스 */}
       <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: withBreakdowns ? 6 : 10, cursor: refreshing || isRateLimited ? 'not-allowed' : 'pointer' }}>
         <input
           type="checkbox"
@@ -215,11 +201,10 @@ export function MetaRefreshControls({
       </label>
       <p style={{ margin: '0 0 10px', fontSize: 10, color: '#7a8497', paddingLeft: 20, lineHeight: 1.5 }}>
         {withBreakdowns
-          ? '오디언스/게재위치/시간대 상세 데이터도 함께 수집합니다. 시간이 더 걸릴 수 있습니다.'
-          : '기본 성과만 수집합니다.'}
+          ? '상세 분석 탭에 필요한 breakdown 데이터까지 함께 수집합니다. 시간이 더 걸릴 수 있습니다.'
+          : '기본 성과만 빠르게 수집합니다.'}
       </p>
 
-      {/* 진행 상태 메시지 (3단계) */}
       {refreshing && (
         <p style={{ margin: '0 0 8px', fontSize: 11, color: '#2467d6', lineHeight: 1.5 }}>
           {refreshPhase === 'reloading'
@@ -228,7 +213,6 @@ export function MetaRefreshControls({
         </p>
       )}
 
-      {/* 버튼 */}
       <button
         type="button"
         onClick={handleRefresh}
@@ -251,7 +235,6 @@ export function MetaRefreshControls({
           : 'Meta 데이터 새로고침'}
       </button>
 
-      {/* 결과 */}
       {lastResult ? (
         <div style={{
           marginTop: 12,
@@ -279,8 +262,6 @@ export function MetaRefreshControls({
     </div>
   )
 }
-
-// ── 스타일 헬퍼 ───────────────────────────────────────────────────
 
 const labelStyle: React.CSSProperties = {
   display: 'block',

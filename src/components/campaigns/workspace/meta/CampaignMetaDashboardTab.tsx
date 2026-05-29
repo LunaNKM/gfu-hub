@@ -5,8 +5,8 @@ import type { CampaignOverview } from '@/types'
 import type {
   CampaignAdPerformanceRow,
   CampaignMetaAudienceRow,
-  CampaignMetaPlacementRow,
   CampaignMetaHourlyRow,
+  CampaignMetaPlacementRow,
 } from '@/types/campaignDashboard'
 
 type MetaInnerTab = 'overview' | 'audience' | 'placement' | 'video' | 'fatigue' | 'hourly'
@@ -28,6 +28,13 @@ function fmtMoney(n: number): string {
   return `₩${Math.round(n).toLocaleString()}`
 }
 
+function fmtRate(n: number | undefined): string {
+  return typeof n === 'number' && Number.isFinite(n) ? `${n.toFixed(2)}%` : '-'
+}
+
+function hasNumber(n: number | undefined): n is number {
+  return typeof n === 'number' && Number.isFinite(n) && n > 0
+}
 
 export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props) {
   const [innerTab, setInnerTab] = useState<MetaInnerTab>('overview')
@@ -58,12 +65,38 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
 
   const kpis = useMemo(
     () => [
-      { label: '광고비', value: ad?.spend ? fmtMoney(ad.spend) : '-', sub: overview.budget?.plannedBudget ? `예산 대비 ${Math.round(overview.budget.burnRate)}%` : '예산 정보 없음' },
-      { label: '노출', value: ad?.impressions ? fmtCompact(ad.impressions) : '-', sub: '선택 기간 합계' },
-      { label: '도달', value: ad?.reach ? fmtCompact(ad.reach) : '-', sub: '선택 기간 합계' },
-      { label: '클릭', value: ad?.clicks ? fmtCompact(ad.clicks) : '-', sub: ad?.ctr ? `CTR ${ad.ctr.toFixed(2)}%` : 'CTR -' },
-      { label: 'CPC', value: ad?.cpc ? fmtMoney(ad.cpc) : '-', sub: '클릭 단가' },
-      { label: 'ThruPlay', value: ad?.thruPlay ? fmtCompact(ad.thruPlay) : '-', sub: '영상 완료 시청' },
+      {
+        label: '광고비',
+        value: hasNumber(ad?.spend) ? fmtMoney(ad.spend) : '-',
+        sub: overview.budget?.plannedBudget
+          ? `예산 대비 ${Math.round(overview.budget.burnRate)}%`
+          : '예산 정보 없음',
+      },
+      {
+        label: '노출',
+        value: hasNumber(ad?.impressions) ? fmtCompact(ad.impressions) : '-',
+        sub: '선택 기간 합계',
+      },
+      {
+        label: '도달',
+        value: hasNumber(ad?.reach) ? fmtCompact(ad.reach) : '-',
+        sub: '선택 기간 합계',
+      },
+      {
+        label: '클릭',
+        value: hasNumber(ad?.clicks) ? fmtCompact(ad.clicks) : '-',
+        sub: ad?.ctr ? `CTR ${ad.ctr.toFixed(2)}%` : 'CTR -',
+      },
+      {
+        label: 'CPC',
+        value: hasNumber(ad?.cpc) ? fmtMoney(ad.cpc) : '-',
+        sub: '클릭 단가',
+      },
+      {
+        label: 'ThruPlay',
+        value: hasNumber(ad?.thruPlay) ? fmtCompact(ad.thruPlay) : '-',
+        sub: '영상 완료 시청',
+      },
     ],
     [ad, overview.budget]
   )
@@ -79,13 +112,20 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
     const max = Math.max(...values, 1)
     return source.map((row, i) => ({
       label: row.dateStart ? row.dateStart.slice(5) : `${i + 1}`,
-      v: Math.max(8, Math.round((values[i] / max) * 100)),
+      value: values[i],
+      height: Math.max(8, Math.round((values[i] / max) * 100)),
     }))
   }, [adRows, trendMode])
 
   const hourlySeries = useMemo(() => {
     return Array.from({ length: 24 }, (_, hour) => {
-      const row = hourlyRows.find((r) => r.hour === hour) ?? { hour, ctr: 0, clicks: 0, spend: 0, impressions: 0 }
+      const row = hourlyRows.find((r) => r.hour === hour) ?? {
+        hour,
+        ctr: 0,
+        clicks: 0,
+        spend: 0,
+        impressions: 0,
+      }
       return {
         hour: String(hour).padStart(2, '0'),
         ctr: row.ctr,
@@ -229,7 +269,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
             <div style={{ height: 260, border: '1px solid #eff2f6', borderRadius: 10, background: '#fbfcff', display: mainBars.length > 0 ? 'grid' : 'flex', gridTemplateColumns: mainBars.length > 0 ? 'repeat(8, minmax(0,1fr))' : undefined, alignItems: 'end', justifyContent: mainBars.length === 0 ? 'center' : undefined, gap: 10, padding: '16px 12px 28px' }}>
               {mainBars.length > 0 ? mainBars.map((bar) => (
                 <div key={bar.label} style={{ height: '100%', display: 'grid', gridTemplateRows: '1fr auto', gap: 4 }}>
-                  <div style={{ alignSelf: 'end', height: `${bar.v}%`, borderRadius: '7px 7px 0 0', background: 'linear-gradient(180deg,#6d9aff,#3578f6)' }} />
+                  <div title={bar.value.toLocaleString()} style={{ alignSelf: 'end', height: `${bar.height}%`, borderRadius: '7px 7px 0 0', background: 'linear-gradient(180deg,#6d9aff,#3578f6)' }} />
                   <span style={{ textAlign: 'center', fontSize: 10, color: '#98a2b3' }}>{bar.label}</span>
                 </div>
               )) : (
@@ -237,6 +277,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
               )}
             </div>
           </section>
+
           <section style={{ border: '1px solid #e5e9f0', borderRadius: 10, background: '#fff', padding: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <h4 style={{ margin: 0, fontSize: 14 }}>캠페인별 지출 랭킹</h4>
@@ -291,7 +332,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
                     <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6' }}>{row.age}</td>
                     <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6' }}>{row.gender}</td>
                     <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{fmtMoney(row.spend)}</td>
-                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{row.ctr.toFixed(2)}%</td>
+                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{fmtRate(row.ctr)}</td>
                     <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{fmtMoney(row.cpc)}</td>
                   </tr>
                 ))}
@@ -323,7 +364,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
                     <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6' }}>{row.publisherPlatform}</td>
                     <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6' }}>{row.platformPosition}</td>
                     <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{fmtMoney(row.spend)}</td>
-                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{row.ctr.toFixed(2)}%</td>
+                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{fmtRate(row.ctr)}</td>
                     <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{fmtMoney(row.cpm)}</td>
                   </tr>
                 ))}
@@ -360,12 +401,14 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
               CTR이 높고 CPC가 낮은 소재를 우선 확장 대상으로 추천합니다.
             </p>
             <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-              {(topCtr.length > 0 ? topCtr.slice(0, 3) : []).map((item) => (
+              {topCtr.length > 0 ? topCtr.slice(0, 3).map((item) => (
                 <div key={item.name} style={{ border: '1px solid #eef2f6', borderRadius: 8, padding: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 12, color: '#344054', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#087a57' }}>{item.ctr.toFixed(2)}%</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#087a57' }}>{fmtRate(item.ctr)}</span>
                 </div>
-              ))}
+              )) : (
+                <span style={{ fontSize: 12, color: '#98a2b3' }}>데이터 수집 후 표시됩니다.</span>
+              )}
             </div>
           </section>
         </div>
@@ -375,7 +418,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
         <section style={{ border: '1px solid #e5e9f0', borderRadius: 10, background: '#fff', padding: 14 }}>
           <h4 style={{ margin: 0, fontSize: 14 }}>피로도 분석</h4>
           <p style={{ margin: '8px 0 0', color: '#667085', fontSize: 12 }}>
-            빈도 지표는 다음 단계에서 frequency breakdown snapshot이 들어오면 자동 계산됩니다. 지금은 CTR/CPC 추세를 대체 지표로 사용합니다.
+            빈도 지표는 다음 단계에서 frequency snapshot이 들어오면 자동 계산합니다. 지금은 CTR/CPC 추세를 대체 지표로 사용합니다.
           </p>
         </section>
       )}
@@ -447,7 +490,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
                 </div>
                 <div style={{ border: '1px solid #eef2f6', borderRadius: 8, padding: 10 }}>
                   <div style={{ color: '#98a2b3', fontSize: 11 }}>최고 CTR</div>
-                  <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700 }}>{bestHour ? `${bestHour.ctr.toFixed(2)}%` : '-'}</div>
+                  <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700 }}>{bestHour ? fmtRate(bestHour.ctr) : '-'}</div>
                 </div>
                 <div style={{ border: '1px solid #eef2f6', borderRadius: 8, padding: 10 }}>
                   <div style={{ color: '#98a2b3', fontSize: 11 }}>데이터 소스</div>
@@ -461,4 +504,3 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
     </div>
   )
 }
-

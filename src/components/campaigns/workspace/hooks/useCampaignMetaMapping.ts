@@ -10,8 +10,6 @@ import type {
   CampaignMetaRefreshResult,
 } from '@/types'
 
-// ── auth helper ───────────────────────────────────────────────────
-
 async function authFetch(user: User, url: string, init: RequestInit = {}) {
   const token = await user.getIdToken()
   return fetch(url, {
@@ -23,8 +21,6 @@ async function authFetch(user: User, url: string, init: RequestInit = {}) {
   })
 }
 
-// ── form state type (UI용) ────────────────────────────────────────
-
 export interface MetaMappingFormState {
   mappingId?: string
   metaAccountId: string
@@ -34,8 +30,6 @@ export interface MetaMappingFormState {
   metaAdIds: string[]
   enabled: boolean
 }
-
-// ── hook ──────────────────────────────────────────────────────────
 
 export function useCampaignMetaMapping(
   campaignId: string,
@@ -54,7 +48,7 @@ export function useCampaignMetaMapping(
   const [rateLimitUntil, setRateLimitUntil] = useState<number | null>(null)
 
   const activeMapping =
-    mappings.find((m) => m.id === activeMappingId) ?? null
+    mappings.find((mapping) => mapping.id === activeMappingId) ?? null
 
   const reloadMappings = useCallback(async () => {
     if (!user) return
@@ -63,7 +57,9 @@ export function useCampaignMetaMapping(
     try {
       const res = await authFetch(user, `/api/campaigns/${campaignId}/meta/mapping`)
       const data = await res.json() as Record<string, unknown>
-      if (!res.ok) throw new Error((data['error'] as string | undefined) ?? 'mapping을 불러올 수 없습니다.')
+      if (!res.ok) {
+        throw new Error((data['error'] as string | undefined) ?? 'mapping을 불러올 수 없습니다.')
+      }
       const loaded = (data['mappings'] as CampaignMetaMapping[] | undefined) ?? []
       setMappings(loaded)
       if (loaded.length > 0) {
@@ -96,7 +92,9 @@ export function useCampaignMetaMapping(
           }
         )
         const data = await res.json() as Record<string, unknown>
-        if (!res.ok) throw new Error((data['error'] as string | undefined) ?? 'mapping 저장 실패')
+        if (!res.ok) {
+          throw new Error((data['error'] as string | undefined) ?? 'mapping 저장 실패')
+        }
         const newId = data['mappingId'] as string
         await reloadMappings()
         setActiveMappingId(newId)
@@ -144,6 +142,7 @@ export function useCampaignMetaMapping(
           const detail = data['detail'] as string | undefined
           throw new Error(detail ? `${base}: ${detail}` : base)
         }
+        setRateLimitUntil(null)
         setRefreshPhase('reloading')
         setLastRefreshResult(data as unknown as CampaignMetaRefreshResult)
         await onRefreshSuccess?.()
