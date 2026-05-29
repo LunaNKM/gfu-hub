@@ -608,6 +608,9 @@ export type {
   CampaignRosterDetailRow,
   CampaignCandidateDetailRow,
   CampaignBudgetDetailRow,
+  CampaignMetaAudienceRow,
+  CampaignMetaPlacementRow,
+  CampaignMetaHourlyRow,
   CampaignDetailTabSummary,
   CampaignDetailTables,
 } from './campaignDashboard'
@@ -618,6 +621,7 @@ export {
 } from './campaignWorkspace'
 
 export type {
+  CampaignMetaInsightBreakdownType,
   CampaignMetaInsightLevel,
   CampaignMetaMapping,
   CampaignMetaInsightSnapshot,

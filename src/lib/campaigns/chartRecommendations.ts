@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   CampaignDataColumn,
   CampaignDataRow,
   CampaignDatabase,
@@ -17,6 +17,9 @@ import type {
   CampaignRosterDetailRow,
   CampaignCandidateDetailRow,
   CampaignBudgetDetailRow,
+  CampaignMetaAudienceRow,
+  CampaignMetaPlacementRow,
+  CampaignMetaHourlyRow,
   CampaignDetailTabSummary,
   CampaignDetailTables,
 } from '@/types'
@@ -899,13 +902,14 @@ export function buildCampaignOverviewFromDatabases(databases: CampaignDatabase[]
 function buildAdPerformanceFromSnapshots(
   snapshots: CampaignMetaInsightSnapshot[]
 ): CampaignAdPerformanceSummary {
-  const totalSpend       = snapshots.reduce((a, s) => a + s.spend,       0)
-  const totalImpressions = snapshots.reduce((a, s) => a + s.impressions, 0)
-  const totalReach       = snapshots.reduce((a, s) => a + s.reach,       0)
-  const totalClicks      = snapshots.reduce((a, s) => a + s.clicks,      0)
-  const totalConversions = snapshots.reduce((a, s) => a + s.conversions, 0)
-  const totalVideoPlay   = snapshots.reduce((a, s) => a + s.videoPlay,   0)
-  const totalThruPlay    = snapshots.reduce((a, s) => a + s.thruPlay,    0)
+  const base = snapshots.filter((s) => (s.breakdownType ?? 'none') === 'none')
+  const totalSpend       = base.reduce((a, s) => a + s.spend,       0)
+  const totalImpressions = base.reduce((a, s) => a + s.impressions, 0)
+  const totalReach       = base.reduce((a, s) => a + s.reach,       0)
+  const totalClicks      = base.reduce((a, s) => a + s.clicks,      0)
+  const totalConversions = base.reduce((a, s) => a + s.conversions, 0)
+  const totalVideoPlay   = base.reduce((a, s) => a + s.videoPlay,   0)
+  const totalThruPlay    = base.reduce((a, s) => a + s.thruPlay,    0)
 
   const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
   const cpc = totalClicks      > 0 ? totalSpend / totalClicks           : 0
@@ -917,10 +921,10 @@ function buildAdPerformanceFromSnapshots(
     ad: 'orange',
   }
   const levelGroups: Record<string, number> = {}
-  for (const s of snapshots) {
+  for (const s of base) {
     levelGroups[s.level] = (levelGroups[s.level] ?? 0) + 1
   }
-  const total = snapshots.length
+  const total = base.length
   const byLevel: CampaignStatusProgress[] = Object.entries(levelGroups).map(([name, count]) => ({
     name,
     count,
@@ -928,12 +932,12 @@ function buildAdPerformanceFromSnapshots(
     color: LEVEL_COLORS[name] ?? 'gray',
   }))
 
-  const top5BySpend = [...snapshots]
+  const top5BySpend = [...base]
     .sort((a, b) => b.spend - a.spend)
     .slice(0, 5)
     .map((s) => ({ name: s.metaObjectName || s.metaObjectId, spend: s.spend }))
 
-  const top5ByCtr = [...snapshots]
+  const top5ByCtr = [...base]
     .sort((a, b) => b.ctr - a.ctr)
     .slice(0, 5)
     .map((s) => ({ name: s.metaObjectName || s.metaObjectId, ctr: s.ctr }))
@@ -957,8 +961,12 @@ function buildAdPerformanceFromSnapshots(
 
 function buildAdDetailFromSnapshots(
   snapshots: CampaignMetaInsightSnapshot[]
-): Pick<CampaignDetailTables, 'ad' | 'adSummary' | 'adNote' | 'metaSpendSpark'> {
-  const ad: CampaignAdPerformanceRow[] = [...snapshots]
+): Pick<
+  CampaignDetailTables,
+  'ad' | 'adSummary' | 'adNote' | 'metaSpendSpark' | 'metaAudienceRows' | 'metaPlacementRows' | 'metaHourlyRows'
+> {
+  const base = snapshots.filter((s) => (s.breakdownType ?? 'none') === 'none')
+  const ad: CampaignAdPerformanceRow[] = [...base]
     .sort((a, b) => {
       if (b.spend !== a.spend) return b.spend - a.spend
       return b.dateStart.localeCompare(a.dateStart)
@@ -1013,12 +1021,92 @@ function buildAdDetailFromSnapshots(
   const sparkMax = Math.max(...sparkRaw, 1)
   const metaSpendSpark = sparkRaw.map((v) => Math.max(8, Math.round((v / sparkMax) * 100)))
 
+  const audienceRows = snapshots.filter((s) => s.breakdownType === 'age_gender')
+  const audienceMap = new Map<string, CampaignMetaAudienceRow>()
+  for (const s of audienceRows) {
+    const age = s.breakdownAge ?? 'unknown'
+    const gender = s.breakdownGender ?? 'unknown'
+    const key = `${age}__${gender}`
+    const current = audienceMap.get(key) ?? {
+      age,
+      gender,
+      impressions: 0,
+      clicks: 0,
+      spend: 0,
+      ctr: 0,
+      cpc: 0,
+    }
+    current.impressions += s.impressions
+    current.clicks += s.clicks
+    current.spend += s.spend
+    audienceMap.set(key, current)
+  }
+  const metaAudienceRows: CampaignMetaAudienceRow[] = [...audienceMap.values()].map((row) => ({
+    ...row,
+    ctr: row.impressions > 0 ? (row.clicks / row.impressions) * 100 : 0,
+    cpc: row.clicks > 0 ? row.spend / row.clicks : 0,
+  }))
+
+  const placementRows = snapshots.filter((s) => s.breakdownType === 'placement')
+  const placementMap = new Map<string, CampaignMetaPlacementRow>()
+  for (const s of placementRows) {
+    const publisherPlatform = s.breakdownPublisherPlatform ?? 'unknown'
+    const platformPosition = s.breakdownPlatformPosition ?? 'unknown'
+    const key = `${publisherPlatform}__${platformPosition}`
+    const current = placementMap.get(key) ?? {
+      publisherPlatform,
+      platformPosition,
+      impressions: 0,
+      clicks: 0,
+      spend: 0,
+      ctr: 0,
+      cpc: 0,
+      cpm: 0,
+    }
+    current.impressions += s.impressions
+    current.clicks += s.clicks
+    current.spend += s.spend
+    placementMap.set(key, current)
+  }
+  const metaPlacementRows: CampaignMetaPlacementRow[] = [...placementMap.values()].map((row) => ({
+    ...row,
+    ctr: row.impressions > 0 ? (row.clicks / row.impressions) * 100 : 0,
+    cpc: row.clicks > 0 ? row.spend / row.clicks : 0,
+    cpm: row.impressions > 0 ? (row.spend / row.impressions) * 1000 : 0,
+  }))
+
+  const hourlyRows = snapshots.filter((s) => s.breakdownType === 'hourly' && s.breakdownHour != null)
+  const hourlyMap = new Map<number, CampaignMetaHourlyRow>()
+  for (const s of hourlyRows) {
+    const hour = s.breakdownHour as number
+    const current = hourlyMap.get(hour) ?? {
+      hour,
+      impressions: 0,
+      clicks: 0,
+      spend: 0,
+      ctr: 0,
+    }
+    current.impressions += s.impressions
+    current.clicks += s.clicks
+    current.spend += s.spend
+    hourlyMap.set(hour, current)
+  }
+  const metaHourlyRows: CampaignMetaHourlyRow[] = [...hourlyMap.values()]
+    .map((row) => ({
+      ...row,
+      ctr: row.impressions > 0 ? (row.clicks / row.impressions) * 100 : 0,
+    }))
+    .sort((a, b) => a.hour - b.hour)
+
   return {
     ad,
     adSummary,
     adNote:
       'Meta API snapshot 기반 데이터입니다. level, spend, impressions, clicks, CTR, CPC, CPM, ThruPlay를 포함합니다.',
     metaSpendSpark,
+    metaAudienceRows,
+    metaPlacementRows,
+    metaHourlyRows,
   }
 }
 

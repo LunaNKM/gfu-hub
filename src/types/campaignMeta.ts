@@ -1,4 +1,9 @@
 export type CampaignMetaInsightLevel = 'campaign' | 'adset' | 'ad'
+export type CampaignMetaInsightBreakdownType =
+  | 'none'
+  | 'age_gender'
+  | 'placement'
+  | 'hourly'
 
 export interface CampaignMetaMapping {
   id: string
@@ -19,6 +24,12 @@ export interface CampaignMetaInsightSnapshot {
   mappingId?: string
   metaAccountId: string
   level: CampaignMetaInsightLevel
+  breakdownType?: CampaignMetaInsightBreakdownType
+  breakdownAge?: string | null
+  breakdownGender?: string | null
+  breakdownPublisherPlatform?: string | null
+  breakdownPlatformPosition?: string | null
+  breakdownHour?: number | null
   metaObjectId: string
   metaObjectName: string
   dateStart: string

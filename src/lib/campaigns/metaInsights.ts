@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import type {
+  CampaignMetaInsightBreakdownType,
   CampaignMetaInsightLevel,
   CampaignMetaInsightSnapshot,
   CampaignMetaRefreshRequest,
@@ -14,9 +15,28 @@ function sanitizeForDocId(value: string): string {
 export function createMetaInsightSnapshotId(
   snapshot: Pick<
     CampaignMetaInsightSnapshot,
-    'campaignId' | 'metaAccountId' | 'level' | 'metaObjectId' | 'dateStart' | 'dateStop'
+    | 'campaignId'
+    | 'metaAccountId'
+    | 'level'
+    | 'metaObjectId'
+    | 'dateStart'
+    | 'dateStop'
+    | 'breakdownType'
+    | 'breakdownAge'
+    | 'breakdownGender'
+    | 'breakdownPublisherPlatform'
+    | 'breakdownPlatformPosition'
+    | 'breakdownHour'
   >
 ): string {
+  const breakdownParts = [
+    snapshot.breakdownType ?? 'none',
+    snapshot.breakdownAge ?? '',
+    snapshot.breakdownGender ?? '',
+    snapshot.breakdownPublisherPlatform ?? '',
+    snapshot.breakdownPlatformPosition ?? '',
+    snapshot.breakdownHour?.toString() ?? '',
+  ]
   const parts = [
     'metaInsight',
     snapshot.campaignId,
@@ -25,6 +45,7 @@ export function createMetaInsightSnapshotId(
     snapshot.metaObjectId,
     snapshot.dateStart,
     snapshot.dateStop,
+    ...breakdownParts,
   ].map(sanitizeForDocId)
   return parts.join('_')
 }
@@ -82,10 +103,19 @@ export function normalizeMetaInsightRow(params: {
   mappingId?: string
   metaAccountId: string
   level: CampaignMetaInsightLevel
+  breakdownType?: CampaignMetaInsightBreakdownType
   row: Record<string, unknown>
   fetchedAt: string
 }): CampaignMetaInsightSnapshot {
-  const { campaignId, mappingId, metaAccountId, level, row, fetchedAt } = params
+  const {
+    campaignId,
+    mappingId,
+    metaAccountId,
+    level,
+    row,
+    fetchedAt,
+    breakdownType = 'none',
+  } = params
   const { metaObjectId, metaObjectName } = extractLevelObjectInfo(level, row)
 
   const dateStart = safeStr(row['date_start'])
@@ -119,11 +149,28 @@ export function normalizeMetaInsightRow(params: {
   const cpc = safeNum(row['cpc'])
   const cpm = safeNum(row['cpm'])
   const currency = safeStr(row['currency']) || undefined
+  const hourRaw = safeStr(row['hourly_stats_aggregated_by_advertiser_time_zone'])
+  const parsedHour = /^\d{2}/.test(hourRaw) ? Number(hourRaw.slice(0, 2)) : null
+
+  const breakdownAge = breakdownType === 'age_gender' ? (safeStr(row['age']) || null) : null
+  const breakdownGender = breakdownType === 'age_gender' ? (safeStr(row['gender']) || null) : null
+  const breakdownPublisherPlatform =
+    breakdownType === 'placement' ? (safeStr(row['publisher_platform']) || null) : null
+  const breakdownPlatformPosition =
+    breakdownType === 'placement' ? (safeStr(row['platform_position']) || null) : null
+  const breakdownHour =
+    breakdownType === 'hourly' && Number.isFinite(parsedHour) ? parsedHour : null
 
   const sourceHash = createSourceHash({
     campaignId,
     metaAccountId,
     level,
+    breakdownType,
+    breakdownAge,
+    breakdownGender,
+    breakdownPublisherPlatform,
+    breakdownPlatformPosition,
+    breakdownHour,
     metaObjectId,
     dateStart,
     dateStop,
@@ -145,6 +192,12 @@ export function normalizeMetaInsightRow(params: {
     mappingId,
     metaAccountId,
     level,
+    breakdownType,
+    breakdownAge,
+    breakdownGender,
+    breakdownPublisherPlatform,
+    breakdownPlatformPosition,
+    breakdownHour,
     metaObjectId,
     metaObjectName,
     dateStart,

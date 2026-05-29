@@ -112,6 +112,35 @@ export interface CampaignAdPerformanceRow {
   sourceHash?: string
 }
 
+export interface CampaignMetaAudienceRow {
+  age: string
+  gender: string
+  impressions: number
+  clicks: number
+  spend: number
+  ctr: number
+  cpc: number
+}
+
+export interface CampaignMetaPlacementRow {
+  publisherPlatform: string
+  platformPosition: string
+  impressions: number
+  clicks: number
+  spend: number
+  ctr: number
+  cpc: number
+  cpm: number
+}
+
+export interface CampaignMetaHourlyRow {
+  hour: number
+  impressions: number
+  clicks: number
+  spend: number
+  ctr: number
+}
+
 export interface CampaignRosterDetailRow {
   name: string
   platform: string
@@ -168,4 +197,7 @@ export interface CampaignDetailTables {
   candidatesNote: string
   budgetNote: string
   metaSpendSpark: number[]
+  metaAudienceRows?: CampaignMetaAudienceRow[]
+  metaPlacementRows?: CampaignMetaPlacementRow[]
+  metaHourlyRows?: CampaignMetaHourlyRow[]
 }

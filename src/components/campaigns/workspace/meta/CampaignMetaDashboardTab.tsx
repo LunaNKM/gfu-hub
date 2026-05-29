@@ -2,10 +2,16 @@
 
 import React, { useMemo, useState } from 'react'
 import type { CampaignOverview } from '@/types'
-import type { CampaignAdPerformanceRow } from '@/types/campaignDashboard'
+import type {
+  CampaignAdPerformanceRow,
+  CampaignMetaAudienceRow,
+  CampaignMetaPlacementRow,
+  CampaignMetaHourlyRow,
+} from '@/types/campaignDashboard'
 
 type MetaInnerTab = 'overview' | 'audience' | 'placement' | 'video' | 'fatigue' | 'hourly'
 type TrendMode = 'ctr' | 'clicks' | 'spend'
+type HourlyMetric = 'ctr' | 'clicks' | 'spend'
 
 interface Props {
   overview: CampaignOverview
@@ -22,31 +28,50 @@ function fmtMoney(n: number): string {
   return `₩${Math.round(n).toLocaleString()}`
 }
 
-function makeHourlyBars(rows: CampaignAdPerformanceRow[]): { hour: string; value: number }[] {
+function buildHourlyFallback(rows: CampaignAdPerformanceRow[]): CampaignMetaHourlyRow[] {
   const base = [8, 6, 4, 3, 3, 4, 9, 12, 15, 19, 22, 20, 17, 16, 15, 18, 21, 24, 27, 25, 22, 19, 15, 11]
-  if (rows.length === 0) {
-    return base.map((v, i) => ({ hour: String(i).padStart(2, '0'), value: v / 10 }))
-  }
-  const ctrAvg =
-    rows.reduce((acc, row) => acc + (row.ctr ?? 0), 0) / Math.max(rows.length, 1)
+  const ctrAvg = rows.length > 0
+    ? rows.reduce((acc, row) => acc + (row.ctr ?? 0), 0) / rows.length
+    : 1.7
   const scale = Math.max(0.6, Math.min(1.4, ctrAvg / 1.7))
-  return base.map((v, i) => ({ hour: String(i).padStart(2, '0'), value: Number(((v / 10) * scale).toFixed(2)) }))
+  return base.map((value, i) => {
+    const ctr = Number(((value / 10) * scale).toFixed(2))
+    return {
+      hour: i,
+      ctr,
+      impressions: 0,
+      clicks: Math.round(ctr * 25),
+      spend: Math.round(ctr * 1200),
+    }
+  })
 }
 
 export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props) {
   const [innerTab, setInnerTab] = useState<MetaInnerTab>('overview')
   const [trendMode, setTrendMode] = useState<TrendMode>('ctr')
+  const [hourlyMetric, setHourlyMetric] = useState<HourlyMetric>('ctr')
   const [dateRange, setDateRange] = useState<'7' | '14' | '30' | '90'>('30')
 
   const ad = overview.adPerformance
-  const rows = useMemo(
+  const adRows = useMemo(
     () => (overview.detailTables?.ad ?? []) as CampaignAdPerformanceRow[],
     [overview.detailTables?.ad]
   )
+  const audienceRows = useMemo(
+    () => (overview.detailTables?.metaAudienceRows ?? []) as CampaignMetaAudienceRow[],
+    [overview.detailTables?.metaAudienceRows]
+  )
+  const placementRows = useMemo(
+    () => (overview.detailTables?.metaPlacementRows ?? []) as CampaignMetaPlacementRow[],
+    [overview.detailTables?.metaPlacementRows]
+  )
+  const hourlyRows = useMemo(() => {
+    const rows = (overview.detailTables?.metaHourlyRows ?? []) as CampaignMetaHourlyRow[]
+    return rows.length > 0 ? rows : buildHourlyFallback(adRows)
+  }, [overview.detailTables?.metaHourlyRows, adRows])
+
   const topSpend = ad?.top5BySpend ?? []
   const topCtr = ad?.top5ByCtr ?? []
-
-  const hourly = useMemo(() => makeHourlyBars(rows), [rows])
 
   const kpis = useMemo(
     () => [
@@ -61,20 +86,47 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
   )
 
   const mainBars = useMemo(() => {
-    const source = rows.slice(0, 8)
+    const source = adRows.slice(0, 8)
     if (source.length === 0) {
       return [
         { label: '4/30', v: 52 }, { label: '5/04', v: 67 }, { label: '5/08', v: 45 }, { label: '5/12', v: 80 },
         { label: '5/16', v: 61 }, { label: '5/20', v: 72 }, { label: '5/24', v: 93 }, { label: '5/28', v: 76 },
       ]
     }
-    const values = source.map((r) => (trendMode === 'spend' ? (r.spend ?? 0) : trendMode === 'clicks' ? (r.clicks ?? 0) : (r.ctr ?? 0)))
+    const values = source.map((row) => {
+      if (trendMode === 'spend') return row.spend ?? 0
+      if (trendMode === 'clicks') return row.clicks ?? 0
+      return row.ctr ?? 0
+    })
     const max = Math.max(...values, 1)
-    return source.map((r, i) => ({
-      label: r.dateStart ? r.dateStart.slice(5) : `${i + 1}`,
+    return source.map((row, i) => ({
+      label: row.dateStart ? row.dateStart.slice(5) : `${i + 1}`,
       v: Math.max(8, Math.round((values[i] / max) * 100)),
     }))
-  }, [rows, trendMode])
+  }, [adRows, trendMode])
+
+  const hourlySeries = useMemo(() => {
+    return Array.from({ length: 24 }, (_, hour) => {
+      const row = hourlyRows.find((r) => r.hour === hour) ?? { hour, ctr: 0, clicks: 0, spend: 0, impressions: 0 }
+      return {
+        hour: String(hour).padStart(2, '0'),
+        ctr: row.ctr,
+        clicks: row.clicks,
+        spend: row.spend,
+      }
+    })
+  }, [hourlyRows])
+
+  const maxHourly = useMemo(() => {
+    if (hourlyMetric === 'ctr') return Math.max(...hourlySeries.map((v) => v.ctr), 0.1)
+    if (hourlyMetric === 'clicks') return Math.max(...hourlySeries.map((v) => v.clicks), 1)
+    return Math.max(...hourlySeries.map((v) => v.spend), 1)
+  }, [hourlySeries, hourlyMetric])
+
+  const bestHour = useMemo(
+    () => [...hourlySeries].sort((a, b) => b.ctr - a.ctr)[0],
+    [hourlySeries]
+  )
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
@@ -84,7 +136,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
             <div style={{ fontSize: 11, fontWeight: 800, color: '#2467d6' }}>Campaign Scoped Meta Analytics</div>
             <h3 style={{ margin: '6px 0 0', fontSize: 18, color: '#111827' }}>캠페인 Meta 성과 분석</h3>
             <p style={{ margin: '6px 0 0', color: '#667085', fontSize: 12 }}>
-              저장된 mapping과 snapshot을 기준으로 캠페인/광고세트/광고 성과를 시각화합니다.
+              저장된 mapping과 snapshot을 기반으로 캠페인/광고세트/광고 성과를 시각화합니다.
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -207,7 +259,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
           </section>
           <section style={{ border: '1px solid #e5e9f0', borderRadius: 10, background: '#fff', padding: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <h4 style={{ margin: 0, fontSize: 14 }}>지출 랭킹</h4>
+              <h4 style={{ margin: 0, fontSize: 14 }}>캠페인별 지출 랭킹</h4>
               <span style={{ fontSize: 11, color: '#98a2b3' }}>Top 5</span>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -237,12 +289,67 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
         </div>
       )}
 
-      {(innerTab === 'audience' || innerTab === 'placement') && (
+      {innerTab === 'audience' && (
         <section style={{ border: '1px solid #e5e9f0', borderRadius: 10, background: '#fff', padding: 16 }}>
-          <h4 style={{ margin: 0, fontSize: 14 }}>{innerTab === 'audience' ? '오디언스 분석' : '게재위치 분석'}</h4>
-          <p style={{ margin: '8px 0 0', color: '#667085', fontSize: 12 }}>
-            이 영역은 2차 작업에서 Meta breakdown snapshot(`age/gender`, `placement`) 수집이 연결되면 자동으로 활성화됩니다.
-          </p>
+          <h4 style={{ margin: 0, fontSize: 14 }}>연령/성별 성과</h4>
+          {audienceRows.length === 0 ? (
+            <p style={{ margin: '8px 0 0', color: '#667085', fontSize: 12 }}>breakdown snapshot이 아직 수집되지 않았습니다.</p>
+          ) : (
+            <table style={{ marginTop: 10, width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '8px 4px', borderBottom: '1px solid #e5e9f0', color: '#98a2b3' }}>Age</th>
+                  <th style={{ textAlign: 'left', padding: '8px 4px', borderBottom: '1px solid #e5e9f0', color: '#98a2b3' }}>Gender</th>
+                  <th style={{ textAlign: 'right', padding: '8px 4px', borderBottom: '1px solid #e5e9f0', color: '#98a2b3' }}>Spend</th>
+                  <th style={{ textAlign: 'right', padding: '8px 4px', borderBottom: '1px solid #e5e9f0', color: '#98a2b3' }}>CTR</th>
+                  <th style={{ textAlign: 'right', padding: '8px 4px', borderBottom: '1px solid #e5e9f0', color: '#98a2b3' }}>CPC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...audienceRows].sort((a, b) => b.spend - a.spend).map((row) => (
+                  <tr key={`${row.age}-${row.gender}`}>
+                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6' }}>{row.age}</td>
+                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6' }}>{row.gender}</td>
+                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{fmtMoney(row.spend)}</td>
+                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{row.ctr.toFixed(2)}%</td>
+                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{fmtMoney(row.cpc)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
+
+      {innerTab === 'placement' && (
+        <section style={{ border: '1px solid #e5e9f0', borderRadius: 10, background: '#fff', padding: 16 }}>
+          <h4 style={{ margin: 0, fontSize: 14 }}>게재위치 성과</h4>
+          {placementRows.length === 0 ? (
+            <p style={{ margin: '8px 0 0', color: '#667085', fontSize: 12 }}>placement breakdown snapshot이 아직 수집되지 않았습니다.</p>
+          ) : (
+            <table style={{ marginTop: 10, width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '8px 4px', borderBottom: '1px solid #e5e9f0', color: '#98a2b3' }}>Platform</th>
+                  <th style={{ textAlign: 'left', padding: '8px 4px', borderBottom: '1px solid #e5e9f0', color: '#98a2b3' }}>Position</th>
+                  <th style={{ textAlign: 'right', padding: '8px 4px', borderBottom: '1px solid #e5e9f0', color: '#98a2b3' }}>Spend</th>
+                  <th style={{ textAlign: 'right', padding: '8px 4px', borderBottom: '1px solid #e5e9f0', color: '#98a2b3' }}>CTR</th>
+                  <th style={{ textAlign: 'right', padding: '8px 4px', borderBottom: '1px solid #e5e9f0', color: '#98a2b3' }}>CPM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...placementRows].sort((a, b) => b.spend - a.spend).map((row) => (
+                  <tr key={`${row.publisherPlatform}-${row.platformPosition}`}>
+                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6' }}>{row.publisherPlatform}</td>
+                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6' }}>{row.platformPosition}</td>
+                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{fmtMoney(row.spend)}</td>
+                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{row.ctr.toFixed(2)}%</td>
+                    <td style={{ padding: '9px 4px', borderBottom: '1px solid #eef2f6', textAlign: 'right' }}>{fmtMoney(row.cpm)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
       )}
 
@@ -270,7 +377,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
           <section style={{ border: '1px solid #e5e9f0', borderRadius: 10, background: '#fff', padding: 14 }}>
             <h4 style={{ margin: 0, fontSize: 14 }}>소재 인사이트</h4>
             <p style={{ margin: '8px 0 0', color: '#667085', fontSize: 12 }}>
-              CTR이 낮고 CPC가 높은 광고를 우선 모니터링 대상으로 추천합니다.
+              CTR이 높고 CPC가 낮은 소재를 우선 확장 대상으로 추천합니다.
             </p>
             <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
               {(topCtr.length > 0 ? topCtr.slice(0, 3) : []).map((item) => (
@@ -288,7 +395,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
         <section style={{ border: '1px solid #e5e9f0', borderRadius: 10, background: '#fff', padding: 14 }}>
           <h4 style={{ margin: 0, fontSize: 14 }}>피로도 분석</h4>
           <p style={{ margin: '8px 0 0', color: '#667085', fontSize: 12 }}>
-            빈도 지표는 2차에서 frequency breakdown snapshot이 들어오면 자동 계산됩니다. 1차에서는 CTR/CPC 추세를 대체 지표로 사용합니다.
+            빈도 지표는 다음 단계에서 frequency breakdown snapshot이 들어오면 자동 계산됩니다. 지금은 CTR/CPC 추세를 대체 지표로 사용합니다.
           </p>
         </section>
       )}
@@ -301,21 +408,38 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
               <p style={{ margin: '4px 0 0', color: '#98a2b3', fontSize: 11 }}>광고주 시간대 기준 막대차트</p>
             </div>
             <div style={{ display: 'inline-flex', gap: 4, padding: 3, background: '#f1f4f8', borderRadius: 9 }}>
-              <button type="button" style={{ height: 24, border: 0, borderRadius: 7, padding: '0 8px', fontSize: 10, fontWeight: 700, background: '#fff' }}>CTR</button>
-              <button type="button" style={{ height: 24, border: 0, borderRadius: 7, padding: '0 8px', fontSize: 10, fontWeight: 700, color: '#667085', background: 'transparent' }}>Click</button>
-              <button type="button" style={{ height: 24, border: 0, borderRadius: 7, padding: '0 8px', fontSize: 10, fontWeight: 700, color: '#667085', background: 'transparent' }}>Spend</button>
+              {(['ctr', 'clicks', 'spend'] as const).map((metric) => (
+                <button
+                  key={metric}
+                  type="button"
+                  onClick={() => setHourlyMetric(metric)}
+                  style={{
+                    height: 24,
+                    border: 0,
+                    borderRadius: 7,
+                    padding: '0 8px',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    background: hourlyMetric === metric ? '#fff' : 'transparent',
+                    color: hourlyMetric === metric ? '#111827' : '#667085',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {metric.toUpperCase()}
+                </button>
+              ))}
             </div>
           </div>
           <div style={{ height: 290, display: 'grid', gridTemplateColumns: 'repeat(24,minmax(18px,1fr))', alignItems: 'end', gap: 6, border: '1px solid #eff2f6', borderRadius: 10, padding: '12px 10px 28px', background: '#fbfcff', overflowX: 'auto' }}>
-            {hourly.map((item) => {
-              const max = Math.max(...hourly.map((v) => v.value), 0.1)
-              const height = Math.max(8, Math.round((item.value / max) * 100))
-              const peak = item.value >= max * 0.9
-              const low = item.value <= max * 0.22
+            {hourlySeries.map((item) => {
+              const value = hourlyMetric === 'ctr' ? item.ctr : hourlyMetric === 'clicks' ? item.clicks : item.spend
+              const height = Math.max(8, Math.round((value / maxHourly) * 100))
+              const peak = value >= maxHourly * 0.9
+              const low = value <= maxHourly * 0.22
               return (
                 <div key={item.hour} style={{ height: '100%', display: 'grid', gridTemplateRows: '1fr auto', gap: 4 }}>
                   <div
-                    title={`${item.hour}:00 ${item.value.toFixed(2)}%`}
+                    title={`${item.hour}:00 ${hourlyMetric === 'ctr' ? `${value.toFixed(2)}%` : value.toLocaleString()}`}
                     style={{
                       alignSelf: 'end',
                       height: `${height}%`,
@@ -332,8 +456,25 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
               )
             })}
           </div>
+          <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 10 }}>
+            <div style={{ border: '1px solid #eef2f6', borderRadius: 8, padding: 10 }}>
+              <div style={{ color: '#98a2b3', fontSize: 11 }}>최고 효율 시간</div>
+              <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700 }}>{bestHour ? `${bestHour.hour}:00` : '-'}</div>
+            </div>
+            <div style={{ border: '1px solid #eef2f6', borderRadius: 8, padding: 10 }}>
+              <div style={{ color: '#98a2b3', fontSize: 11 }}>최고 CTR</div>
+              <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700 }}>{bestHour ? `${bestHour.ctr.toFixed(2)}%` : '-'}</div>
+            </div>
+            <div style={{ border: '1px solid #eef2f6', borderRadius: 8, padding: 10 }}>
+              <div style={{ color: '#98a2b3', fontSize: 11 }}>데이터 소스</div>
+              <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700 }}>
+                {overview.detailTables?.metaHourlyRows?.length ? 'Snapshot' : 'Fallback'}
+              </div>
+            </div>
+          </div>
         </section>
       )}
     </div>
   )
 }
+
