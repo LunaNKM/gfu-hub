@@ -213,11 +213,11 @@ export function MetaRefreshControls({
           <span style={{ marginLeft: 4, color: '#98a2b3', fontSize: 10 }}>(API 호출 증가)</span>
         </span>
       </label>
-      {withBreakdowns && (
-        <p style={{ margin: '0 0 10px', fontSize: 10, color: '#7a8497', paddingLeft: 20 }}>
-          상세 수집은 시간이 더 걸릴 수 있습니다.
-        </p>
-      )}
+      <p style={{ margin: '0 0 10px', fontSize: 10, color: '#7a8497', paddingLeft: 20, lineHeight: 1.5 }}>
+        {withBreakdowns
+          ? '오디언스/게재위치/시간대 상세 데이터도 함께 수집합니다. 시간이 더 걸릴 수 있습니다.'
+          : '기본 성과만 수집합니다.'}
+      </p>
 
       {/* 진행 상태 메시지 (3단계) */}
       {refreshing && (

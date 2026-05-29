@@ -9,7 +9,10 @@ import type {
 } from '@/types/campaignMeta'
 
 const META_API_BASE = 'https://graph.facebook.com/v20.0'
-const MAX_PAGES = 20
+// MAX_PAGES = 5 caps at 5 × limit items per entity type (campaigns 5×100=500,
+// adsets 5×200=1000, ads 5×200=1000). Accounts with more objects will see
+// truncated=true in the response — reduce scope rather than paginate further.
+const MAX_PAGES = 5
 
 class MetaObjectsRateLimitError extends Error {
   readonly isRateLimit = true
@@ -22,9 +25,10 @@ class MetaObjectsRateLimitError extends Error {
 // Follows paging.next until exhausted or MAX_PAGES reached.
 // Parses the JSON body first so Meta's error message is always surfaced,
 // even on 4xx responses (Meta always returns JSON with an 'error' field).
+// Returns rows and a truncated flag (true if MAX_PAGES was hit with more pages remaining).
 async function fetchAllPages(
   initialUrl: string
-): Promise<Record<string, unknown>[]> {
+): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
   const all: Record<string, unknown>[] = []
   let nextUrl: string | null = initialUrl
 
@@ -73,9 +77,14 @@ async function fetchAllPages(
     nextUrl = next ?? null
 
     if (rows.length === 0) break
+
+    // If we've hit MAX_PAGES and there's still a next page, mark as truncated
+    if (page === MAX_PAGES - 1 && nextUrl) {
+      return { rows: all, truncated: true }
+    }
   }
 
-  return all
+  return { rows: all, truncated: false }
 }
 
 export async function GET(req: NextRequest) {
@@ -105,7 +114,7 @@ export async function GET(req: NextRequest) {
       limit: '100',
       access_token: accessToken,
     })
-    const rawCampaigns = await fetchAllPages(
+    const { rows: rawCampaigns, truncated: campaignsTruncated } = await fetchAllPages(
       `${META_API_BASE}/${accountId}/campaigns?${campaignParams.toString()}`
     )
     const campaigns: MetaCampaignObject[] = rawCampaigns
@@ -126,7 +135,7 @@ export async function GET(req: NextRequest) {
       limit: '200',
       access_token: accessToken,
     })
-    const rawAdsets = await fetchAllPages(
+    const { rows: rawAdsets, truncated: adsetsTruncated } = await fetchAllPages(
       `${META_API_BASE}/${accountId}/adsets?${adsetParams.toString()}`
     )
     const adsets: MetaAdsetObject[] = rawAdsets
@@ -144,10 +153,10 @@ export async function GET(req: NextRequest) {
     // ── Ads ────────────────────────────────────────────────────────
     const adParams = new URLSearchParams({
       fields: 'id,name,status,effective_status,campaign_id,adset_id,created_time,updated_time',
-      limit: '500',
+      limit: '200',
       access_token: accessToken,
     })
-    const rawAds = await fetchAllPages(
+    const { rows: rawAds, truncated: adsTruncated } = await fetchAllPages(
       `${META_API_BASE}/${accountId}/ads?${adParams.toString()}`
     )
     const ads: MetaAdObject[] = rawAds
@@ -168,6 +177,7 @@ export async function GET(req: NextRequest) {
       adsets,
       ads,
       fetchedAt: new Date().toISOString(),
+      truncated: campaignsTruncated || adsetsTruncated || adsTruncated || undefined,
     }
 
     return NextResponse.json(response)

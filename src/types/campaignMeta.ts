@@ -112,6 +112,8 @@ export interface MetaObjectsResponse {
   adsets: MetaAdsetObject[]
   ads: MetaAdObject[]
   fetchedAt: string
+  /** true when MAX_PAGES was reached and results may be incomplete */
+  truncated?: boolean
 }
 
 export interface CampaignInsightAsset {

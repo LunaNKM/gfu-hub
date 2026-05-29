@@ -39,7 +39,6 @@ export function useMetaObjects() {
   const reload = useCallback(
     async (metaAccountId: string, force = false) => {
       const normalized = normalizeMetaAdAccountId(metaAccountId)
-      const seq = ++requestSeqRef.current
 
       if (!normalized) {
         setObjects(null)
@@ -54,7 +53,6 @@ export function useMetaObjects() {
       // Rate limit cooldown: don't make a new request, serve cache or error
       const cooldownEnd = cooldownUntilMap.get(normalized) ?? 0
       if (Date.now() < cooldownEnd) {
-        if (seq !== requestSeqRef.current) return
         const cached = objectsCache.get(normalized)
         if (cached) {
           setObjects(cached.data)
@@ -72,7 +70,6 @@ export function useMetaObjects() {
         // Serve from cache if fresh enough
         const cached = objectsCache.get(normalized)
         if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
-          if (seq !== requestSeqRef.current) return
           setObjects(cached.data)
           setObjectsAccountId(normalized)
           setError(null)
@@ -80,9 +77,16 @@ export function useMetaObjects() {
           return
         }
 
-        // Skip duplicate in-flight request for the same accountId
+        // Skip duplicate in-flight request for the same accountId.
+        // seq is NOT incremented here — only actual new fetches get a seq,
+        // so the in-flight request's seq check remains valid.
         if (inFlight.has(normalized)) return
       }
+
+      // Increment seq only for actual new fetches (after all early-returns).
+      // This prevents the in-flight request's seq from being invalidated by
+      // a second caller that returns early via the inFlight guard above.
+      const seq = ++requestSeqRef.current
 
       // Clear stale data from a different account
       setObjects(null)

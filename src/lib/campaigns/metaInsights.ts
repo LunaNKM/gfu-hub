@@ -270,7 +270,7 @@ export function validateRefreshRequest(
         return { valid: false, error: `유효하지 않은 breakdown 값: ${bd}` }
       }
     }
-    breakdowns = b['breakdowns'] as CampaignMetaInsightBreakdownType[]
+    breakdowns = [...new Set(b['breakdowns'] as CampaignMetaInsightBreakdownType[])]
   }
 
   return {

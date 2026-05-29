@@ -273,7 +273,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
         <section style={{ border: '1px solid #e5e9f0', borderRadius: 10, background: '#fff', padding: 16 }}>
           <h4 style={{ margin: 0, fontSize: 14 }}>연령/성별 성과</h4>
           {audienceRows.length === 0 ? (
-            <p style={{ margin: '8px 0 0', color: '#667085', fontSize: 12 }}>breakdown snapshot이 아직 수집되지 않았습니다.</p>
+            <p style={{ margin: '8px 0 0', color: '#667085', fontSize: 12 }}>상세 분석 데이터 수집 후 표시됩니다.</p>
           ) : (
             <table style={{ marginTop: 10, width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
@@ -305,7 +305,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
         <section style={{ border: '1px solid #e5e9f0', borderRadius: 10, background: '#fff', padding: 16 }}>
           <h4 style={{ margin: 0, fontSize: 14 }}>게재위치 성과</h4>
           {placementRows.length === 0 ? (
-            <p style={{ margin: '8px 0 0', color: '#667085', fontSize: 12 }}>placement breakdown snapshot이 아직 수집되지 않았습니다.</p>
+            <p style={{ margin: '8px 0 0', color: '#667085', fontSize: 12 }}>상세 분석 데이터 수집 후 표시됩니다.</p>
           ) : (
             <table style={{ marginTop: 10, width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>

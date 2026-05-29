@@ -39,7 +39,7 @@ export interface MetaMappingFormState {
 
 export function useCampaignMetaMapping(
   campaignId: string,
-  onRefreshSuccess?: () => void
+  onRefreshSuccess?: () => void | Promise<void>
 ) {
   const { user } = useAuth()
 
@@ -146,7 +146,7 @@ export function useCampaignMetaMapping(
         }
         setRefreshPhase('reloading')
         setLastRefreshResult(data as unknown as CampaignMetaRefreshResult)
-        onRefreshSuccess?.()
+        await onRefreshSuccess?.()
       } catch (err) {
         setError(err instanceof Error ? err.message : 'refresh 실패')
       } finally {
