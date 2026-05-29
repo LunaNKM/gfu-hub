@@ -50,6 +50,7 @@ export function useCampaignMetaMapping(
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastRefreshResult, setLastRefreshResult] = useState<CampaignMetaRefreshResult | null>(null)
+  const [rateLimitUntil, setRateLimitUntil] = useState<number | null>(null)
 
   const activeMapping =
     mappings.find((m) => m.id === activeMappingId) ?? null
@@ -130,6 +131,12 @@ export function useCampaignMetaMapping(
           }
         )
         const data = await res.json() as Record<string, unknown>
+        if (res.status === 429 && data['error'] === 'META_RATE_LIMIT') {
+          const retryAfter = (data['retryAfterSeconds'] as number | undefined) ?? 60
+          setRateLimitUntil(Date.now() + retryAfter * 1000)
+          setError('Meta API 요청 제한에 도달했습니다. 잠시 후 다시 시도하세요.')
+          return
+        }
         if (!res.ok) {
           const base = (data['error'] as string | undefined) ?? 'refresh 실패'
           const detail = data['detail'] as string | undefined
@@ -159,6 +166,7 @@ export function useCampaignMetaMapping(
     refreshMapping,
     reloadMappings,
     lastRefreshResult,
+    rateLimitUntil,
     clearStatus,
   }
 }

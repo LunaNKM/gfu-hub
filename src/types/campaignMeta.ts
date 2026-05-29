@@ -58,6 +58,7 @@ export interface CampaignMetaRefreshRequest {
   metaCampaignIds?: string[]
   metaAdsetIds?: string[]
   metaAdIds?: string[]
+  breakdowns?: CampaignMetaInsightBreakdownType[]
 }
 
 export interface CampaignMetaRefreshResult {

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import type { CampaignMetaInsightLevel } from '@/types'
+import type { CampaignMetaInsightBreakdownType, CampaignMetaInsightLevel } from '@/types'
 import { useCampaignMetaMapping, type MetaMappingFormState } from '../hooks/useCampaignMetaMapping'
 import { MetaObjectSelector } from './MetaObjectSelector'
 import { MetaRefreshControls } from './MetaRefreshControls'
@@ -57,6 +57,7 @@ export function MetaMappingPanel({
     refreshMapping,
     reloadMappings,
     lastRefreshResult,
+    rateLimitUntil,
     clearStatus,
   } = useCampaignMetaMapping(campaignId, onRefreshSuccess)
 
@@ -115,6 +116,7 @@ export function MetaMappingPanel({
     levels: CampaignMetaInsightLevel[]
     dateStart: string
     dateStop: string
+    breakdowns?: CampaignMetaInsightBreakdownType[]
   }) {
     void refreshMapping({
       mappingId: params.mappingId,
@@ -122,6 +124,7 @@ export function MetaMappingPanel({
       levels: params.levels,
       dateStart: params.dateStart,
       dateStop: params.dateStop,
+      breakdowns: params.breakdowns,
     })
   }
 
@@ -381,6 +384,7 @@ export function MetaMappingPanel({
               metaAdIds={form.metaAdIds}
               refreshing={refreshing}
               lastResult={lastRefreshResult}
+              rateLimitUntil={rateLimitUntil}
               onRefresh={handleRefresh}
             />
           </Section>

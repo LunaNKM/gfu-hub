@@ -259,6 +259,20 @@ export function validateRefreshRequest(
     return filtered.length > 0 ? filtered : undefined
   }
 
+  const validBreakdowns: CampaignMetaInsightBreakdownType[] = ['none', 'age_gender', 'placement', 'hourly']
+  let breakdowns: CampaignMetaInsightBreakdownType[] | undefined
+  if (b['breakdowns'] !== undefined) {
+    if (!Array.isArray(b['breakdowns'])) {
+      return { valid: false, error: 'breakdowns는 배열이어야 합니다.' }
+    }
+    for (const bd of b['breakdowns'] as unknown[]) {
+      if (!validBreakdowns.includes(bd as CampaignMetaInsightBreakdownType)) {
+        return { valid: false, error: `유효하지 않은 breakdown 값: ${bd}` }
+      }
+    }
+    breakdowns = b['breakdowns'] as CampaignMetaInsightBreakdownType[]
+  }
+
   return {
     valid: true,
     data: {
@@ -270,6 +284,7 @@ export function validateRefreshRequest(
       metaCampaignIds: safeStringArray(b['metaCampaignIds']),
       metaAdsetIds: safeStringArray(b['metaAdsetIds']),
       metaAdIds: safeStringArray(b['metaAdIds']),
+      breakdowns,
     },
   }
 }

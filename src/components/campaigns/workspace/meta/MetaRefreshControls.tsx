@@ -1,7 +1,11 @@
 'use client'
 
 import React, { useState } from 'react'
-import type { CampaignMetaInsightLevel, CampaignMetaRefreshResult } from '@/types'
+import type {
+  CampaignMetaInsightBreakdownType,
+  CampaignMetaInsightLevel,
+  CampaignMetaRefreshResult,
+} from '@/types'
 
 // ── 날짜 헬퍼 ────────────────────────────────────────────────────
 
@@ -66,12 +70,14 @@ interface MetaRefreshControlsProps {
   metaAdIds: string[]
   refreshing: boolean
   lastResult: CampaignMetaRefreshResult | null
+  rateLimitUntil?: number | null
   onRefresh: (params: {
     mappingId: string
     metaAccountId: string
     levels: CampaignMetaInsightLevel[]
     dateStart: string
     dateStop: string
+    breakdowns?: CampaignMetaInsightBreakdownType[]
   }) => void
 }
 
@@ -84,9 +90,11 @@ export function MetaRefreshControls({
   metaAdIds,
   refreshing,
   lastResult,
+  rateLimitUntil,
   onRefresh,
 }: MetaRefreshControlsProps) {
   const [dates, setDates] = useState(defaultDates)
+  const [withBreakdowns, setWithBreakdowns] = useState(false)
 
   // selectedLevels 중 실제 선택된 ID가 있는 level만 — 이것만 refresh 요청에 포함된다
   const effectiveRefreshLevels = getRefreshableLevels(
@@ -98,20 +106,24 @@ export function MetaRefreshControls({
     (lv) => !effectiveRefreshLevels.includes(lv)
   )
 
+  const isRateLimited = !!rateLimitUntil && Date.now() < rateLimitUntil
+
   const canRefresh =
     !!mappingId &&
     metaAccountId.trim().length > 0 &&
     effectiveRefreshLevels.length > 0 &&
-    !refreshing
+    !refreshing &&
+    !isRateLimited
 
   function handleRefresh() {
     if (!canRefresh || !mappingId) return
     onRefresh({
       mappingId,
       metaAccountId,
-      levels: effectiveRefreshLevels,  // ← 선택된 ID가 있는 level만 전달
+      levels: effectiveRefreshLevels,
       dateStart: dates.dateStart,
       dateStop: dates.dateStop,
+      breakdowns: withBreakdowns ? ['age_gender', 'placement', 'hourly'] : undefined,
     })
   }
 
@@ -177,6 +189,28 @@ export function MetaRefreshControls({
           제외 (선택 없음): {excludedLevels.map((lv) => LEVEL_LABELS[lv]).join(', ')}
         </p>
       )}
+
+      {/* rate limit 안내 */}
+      {isRateLimited && (
+        <p style={{ margin: '0 0 10px', padding: '8px 10px', borderRadius: 6, background: '#fff8ec', border: '1px solid #ffd98a', color: '#b57a00', fontSize: 11, lineHeight: 1.5 }}>
+          Meta API 요청 제한에 도달했습니다. 잠시 후 다시 시도하세요.
+        </p>
+      )}
+
+      {/* 상세 breakdown 수집 체크박스 */}
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, cursor: refreshing || isRateLimited ? 'not-allowed' : 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={withBreakdowns}
+          disabled={refreshing || isRateLimited}
+          onChange={(e) => setWithBreakdowns(e.target.checked)}
+          style={{ cursor: refreshing || isRateLimited ? 'not-allowed' : 'pointer' }}
+        />
+        <span style={{ fontSize: 11, color: '#5c6577', lineHeight: 1.4 }}>
+          오디언스/게재위치/시간대 상세 데이터도 수집
+          <span style={{ marginLeft: 4, color: '#98a2b3', fontSize: 10 }}>(API 호출 증가)</span>
+        </span>
+      </label>
 
       {/* 버튼 */}
       <button

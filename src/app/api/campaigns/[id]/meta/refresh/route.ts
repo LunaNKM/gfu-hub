@@ -17,6 +17,16 @@ import { normalizeMetaAdAccountId } from '@/lib/campaigns/metaAccount'
 
 const META_API_BASE = 'https://graph.facebook.com/v20.0'
 
+class MetaRateLimitError extends Error {
+  readonly isRateLimit = true
+  readonly retryAfterSeconds: number
+  constructor(message: string, retryAfterSeconds = 60) {
+    super(message)
+    this.name = 'MetaRateLimitError'
+    this.retryAfterSeconds = retryAfterSeconds
+  }
+}
+
 const INSIGHT_FIELDS: Record<CampaignMetaInsightLevel, string[]> = {
   campaign: [
     'campaign_id', 'campaign_name',
@@ -125,6 +135,9 @@ async function fetchInsightPage(
     const code = metaErr['code'] as number | undefined
     const subcode = metaErr['error_subcode'] as number | undefined
     const detail = subcode ? `[${code}/${subcode}]` : code ? `[${code}]` : ''
+    if (code === 17 || subcode === 2446079) {
+      throw new MetaRateLimitError(`Meta API error ${detail}: ${msg}`)
+    }
     throw new Error(`Meta API error ${detail}: ${msg}`)
   }
 
@@ -290,7 +303,13 @@ export async function POST(
   let rawFetchedCount = 0
   let skippedCount = 0
 
-  const runs: CampaignMetaInsightBreakdownType[] = ['none', 'age_gender', 'placement', 'hourly']
+  const requestedBreakdowns = (validation.data.breakdowns ?? [])
+    .filter((v): v is Exclude<CampaignMetaInsightBreakdownType, 'none'> => v !== 'none')
+  const runs: CampaignMetaInsightBreakdownType[] = [
+    'none',
+    ...[...new Set(requestedBreakdowns)],
+  ]
+
   for (const level of activeLevels) {
     const filterIds = effectiveIdsByLevel[level]!
 
@@ -307,6 +326,16 @@ export async function POST(
           breakdownType
         )
       } catch (err) {
+        if (err instanceof MetaRateLimitError) {
+          return NextResponse.json(
+            {
+              error: 'META_RATE_LIMIT',
+              message: 'Meta API request limit reached. Please retry later.',
+              retryAfterSeconds: err.retryAfterSeconds,
+            },
+            { status: 429 }
+          )
+        }
         const msg = err instanceof Error ? err.message : 'Meta API error'
         console.error('Meta insights fetch error', {
           campaignId,

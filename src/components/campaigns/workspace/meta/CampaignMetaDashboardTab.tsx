@@ -28,23 +28,6 @@ function fmtMoney(n: number): string {
   return `₩${Math.round(n).toLocaleString()}`
 }
 
-function buildHourlyFallback(rows: CampaignAdPerformanceRow[]): CampaignMetaHourlyRow[] {
-  const base = [8, 6, 4, 3, 3, 4, 9, 12, 15, 19, 22, 20, 17, 16, 15, 18, 21, 24, 27, 25, 22, 19, 15, 11]
-  const ctrAvg = rows.length > 0
-    ? rows.reduce((acc, row) => acc + (row.ctr ?? 0), 0) / rows.length
-    : 1.7
-  const scale = Math.max(0.6, Math.min(1.4, ctrAvg / 1.7))
-  return base.map((value, i) => {
-    const ctr = Number(((value / 10) * scale).toFixed(2))
-    return {
-      hour: i,
-      ctr,
-      impressions: 0,
-      clicks: Math.round(ctr * 25),
-      spend: Math.round(ctr * 1200),
-    }
-  })
-}
 
 export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props) {
   const [innerTab, setInnerTab] = useState<MetaInnerTab>('overview')
@@ -65,10 +48,10 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
     () => (overview.detailTables?.metaPlacementRows ?? []) as CampaignMetaPlacementRow[],
     [overview.detailTables?.metaPlacementRows]
   )
-  const hourlyRows = useMemo(() => {
-    const rows = (overview.detailTables?.metaHourlyRows ?? []) as CampaignMetaHourlyRow[]
-    return rows.length > 0 ? rows : buildHourlyFallback(adRows)
-  }, [overview.detailTables?.metaHourlyRows, adRows])
+  const hourlyRows = useMemo(
+    () => (overview.detailTables?.metaHourlyRows ?? []) as CampaignMetaHourlyRow[],
+    [overview.detailTables?.metaHourlyRows]
+  )
 
   const topSpend = ad?.top5BySpend ?? []
   const topCtr = ad?.top5ByCtr ?? []
@@ -87,12 +70,7 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
 
   const mainBars = useMemo(() => {
     const source = adRows.slice(0, 8)
-    if (source.length === 0) {
-      return [
-        { label: '4/30', v: 52 }, { label: '5/04', v: 67 }, { label: '5/08', v: 45 }, { label: '5/12', v: 80 },
-        { label: '5/16', v: 61 }, { label: '5/20', v: 72 }, { label: '5/24', v: 93 }, { label: '5/28', v: 76 },
-      ]
-    }
+    if (source.length === 0) return []
     const values = source.map((row) => {
       if (trendMode === 'spend') return row.spend ?? 0
       if (trendMode === 'clicks') return row.clicks ?? 0
@@ -248,13 +226,15 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
                 ))}
               </div>
             </div>
-            <div style={{ height: 260, border: '1px solid #eff2f6', borderRadius: 10, background: '#fbfcff', display: 'grid', gridTemplateColumns: 'repeat(8, minmax(0,1fr))', alignItems: 'end', gap: 10, padding: '16px 12px 28px' }}>
-              {mainBars.map((bar) => (
+            <div style={{ height: 260, border: '1px solid #eff2f6', borderRadius: 10, background: '#fbfcff', display: mainBars.length > 0 ? 'grid' : 'flex', gridTemplateColumns: mainBars.length > 0 ? 'repeat(8, minmax(0,1fr))' : undefined, alignItems: 'end', justifyContent: mainBars.length === 0 ? 'center' : undefined, gap: 10, padding: '16px 12px 28px' }}>
+              {mainBars.length > 0 ? mainBars.map((bar) => (
                 <div key={bar.label} style={{ height: '100%', display: 'grid', gridTemplateRows: '1fr auto', gap: 4 }}>
                   <div style={{ alignSelf: 'end', height: `${bar.v}%`, borderRadius: '7px 7px 0 0', background: 'linear-gradient(180deg,#6d9aff,#3578f6)' }} />
                   <span style={{ textAlign: 'center', fontSize: 10, color: '#98a2b3' }}>{bar.label}</span>
                 </div>
-              ))}
+              )) : (
+                <span style={{ fontSize: 12, color: '#98a2b3', alignSelf: 'center' }}>데이터 수집 후 표시됩니다.</span>
+              )}
             </div>
           </section>
           <section style={{ border: '1px solid #e5e9f0', borderRadius: 10, background: '#fff', padding: 14 }}>
@@ -402,76 +382,80 @@ export function CampaignMetaDashboardTab({ overview, onOpenMetaSettings }: Props
 
       {innerTab === 'hourly' && (
         <section style={{ border: '1px solid #e5e9f0', borderRadius: 10, background: '#fff', padding: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <div>
-              <h4 style={{ margin: 0, fontSize: 14 }}>시간대별 성과</h4>
-              <p style={{ margin: '4px 0 0', color: '#98a2b3', fontSize: 11 }}>광고주 시간대 기준 막대차트</p>
-            </div>
-            <div style={{ display: 'inline-flex', gap: 4, padding: 3, background: '#f1f4f8', borderRadius: 9 }}>
-              {(['ctr', 'clicks', 'spend'] as const).map((metric) => (
-                <button
-                  key={metric}
-                  type="button"
-                  onClick={() => setHourlyMetric(metric)}
-                  style={{
-                    height: 24,
-                    border: 0,
-                    borderRadius: 7,
-                    padding: '0 8px',
-                    fontSize: 10,
-                    fontWeight: 700,
-                    background: hourlyMetric === metric ? '#fff' : 'transparent',
-                    color: hourlyMetric === metric ? '#111827' : '#667085',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {metric.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div style={{ height: 290, display: 'grid', gridTemplateColumns: 'repeat(24,minmax(18px,1fr))', alignItems: 'end', gap: 6, border: '1px solid #eff2f6', borderRadius: 10, padding: '12px 10px 28px', background: '#fbfcff', overflowX: 'auto' }}>
-            {hourlySeries.map((item) => {
-              const value = hourlyMetric === 'ctr' ? item.ctr : hourlyMetric === 'clicks' ? item.clicks : item.spend
-              const height = Math.max(8, Math.round((value / maxHourly) * 100))
-              const peak = value >= maxHourly * 0.9
-              const low = value <= maxHourly * 0.22
-              return (
-                <div key={item.hour} style={{ height: '100%', display: 'grid', gridTemplateRows: '1fr auto', gap: 4 }}>
-                  <div
-                    title={`${item.hour}:00 ${hourlyMetric === 'ctr' ? `${value.toFixed(2)}%` : value.toLocaleString()}`}
-                    style={{
-                      alignSelf: 'end',
-                      height: `${height}%`,
-                      borderRadius: '7px 7px 0 0',
-                      background: peak
-                        ? 'linear-gradient(180deg,#34c894,#10a36f)'
-                        : low
-                          ? 'linear-gradient(180deg,#d8e2f1,#b9c5d6)'
-                          : 'linear-gradient(180deg,#78a3ff,#3578f6)',
-                    }}
-                  />
-                  <span style={{ textAlign: 'center', fontSize: 10, color: '#98a2b3' }}>{item.hour}</span>
+          <h4 style={{ margin: 0, fontSize: 14 }}>시간대별 성과</h4>
+          {hourlyRows.length === 0 ? (
+            <p style={{ margin: '8px 0 0', color: '#667085', fontSize: 12 }}>
+              상세 분석 데이터 수집 후 표시됩니다. Meta 설정 패널에서 &quot;오디언스/게재위치/시간대 상세 데이터도 수집&quot;을 체크하고 새로고침하세요.
+            </p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 10 }}>
+                <p style={{ margin: 0, color: '#98a2b3', fontSize: 11 }}>광고주 시간대 기준 막대차트</p>
+                <div style={{ display: 'inline-flex', gap: 4, padding: 3, background: '#f1f4f8', borderRadius: 9 }}>
+                  {(['ctr', 'clicks', 'spend'] as const).map((metric) => (
+                    <button
+                      key={metric}
+                      type="button"
+                      onClick={() => setHourlyMetric(metric)}
+                      style={{
+                        height: 24,
+                        border: 0,
+                        borderRadius: 7,
+                        padding: '0 8px',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        background: hourlyMetric === metric ? '#fff' : 'transparent',
+                        color: hourlyMetric === metric ? '#111827' : '#667085',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {metric.toUpperCase()}
+                    </button>
+                  ))}
                 </div>
-              )
-            })}
-          </div>
-          <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 10 }}>
-            <div style={{ border: '1px solid #eef2f6', borderRadius: 8, padding: 10 }}>
-              <div style={{ color: '#98a2b3', fontSize: 11 }}>최고 효율 시간</div>
-              <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700 }}>{bestHour ? `${bestHour.hour}:00` : '-'}</div>
-            </div>
-            <div style={{ border: '1px solid #eef2f6', borderRadius: 8, padding: 10 }}>
-              <div style={{ color: '#98a2b3', fontSize: 11 }}>최고 CTR</div>
-              <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700 }}>{bestHour ? `${bestHour.ctr.toFixed(2)}%` : '-'}</div>
-            </div>
-            <div style={{ border: '1px solid #eef2f6', borderRadius: 8, padding: 10 }}>
-              <div style={{ color: '#98a2b3', fontSize: 11 }}>데이터 소스</div>
-              <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700 }}>
-                {overview.detailTables?.metaHourlyRows?.length ? 'Snapshot' : 'Fallback'}
               </div>
-            </div>
-          </div>
+              <div style={{ height: 290, display: 'grid', gridTemplateColumns: 'repeat(24,minmax(18px,1fr))', alignItems: 'end', gap: 6, border: '1px solid #eff2f6', borderRadius: 10, padding: '12px 10px 28px', background: '#fbfcff', overflowX: 'auto' }}>
+                {hourlySeries.map((item) => {
+                  const value = hourlyMetric === 'ctr' ? item.ctr : hourlyMetric === 'clicks' ? item.clicks : item.spend
+                  const height = Math.max(8, Math.round((value / maxHourly) * 100))
+                  const peak = value >= maxHourly * 0.9
+                  const low = value <= maxHourly * 0.22
+                  return (
+                    <div key={item.hour} style={{ height: '100%', display: 'grid', gridTemplateRows: '1fr auto', gap: 4 }}>
+                      <div
+                        title={`${item.hour}:00 ${hourlyMetric === 'ctr' ? `${value.toFixed(2)}%` : value.toLocaleString()}`}
+                        style={{
+                          alignSelf: 'end',
+                          height: `${height}%`,
+                          borderRadius: '7px 7px 0 0',
+                          background: peak
+                            ? 'linear-gradient(180deg,#34c894,#10a36f)'
+                            : low
+                              ? 'linear-gradient(180deg,#d8e2f1,#b9c5d6)'
+                              : 'linear-gradient(180deg,#78a3ff,#3578f6)',
+                        }}
+                      />
+                      <span style={{ textAlign: 'center', fontSize: 10, color: '#98a2b3' }}>{item.hour}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 10 }}>
+                <div style={{ border: '1px solid #eef2f6', borderRadius: 8, padding: 10 }}>
+                  <div style={{ color: '#98a2b3', fontSize: 11 }}>최고 효율 시간</div>
+                  <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700 }}>{bestHour ? `${bestHour.hour}:00` : '-'}</div>
+                </div>
+                <div style={{ border: '1px solid #eef2f6', borderRadius: 8, padding: 10 }}>
+                  <div style={{ color: '#98a2b3', fontSize: 11 }}>최고 CTR</div>
+                  <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700 }}>{bestHour ? `${bestHour.ctr.toFixed(2)}%` : '-'}</div>
+                </div>
+                <div style={{ border: '1px solid #eef2f6', borderRadius: 8, padding: 10 }}>
+                  <div style={{ color: '#98a2b3', fontSize: 11 }}>데이터 소스</div>
+                  <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700 }}>Snapshot</div>
+                </div>
+              </div>
+            </>
+          )}
         </section>
       )}
     </div>

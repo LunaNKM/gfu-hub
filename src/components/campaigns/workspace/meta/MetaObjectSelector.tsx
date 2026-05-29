@@ -147,7 +147,7 @@ export function MetaObjectSelector({
         <button
           type="button"
           onClick={() => {
-            void reload(metaAccountId)
+            void reload(metaAccountId, true)
           }}
           disabled={loading || !hasAccountId}
           style={{

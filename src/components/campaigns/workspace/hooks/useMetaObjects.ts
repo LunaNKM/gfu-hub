@@ -6,11 +6,14 @@ import type { User } from 'firebase/auth'
 import type { MetaObjectsResponse } from '@/types/campaignMeta'
 import { normalizeMetaAdAccountId } from '@/lib/campaigns/metaAccount'
 
-// ── accountId 정규화 헬퍼 (re-export) ────────────────────────────
-// MetaObjectSelector 등 기존 import를 깨지 않기 위해 별칭으로 재노출.
 export { normalizeMetaAdAccountId as normalizeMetaAccountId }
 
-// ── auth helper ───────────────────────────────────────────────────
+const CACHE_TTL_MS = 5 * 60 * 1000
+const COOLDOWN_MS = 60 * 1000
+
+const objectsCache = new Map<string, { data: MetaObjectsResponse; fetchedAt: number }>()
+const cooldownUntilMap = new Map<string, number>()
+const inFlight = new Set<string>()
 
 async function authFetch(user: User, url: string): Promise<Response> {
   const token = await user.getIdToken()
@@ -19,29 +22,26 @@ async function authFetch(user: User, url: string): Promise<Response> {
   })
 }
 
-// ── hook ──────────────────────────────────────────────────────────
+function isRateLimitError(detail: string | undefined): boolean {
+  if (!detail) return false
+  return detail.includes('[17/') || detail.includes('[17]') || detail.includes('2446079')
+}
 
 export function useMetaObjects() {
   const { user } = useAuth()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [objects, setObjects] = useState<MetaObjectsResponse | null>(null)
-
-  // 현재 objects가 어떤 accountId에서 로드되었는지 추적 (normalized)
   const [objectsAccountId, setObjectsAccountId] = useState<string | null>(null)
 
-  // 요청 순서 카운터 — 늦게 도착한 이전 요청의 응답이 현재 상태를 덮어쓰지 않게 함
   const requestSeqRef = useRef(0)
 
   const reload = useCallback(
-    async (metaAccountId: string) => {
+    async (metaAccountId: string, force = false) => {
       const normalized = normalizeMetaAdAccountId(metaAccountId)
-
-      // 모든 reload 호출에서 seq를 증가시켜 이전 in-flight 요청을 무효화
       const seq = ++requestSeqRef.current
 
       if (!normalized) {
-        // accountId가 비어있으면 모든 상태를 초기화하고 종료
         setObjects(null)
         setObjectsAccountId(null)
         setError(null)
@@ -51,11 +51,46 @@ export function useMetaObjects() {
 
       if (!user) return
 
-      // 이전 계정의 stale data를 즉시 제거 — 절대 stale list가 화면에 남지 않게 함
+      // Rate limit cooldown: don't make a new request, serve cache or error
+      const cooldownEnd = cooldownUntilMap.get(normalized) ?? 0
+      if (Date.now() < cooldownEnd) {
+        if (seq !== requestSeqRef.current) return
+        const cached = objectsCache.get(normalized)
+        if (cached) {
+          setObjects(cached.data)
+          setObjectsAccountId(normalized)
+        } else {
+          setObjects(null)
+          setObjectsAccountId(null)
+        }
+        setError('Meta API 요청 제한에 도달했습니다. 잠시 후 다시 시도하세요.')
+        setLoading(false)
+        return
+      }
+
+      if (!force) {
+        // Serve from cache if fresh enough
+        const cached = objectsCache.get(normalized)
+        if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+          if (seq !== requestSeqRef.current) return
+          setObjects(cached.data)
+          setObjectsAccountId(normalized)
+          setError(null)
+          setLoading(false)
+          return
+        }
+
+        // Skip duplicate in-flight request for the same accountId
+        if (inFlight.has(normalized)) return
+      }
+
+      // Clear stale data from a different account
       setObjects(null)
       setObjectsAccountId(null)
       setLoading(true)
       setError(null)
+
+      inFlight.add(normalized)
 
       try {
         const res = await authFetch(
@@ -64,24 +99,61 @@ export function useMetaObjects() {
         )
         const data = (await res.json()) as Record<string, unknown>
 
-        // 더 새로운 요청이 시작된 경우 이 응답은 무시
         if (seq !== requestSeqRef.current) return
 
+        if (res.status === 429) {
+          const retryAfter = (data['retryAfterSeconds'] as number | undefined) ?? 60
+          cooldownUntilMap.set(normalized, Date.now() + retryAfter * 1000)
+          const cached = objectsCache.get(normalized)
+          if (cached) {
+            setObjects(cached.data)
+            setObjectsAccountId(normalized)
+          }
+          setError('Meta API 요청 제한에 도달했습니다. 잠시 후 다시 시도하세요.')
+          return
+        }
+
         if (!res.ok) {
-          const base =
-            (data['error'] as string | undefined) ?? 'Meta objects 조회 실패'
+          const base = (data['error'] as string | undefined) ?? 'Meta objects 조회 실패'
           const detail = data['detail'] as string | undefined
+
+          if (isRateLimitError(detail)) {
+            cooldownUntilMap.set(normalized, Date.now() + COOLDOWN_MS)
+            const cached = objectsCache.get(normalized)
+            if (cached) {
+              setObjects(cached.data)
+              setObjectsAccountId(normalized)
+            }
+            setError('Meta API 요청 제한에 도달했습니다. 잠시 후 다시 시도하세요.')
+            return
+          }
+
           throw new Error(detail ? `${base}: ${detail}` : base)
         }
 
-        setObjects(data as unknown as MetaObjectsResponse)
+        const result = data as unknown as MetaObjectsResponse
+        objectsCache.set(normalized, { data: result, fetchedAt: Date.now() })
+        setObjects(result)
         setObjectsAccountId(normalized)
+        setError(null)
       } catch (err) {
-        // 더 새로운 요청이 시작된 경우 에러도 무시
         if (seq !== requestSeqRef.current) return
-        setError(err instanceof Error ? err.message : 'Meta objects 조회 실패')
+        const msg = err instanceof Error ? err.message : 'Meta objects 조회 실패'
+
+        if (isRateLimitError(msg)) {
+          cooldownUntilMap.set(normalized, Date.now() + COOLDOWN_MS)
+          const cached = objectsCache.get(normalized)
+          if (cached) {
+            setObjects(cached.data)
+            setObjectsAccountId(normalized)
+          }
+          setError('Meta API 요청 제한에 도달했습니다. 잠시 후 다시 시도하세요.')
+          return
+        }
+
+        setError(msg)
       } finally {
-        // 현재 요청인 경우에만 loading 해제 — 이전 요청의 finally가 새 로딩 상태를 덮어쓰지 않게 함
+        inFlight.delete(normalized)
         if (seq === requestSeqRef.current) {
           setLoading(false)
         }
