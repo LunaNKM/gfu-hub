@@ -16,8 +16,11 @@ function getFirebaseApp(): FirebaseApp | null {
     return null
   }
 
-  if (getApps().length > 0) {
-    return getApps()[0]
+  // 이름 없는 기본 앱만 골라낸다. 데이터 이전 도구처럼 두 번째 앱(다른 프로젝트)을
+  // 띄우는 화면이 있어서, getApps()[0] 로 집으면 엉뚱한 프로젝트를 볼 수 있다.
+  const existing = getApps().find((app) => app.name === '[DEFAULT]')
+  if (existing) {
+    return existing
   }
 
   firebaseApp = initializeApp(firebaseConfig)

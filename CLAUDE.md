@@ -16,6 +16,9 @@
 - `/share/[token]` 은 로그인 없이 열리는 공개 페이지라 인증 그룹 밖에 있다.
   같은 `brands.css` 를 쓰므로 역시 `.brand-mgmt` 래퍼가 필요하다.
 - Firestore 컬렉션: `brands`, `shareLinks`(+ `edits`, `settings/concepts`).
+- `/brands/migrate` 는 원본 프로젝트에서 데이터를 옮겨오기 위한 일회성 도구다.
+  회사 정책상 서비스 계정을 쓸 수 없어 서버 대신 브라우저에서 로그인 계정의
+  권한으로 복사한다. 사이드바에 노출하지 않으며, 이전이 끝나면 폴더째 지운다.
 
 ## 검증
 
