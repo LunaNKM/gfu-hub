@@ -16,9 +16,11 @@ import React, { useState } from 'react'
 import { FirebaseApp, deleteApp, initializeApp } from 'firebase/app'
 import { GoogleAuthProvider, getAuth, signInWithPopup } from 'firebase/auth'
 import {
+  DocumentSnapshot,
   QueryDocumentSnapshot,
   collection,
   doc,
+  getDoc,
   getDocs,
   getFirestore,
   writeBatch,
@@ -98,14 +100,14 @@ export default function BrandsMigratePage() {
     try {
       const source = getFirestore(sourceApp)
 
-      async function copy(docs: QueryDocumentSnapshot[], label: string) {
+      async function copy(docs: (QueryDocumentSnapshot | DocumentSnapshot)[], label: string) {
         if (!docs.length) return 0
         for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
           const slice = docs.slice(i, i + BATCH_LIMIT)
           if (!dryRun) {
             const batch = writeBatch(firebaseDb!)
             for (const snapshot of slice) {
-              batch.set(doc(firebaseDb!, snapshot.ref.path), snapshot.data())
+              batch.set(doc(firebaseDb!, snapshot.ref.path), snapshot.data() ?? {})
             }
             await batch.commit()
           }
@@ -124,8 +126,12 @@ export default function BrandsMigratePage() {
         const edits = (await getDocs(collection(source, 'shareLinks', link.id, 'edits'))).docs
         tally.edits += await copy(edits, `  ${link.id}/edits`)
 
-        const settings = (await getDocs(collection(source, 'shareLinks', link.id, 'settings'))).docs
-        tally.settings += await copy(settings, `  ${link.id}/settings`)
+        // 원본 규칙은 settings 컬렉션 나열을 허용하지 않고 concepts 문서 하나만
+        // 열어 준다. 실제로도 그 문서 하나뿐이라 직접 지정해서 읽는다.
+        const concepts = await getDoc(doc(source, 'shareLinks', link.id, 'settings', 'concepts'))
+        if (concepts.exists()) {
+          tally.settings += await copy([concepts], `  ${link.id}/settings/concepts`)
+        }
       }
 
       setCounts(tally)

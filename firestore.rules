@@ -135,11 +135,15 @@ service cloud.firestore {
       allow read: if isGfutures() || resource.data.revoked == false;
       allow write: if isGfutures();
 
+      // 스태프는 제한 없이 쓸 수 있어야 한다(데이터 이전·수기 보정). 부모인
+      // shareLinks 문서에는 이미 무제한 쓰기 권한이 있으므로 범위가 넓어지는 것은
+      // 아니다. 아래 긴 조건은 로그인하지 않은 공유 링크 방문자에게만 걸린다.
       // 필드 하나만 merge:true로 부분 갱신하는 것도 허용하므로, 각 필드는
       // "이번 쓰기 결과에 그 필드가 있으면" 타입/값을 검사하는 식으로 조건을 건다.
       match /edits/{influencerId} {
         allow read: if isGfutures() || linkIsActive(token);
-        allow create, update: if linkIsActive(token)
+        allow create, update: if isGfutures() || (
+          linkIsActive(token)
           && request.resource.data.keys()
             .hasOnly(['status', 'concept', 'brandComment', 'uploadDate', 'uploadUrl'])
           && (!('status' in request.resource.data)
@@ -155,7 +159,8 @@ service cloud.firestore {
                   && request.resource.data.uploadDate.size() < 20))
           && (!('uploadUrl' in request.resource.data)
               || (request.resource.data.uploadUrl is string
-                  && request.resource.data.uploadUrl.size() < 500));
+                  && request.resource.data.uploadUrl.size() < 500))
+        );
       }
 
       // 브랜드가 "콘셉트 설정"에서 정한 콘셉트 목록·색상 전체를 담는 단일 문서.
@@ -164,11 +169,13 @@ service cloud.firestore {
       // 공유 페이지는 shareLinks 문서의 스냅샷만 읽는다).
       match /settings/concepts {
         allow read: if isGfutures();
-        allow create, update: if linkIsActive(token)
+        allow create, update: if isGfutures() || (
+          linkIsActive(token)
           && request.resource.data.keys().hasOnly(['concepts', 'colors'])
           && request.resource.data.concepts is list
           && request.resource.data.concepts.size() < 60
-          && request.resource.data.colors is map;
+          && request.resource.data.colors is map
+        );
       }
     }
 

@@ -30,3 +30,5 @@ Thumbs.db
 tsconfig.tsbuildinfo
 .claude/
 .kiro/
+
+.env*
