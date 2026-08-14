@@ -2302,11 +2302,32 @@ function CampaignDetail({
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
   const groupCardRefs = useRef(new Map<string, HTMLElement>());
   const scrollRafRef = useRef<number | null>(null);
+  const scrollHostRef = useRef<HTMLElement | null>(null);
 
   function hitTestGroup(clientY: number): string | null {
     for (const [id, el] of groupCardRefs.current) {
       const rect = el.getBoundingClientRect();
       if (clientY >= rect.top && clientY <= rect.bottom) return id;
+    }
+    return null;
+  }
+
+  /**
+   * 실제로 스크롤되는 조상을 찾는다. 허브 레이아웃은 창을 고정해 두고 본문
+   * <main> 안에서만 스크롤하므로 window.scrollBy 로는 아무 일도 일어나지 않는다.
+   * 문서 전체가 스크롤되는 환경이면 null 을 돌려주고 window 를 쓴다.
+   */
+  function findScrollHost(from: HTMLElement | null): HTMLElement | null {
+    let node = from?.parentElement ?? null;
+    while (node) {
+      const overflowY = getComputedStyle(node).overflowY;
+      if (
+        (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") &&
+        node.scrollHeight > node.clientHeight
+      ) {
+        return node;
+      }
+      node = node.parentElement;
     }
     return null;
   }
@@ -2321,14 +2342,26 @@ function CampaignDetail({
   function updateAutoScroll(clientY: number) {
     const margin = 72;
     const maxSpeed = 16;
-    const viewH = window.innerHeight;
+    const host = scrollHostRef.current;
+    // 경계는 창이 아니라 실제 스크롤 영역 기준이어야 한다. 허브에서는 위쪽에
+    // 사이드바 헤더가, 아래쪽에 화면 끝이 있어 두 값이 서로 다르다.
+    const hostRect = host?.getBoundingClientRect();
+    const top = hostRect ? hostRect.top : 0;
+    const bottom = hostRect ? hostRect.bottom : window.innerHeight;
+
+    const ratio = (value: number) => Math.min(1, Math.max(0, value));
     let speed = 0;
-    if (clientY < margin) speed = -maxSpeed * (1 - clientY / margin);
-    else if (clientY > viewH - margin) speed = maxSpeed * (1 - (viewH - clientY) / margin);
+    if (clientY < top + margin) {
+      speed = -maxSpeed * ratio(1 - (clientY - top) / margin);
+    } else if (clientY > bottom - margin) {
+      speed = maxSpeed * ratio(1 - (bottom - clientY) / margin);
+    }
+
     stopAutoScroll();
     if (speed === 0) return;
     const step = () => {
-      window.scrollBy(0, speed);
+      if (host) host.scrollTop += speed;
+      else window.scrollBy(0, speed);
       setDragOverGroupId(hitTestGroup(clientY));
       scrollRafRef.current = requestAnimationFrame(step);
     };
@@ -2340,6 +2373,9 @@ function CampaignDetail({
     event.preventDefault();
     setDragGroupId(groupId);
     setDragPos({ x: event.clientX, y: event.clientY });
+    scrollHostRef.current = findScrollHost(
+      groupCardRefs.current.get(groupId) ?? (event.currentTarget as HTMLElement),
+    );
 
     let overId: string | null = null;
 
@@ -2361,6 +2397,7 @@ function CampaignDetail({
       document.removeEventListener("pointermove", handleMove);
       document.removeEventListener("pointerup", handleUp);
       stopAutoScroll();
+      scrollHostRef.current = null;
       setDragGroupId(null);
       setDragOverGroupId(null);
       setDragPos(null);
