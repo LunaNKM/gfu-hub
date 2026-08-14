@@ -1,0 +1,4655 @@
+/*
+ * 브랜드 관리 화면 전용 스타일. 원본은 gfutures_operation_system 의 globals.css 였고,
+ * GFU Hub 안에서는 .brand-mgmt 래퍼 하위로만 적용되도록 모든 셀렉터를 스코프했다.
+ * 직접 수정하지 말고 원본 변경 후 다시 스코프하는 편이 안전하다.
+ */
+.brand-mgmt {
+  --ink: #141516;
+  --muted: #73767c;
+  --line: #e8e9eb;
+  --soft: #f6f7f8;
+  --green: #19a974;
+  --green-soft: #eaf8f2;
+  --orange: #f27935;
+  --orange-soft: #fff2e9;
+  --red: #dc4b4b;
+  --red-soft: #fff0f0;
+  --blue: #4263eb;
+}
+
+.brand-mgmt * {
+  box-sizing: border-box;
+}
+
+.brand-mgmt,
+.brand-mgmt {
+  margin: 0;
+  min-height: 100%;
+  background: #fff;
+  color: var(--ink);
+}
+
+.brand-mgmt,
+.brand-mgmt button,
+.brand-mgmt input,
+.brand-mgmt select,
+.brand-mgmt textarea {
+  font-family: "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-feature-settings: "tnum";
+  letter-spacing: -0.015em;
+}
+
+.brand-mgmt button,
+.brand-mgmt input,
+.brand-mgmt select,
+.brand-mgmt textarea {
+  font-size: inherit;
+}
+
+.brand-mgmt button {
+  color: inherit;
+}
+
+.brand-mgmt button:not(:disabled) {
+  cursor: pointer;
+}
+
+.brand-mgmt button:focus-visible,
+.brand-mgmt input:focus-visible,
+.brand-mgmt select:focus-visible,
+.brand-mgmt textarea:focus-visible,
+.brand-mgmt a:focus-visible {
+  outline: 3px solid rgba(66, 99, 235, 0.22);
+  outline-offset: 2px;
+}
+
+.brand-mgmt .app-shell {
+  min-height: 100vh;
+}
+
+.brand-mgmt .side-nav {
+  width: 228px;
+  position: fixed;
+  inset: 0 auto 0 0;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 16px;
+  background: #fff;
+  border-right: 1px solid var(--line);
+  z-index: 30;
+}
+
+.brand-mgmt .nav-brand {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 8px;
+}
+
+.brand-mgmt .nav-brand-link {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 4px;
+  margin: 0 -4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.brand-mgmt .nav-brand-link:hover {
+  background: var(--soft);
+}
+
+.brand-mgmt .logo-mark {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.brand-mgmt .logo-mark.large {
+  width: 44px;
+  height: 44px;
+}
+
+.brand-mgmt .nav-brand strong {
+  display: block;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.brand-mgmt .nav-brand small {
+  display: block;
+  margin-top: 2px;
+  color: #9b9da2;
+  font-size: 11px;
+}
+
+.brand-mgmt .side-nav nav {
+  margin-top: 38px;
+  display: grid;
+  gap: 4px;
+}
+
+.brand-mgmt .side-nav nav button {
+  height: 42px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 12px;
+  color: #686b71;
+  font-weight: 600;
+  font-size: 13px;
+  text-align: left;
+}
+
+.brand-mgmt .side-nav nav button:hover {
+  background: var(--soft);
+}
+
+.brand-mgmt .side-nav nav button.active {
+  color: var(--ink);
+  background: #f1f2f3;
+}
+
+.brand-mgmt .side-nav nav button > span {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: #e7e8ea;
+  color: #55585d;
+  font-size: 11px;
+}
+
+.brand-mgmt .nav-footer {
+  margin-top: auto;
+}
+
+.brand-mgmt .demo-badge,
+.brand-mgmt .data-badge {
+  margin: 0 4px 12px;
+  padding: 10px 11px;
+  border: 1px solid #f0dfc8;
+  border-radius: 9px;
+  background: #fffaf3;
+  color: #916129;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.brand-mgmt .demo-badge span,
+.brand-mgmt .data-badge span,
+.brand-mgmt .live-pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 7px;
+  background: var(--orange);
+}
+
+.brand-mgmt .data-badge {
+  border-color: #d9e8e2;
+  background: #f3faf7;
+  color: #39755f;
+}
+
+.brand-mgmt .data-badge span {
+  background: var(--green);
+}
+
+.brand-mgmt .data-badge.connecting,
+.brand-mgmt .data-badge.saving {
+  border-color: #dfe2e6;
+  background: #f7f8f9;
+  color: #71757b;
+}
+
+.brand-mgmt .data-badge.connecting span,
+.brand-mgmt .data-badge.saving span {
+  background: #8c9198;
+  animation: status-pulse 1.2s ease-in-out infinite;
+}
+
+.brand-mgmt .data-badge.error {
+  border-color: #f0d2d2;
+  background: var(--red-soft);
+  color: #a63f3f;
+}
+
+.brand-mgmt .data-badge.error span {
+  background: var(--red);
+}
+
+@keyframes status-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.brand-mgmt .user-block {
+  border-top: 1px solid var(--line);
+  padding: 17px 4px 0;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 9px;
+}
+
+.brand-mgmt .user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #eceef0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.brand-mgmt .user-block strong,
+.brand-mgmt .user-block small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-mgmt .user-block strong {
+  font-size: 11px;
+}
+
+.brand-mgmt .user-block small {
+  margin-top: 2px;
+  color: #999ca1;
+  font-size: 9px;
+}
+
+.brand-mgmt .user-block button,
+.brand-mgmt .mobile-close {
+  border: 0;
+  background: transparent;
+  color: #8b8d92;
+  padding: 3px;
+}
+
+.brand-mgmt .main-area {
+  margin-left: 228px;
+  min-height: 100vh;
+}
+
+.brand-mgmt .sync-banner {
+  min-height: 48px;
+  padding: 10px 24px;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-bottom: 1px solid #f0d2d2;
+  background: #fff5f5;
+  color: #9d3c3c;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.brand-mgmt .sync-banner button {
+  margin-left: 6px;
+  padding: 5px 9px;
+  border: 1px solid #e6bcbc;
+  border-radius: 6px;
+  background: #fff;
+  color: #933a3a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.brand-mgmt .page-wrap {
+  width: min(1180px, calc(100% - 80px));
+  margin: 0 auto;
+  padding: 64px 0 80px;
+}
+
+.brand-mgmt .eyebrow {
+  margin: 0 0 9px;
+  color: #96999f;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.15em;
+}
+
+.brand-mgmt .page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 30px;
+}
+
+.brand-mgmt .page-header h1 {
+  margin: 0;
+  font-size: clamp(31px, 4vw, 42px);
+  line-height: 1.1;
+  letter-spacing: -0.045em;
+}
+
+.brand-mgmt .page-header > div > p:last-child {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.brand-mgmt .primary-button,
+.brand-mgmt .secondary-button,
+.brand-mgmt .danger-button {
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.brand-mgmt .primary-button {
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.brand-mgmt .primary-button:hover {
+  background: #2c2e30;
+}
+
+.brand-mgmt .primary-button:disabled,
+.brand-mgmt .danger-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.brand-mgmt .secondary-button {
+  background: #fff;
+  border: 1px solid #dadcdf;
+  color: #404247;
+}
+
+.brand-mgmt .secondary-button:hover {
+  background: var(--soft);
+}
+
+.brand-mgmt .overview-strip {
+  margin-top: 45px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  box-shadow: 0 5px 22px rgba(20, 21, 22, 0.025);
+}
+
+.brand-mgmt .overview-strip > div {
+  min-height: 103px;
+  padding: 24px 26px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.brand-mgmt .overview-strip > div + div {
+  border-left: 1px solid var(--line);
+}
+
+.brand-mgmt .overview-strip span {
+  color: #82858a;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.brand-mgmt .overview-strip strong {
+  margin-top: 9px;
+  font-size: 19px;
+  letter-spacing: -0.03em;
+}
+
+.brand-mgmt .overview-strip strong small {
+  color: #85888e;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.brand-mgmt .list-toolbar {
+  margin: 46px 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand-mgmt .list-toolbar > div {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.brand-mgmt .list-toolbar h2 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: -0.025em;
+}
+
+.brand-mgmt .list-toolbar > div span {
+  color: #9b9da1;
+  font-size: 11px;
+}
+
+.brand-mgmt .search-field {
+  width: 220px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9a9ca1;
+}
+
+.brand-mgmt .search-field:focus-within {
+  border-color: #b7b9be;
+}
+
+.brand-mgmt .search-field input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  font-size: 12px;
+}
+
+.brand-mgmt .brand-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.brand-mgmt .brand-card {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #fff;
+  animation: rise 0.45s ease both;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.brand-mgmt .brand-card:hover {
+  transform: translateY(-3px);
+  border-color: #ced0d4;
+  box-shadow: 0 14px 34px rgba(20, 21, 22, 0.07);
+  cursor: pointer;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.brand-mgmt .brand-card-top,
+.brand-mgmt .brand-identity,
+.brand-mgmt .card-footer,
+.brand-mgmt .card-progress > div {
+  display: flex;
+  align-items: center;
+}
+
+.brand-mgmt .brand-card-top,
+.brand-mgmt .card-footer,
+.brand-mgmt .card-progress > div {
+  justify-content: space-between;
+}
+
+.brand-mgmt .brand-identity {
+  gap: 11px;
+  min-width: 0;
+}
+
+.brand-mgmt .brand-monogram {
+  width: 39px;
+  height: 39px;
+  border-radius: 10px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  background: #f1f2f3;
+  color: #383a3e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.brand-mgmt .brand-monogram.has-image {
+  background: #fff;
+  border: 1px solid var(--line);
+  padding: 5px;
+}
+
+.brand-mgmt .brand-monogram.has-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.brand-mgmt .brand-identity h3 {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.brand-mgmt .brand-identity p {
+  margin: 4px 0 0;
+  color: #999ca1;
+  font-size: 10px;
+}
+
+.brand-mgmt .card-menu {
+  position: relative;
+}
+
+.brand-mgmt .card-menu > button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #8a8d92;
+}
+
+.brand-mgmt .card-menu > button:hover {
+  background: var(--soft);
+}
+
+.brand-mgmt .card-menu > div {
+  position: absolute;
+  right: 0;
+  top: 31px;
+  width: 110px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(20, 21, 22, 0.12);
+  display: none;
+  z-index: 5;
+}
+
+.brand-mgmt .card-menu:focus-within > div {
+  display: grid;
+}
+
+.brand-mgmt .card-menu > div button {
+  height: 31px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  font-size: 11px;
+  text-align: left;
+}
+
+.brand-mgmt .card-menu > div button:hover {
+  background: var(--soft);
+}
+
+.brand-mgmt .card-budget {
+  margin-top: 29px;
+}
+
+.brand-mgmt .card-budget > span {
+  color: #81848a;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.brand-mgmt .card-budget > strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 21px;
+  letter-spacing: -0.04em;
+}
+
+.brand-mgmt .card-budget p {
+  margin: 7px 0 0;
+  color: #a1a3a7;
+  font-size: 9px;
+}
+
+.brand-mgmt .card-budget p span {
+  margin-left: 7px;
+  padding-left: 7px;
+  border-left: 1px solid #dddfe2;
+}
+
+.brand-mgmt .card-progress {
+  margin-top: 24px;
+}
+
+.brand-mgmt .card-progress span,
+.brand-mgmt .card-progress b {
+  font-size: 10px;
+}
+
+.brand-mgmt .card-progress span {
+  color: #7f8287;
+}
+
+.brand-mgmt .card-progress > i,
+.brand-mgmt .progress-list i,
+.brand-mgmt .group-toggle > i,
+.brand-mgmt .budget-bar i {
+  display: block;
+  overflow: hidden;
+  background: #ededef;
+  border-radius: 10px;
+}
+
+.brand-mgmt .card-progress > i {
+  height: 4px;
+  margin-top: 9px;
+}
+
+.brand-mgmt .card-progress > i b,
+.brand-mgmt .progress-list i b,
+.brand-mgmt .group-toggle > i b,
+.brand-mgmt .budget-bar i b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink);
+  transition: width 0.3s ease;
+}
+
+.brand-mgmt .card-footer {
+  margin-top: 22px;
+  padding-top: 17px;
+  border-top: 1px solid #f0f1f2;
+}
+
+.brand-mgmt .shortage,
+.brand-mgmt .complete,
+.brand-mgmt .unset {
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.brand-mgmt .shortage {
+  background: var(--orange-soft);
+  color: #c45c1f;
+}
+
+.brand-mgmt .complete {
+  background: var(--green-soft);
+  color: #11865c;
+}
+
+.brand-mgmt .unset {
+  background: var(--soft);
+  color: #85888d;
+}
+
+.brand-mgmt .card-footer button {
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #707278;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.brand-mgmt .campaign-page {
+  min-height: 100vh;
+  background: #fafafa;
+}
+
+.brand-mgmt .campaign-header {
+  min-height: 92px;
+  padding: 0 34px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand-mgmt .campaign-heading,
+.brand-mgmt .campaign-actions,
+.brand-mgmt .campaign-heading > div:first-of-type {
+  display: flex;
+  align-items: center;
+}
+
+.brand-mgmt .campaign-heading {
+  gap: 13px;
+}
+
+.brand-mgmt .back-button {
+  width: 35px;
+  height: 35px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+}
+
+.brand-mgmt .campaign-heading p {
+  margin: 0 0 3px;
+  color: #9a9ca1;
+  font-size: 9px;
+}
+
+.brand-mgmt .campaign-heading h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.03em;
+}
+
+.brand-mgmt .campaign-actions {
+  gap: 9px;
+}
+
+.brand-mgmt .live-pill {
+  height: 29px;
+  padding: 0 10px;
+  border-radius: 15px;
+  background: var(--green-soft);
+  color: #14865e;
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.brand-mgmt .live-pill i {
+  background: var(--green);
+}
+
+.brand-mgmt .campaign-layout {
+  display: grid;
+  grid-template-columns: minmax(620px, 1fr) 400px;
+  max-width: 1540px;
+  margin: 0 auto;
+}
+
+.brand-mgmt .management-panel {
+  padding: 30px 32px 60px;
+  min-width: 0;
+}
+
+.brand-mgmt .dashboard-panel {
+  padding: 30px 28px 60px;
+  min-height: calc(100vh - 92px);
+  background: #fff;
+  border-left: 1px solid var(--line);
+}
+
+.brand-mgmt .section-heading {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand-mgmt .section-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.brand-mgmt .section-icon,
+.brand-mgmt .metric-icon {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  color: #5b5e64;
+}
+
+.brand-mgmt .section-heading h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.brand-mgmt .section-heading p {
+  margin: 4px 0 0;
+  color: #92959a;
+  font-size: 10px;
+}
+
+.brand-mgmt .count-pill {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: #777a7f;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.brand-mgmt .group-stack {
+  margin-top: 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.brand-mgmt .group-card {
+  border: 1px solid #e2e3e5;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.brand-mgmt .group-card.dragging {
+  opacity: 0.45;
+}
+
+.brand-mgmt .group-card.drag-over {
+  box-shadow: 0 0 0 2px var(--blue) inset;
+}
+
+.brand-mgmt .group-card-header {
+  display: flex;
+  align-items: center;
+}
+
+.brand-mgmt .group-drag-handle {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 22px;
+  border: 0;
+  background: transparent;
+  color: #c7c9cc;
+  display: grid;
+  place-items: center;
+  cursor: grab;
+  touch-action: none;
+}
+
+.brand-mgmt .group-drag-handle:hover {
+  color: #8a8d92;
+}
+
+.brand-mgmt .group-drag-ghost {
+  position: fixed;
+  z-index: 50;
+  transform: translate(14px, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 10px 28px rgba(20, 21, 22, 0.28);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.brand-mgmt .group-toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  min-height: 62px;
+  padding: 0 15px 0 0;
+  border: 0;
+  background: #fff;
+  display: grid;
+  grid-template-columns: 24px minmax(150px, 1fr) 22px minmax(80px, 0.55fr) 64px;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.brand-mgmt .group-toggle:hover {
+  background: #fcfcfc;
+}
+
+.brand-mgmt .group-chevron {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: #74777c;
+}
+
+.brand-mgmt .group-toggle > div strong {
+  display: block;
+  font-size: 12px;
+}
+
+.brand-mgmt .group-toggle > div span {
+  display: block;
+  margin-top: 3px;
+  color: #9a9ca1;
+  font-size: 9px;
+}
+
+.brand-mgmt .group-toggle > div span.met {
+  color: var(--green);
+}
+
+.brand-mgmt .group-toggle > i {
+  height: 4px;
+}
+
+.brand-mgmt .status-open,
+.brand-mgmt .status-done,
+.brand-mgmt .status-unset {
+  justify-self: end;
+  padding: 5px 7px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.brand-mgmt .status-unset {
+  background: var(--soft);
+  color: #8a8d92;
+}
+
+.brand-mgmt .status-open {
+  background: var(--orange-soft);
+  color: #bd5c24;
+}
+
+.brand-mgmt .status-done {
+  background: var(--green-soft);
+  color: #13845d;
+}
+
+.brand-mgmt .group-body {
+  border-top: 1px solid #eeeff0;
+  padding: 10px;
+  background: #fafafa;
+}
+
+.brand-mgmt .influencer-table {
+  border: 1px solid #e5e6e8;
+  border-radius: 8px;
+  background: #fff;
+  overflow-x: auto;
+}
+
+.brand-mgmt .table-head,
+.brand-mgmt .table-row {
+  min-width: 996px;
+  display: grid;
+  grid-template-columns:
+    minmax(200px, 1.4fr) 74px 96px 104px 104px 74px 78px 28px 28px 28px;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-mgmt .table-head {
+  min-height: 32px;
+  padding: 0 10px;
+  border-bottom: 1px solid #ececee;
+  background: #f8f8f9;
+  color: #999ba0;
+  font-size: 8px;
+  font-weight: 650;
+}
+
+/* 아래 행의 실제 값이 시작하는 위치(입력창 안쪽 패딩)에 헤더 글자를 맞춘다.
+   첫 칸은 체크박스+간격만큼, 나머지는 입력창/셀렉트 안쪽 패딩만큼 밀어준다. */
+.brand-mgmt .table-head span:first-child {
+  padding-left: 22px;
+}
+
+.brand-mgmt .table-head span:not(:first-child) {
+  padding-left: 6px;
+}
+
+.brand-mgmt .table-row {
+  min-height: 51px;
+  padding: 6px 10px;
+  position: relative;
+}
+
+.brand-mgmt .table-row + .table-row {
+  border-top: 1px solid #f0f0f1;
+}
+
+.brand-mgmt .table-row.duplicate {
+  background: #fffaf6;
+}
+
+.brand-mgmt .account-cell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.brand-mgmt .mini-avatar {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #eceef0;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.brand-mgmt .account-cell label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  color: #92949a;
+}
+
+.brand-mgmt .account-cell input,
+.brand-mgmt .cell-input,
+.brand-mgmt .rate-input input,
+.brand-mgmt .table-row select {
+  min-width: 0;
+  height: 29px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  outline: none;
+  font-size: 10px;
+}
+
+.brand-mgmt .account-cell input {
+  width: 100%;
+  padding: 0 3px;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.brand-mgmt .account-cell a {
+  color: #86898e;
+}
+
+.brand-mgmt .confirm-check {
+  flex: 0 0 auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.brand-mgmt .confirm-check input {
+  position: absolute;
+  opacity: 0;
+}
+
+.brand-mgmt .confirm-check input:checked + .custom-check {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+.brand-mgmt .account-cell input:hover,
+.brand-mgmt .cell-input:hover,
+.brand-mgmt .rate-input:hover,
+.brand-mgmt .table-row select:hover {
+  border-color: #e3e4e6;
+  background: #fff;
+}
+
+.brand-mgmt .cell-input {
+  width: 100%;
+  padding: 0 6px;
+}
+
+.brand-mgmt .rate-input {
+  height: 29px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  padding-left: 6px;
+  color: #8a8d92;
+}
+
+.brand-mgmt .rate-input input {
+  width: 100%;
+  padding: 0 4px;
+}
+
+.brand-mgmt .table-row select {
+  width: 100%;
+  padding: 0 5px;
+}
+
+.brand-mgmt .concept-select {
+  color: #5b5e64;
+}
+
+.brand-mgmt .status-확정 { color: #16865f; background: var(--green-soft) !important; }
+.brand-mgmt .status-미진행 { color: #b35d21; background: var(--orange-soft) !important; }
+
+.brand-mgmt .duplicate-tag {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--orange-soft);
+  color: #be5d25;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.brand-mgmt .row-delete {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #acafb3;
+  display: grid;
+  place-items: center;
+}
+
+.brand-mgmt .row-delete:hover {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+/* 코멘트 아이콘 + 팝오버 — 클릭하면 열리고, 텍스트영역에 포커스가 있는 동안 열려있다 */
+.brand-mgmt .comment-popover {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.brand-mgmt .comment-toggle {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #c0c2c6;
+  display: grid;
+  place-items: center;
+}
+
+.brand-mgmt .comment-toggle:hover {
+  background: var(--soft);
+  color: #74777c;
+}
+
+.brand-mgmt .comment-toggle.has-comment {
+  color: var(--blue);
+}
+
+.brand-mgmt .comment-popover.brand .comment-toggle.has-comment {
+  color: #b35d21;
+}
+
+.brand-mgmt .comment-menu {
+  position: absolute;
+  right: 0;
+  top: 28px;
+  width: 220px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(20, 21, 22, 0.12);
+  display: none;
+  z-index: 8;
+}
+
+.brand-mgmt .comment-popover:focus-within .comment-menu {
+  display: block;
+}
+
+.brand-mgmt .comment-menu textarea {
+  width: 100%;
+  min-height: 72px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-family: inherit;
+  font-size: 12px;
+  resize: vertical;
+  outline: none;
+}
+
+.brand-mgmt .comment-menu textarea:focus {
+  border-color: #c9d2f4;
+}
+
+.brand-mgmt .comment-dot {
+  margin-left: 5px;
+  color: var(--blue);
+  vertical-align: -1px;
+}
+
+/* 그룹명 옆 편집(연필) 팝오버 — 이름/목표 인원 수정, 그룹 삭제 */
+.brand-mgmt .group-edit-popover {
+  position: relative;
+  justify-self: start;
+}
+
+.brand-mgmt .group-edit-toggle {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #c0c2c6;
+  display: grid;
+  place-items: center;
+}
+
+.brand-mgmt .group-edit-toggle:hover {
+  background: var(--soft);
+  color: #74777c;
+}
+
+.brand-mgmt .group-edit-menu {
+  position: absolute;
+  left: 0;
+  top: 26px;
+  width: 220px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(20, 21, 22, 0.12);
+  display: none;
+  z-index: 8;
+}
+
+.brand-mgmt .group-edit-popover:focus-within .group-edit-menu {
+  display: grid;
+  gap: 8px;
+}
+
+.brand-mgmt .group-edit-menu label {
+  display: block;
+}
+
+.brand-mgmt .group-edit-menu label span {
+  display: block;
+  margin-bottom: 4px;
+  color: #8f9297;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.brand-mgmt .group-edit-menu input {
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 8px;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.brand-mgmt .group-edit-menu input:focus {
+  border-color: #c9d2f4;
+}
+
+.brand-mgmt .group-edit-delete {
+  height: 30px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  margin-top: 2px;
+  padding-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.brand-mgmt .group-edit-delete:hover {
+  color: #b22a2a;
+}
+
+.brand-mgmt .group-empty {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #a0a2a7;
+  font-size: 10px;
+}
+
+.brand-mgmt .group-actions {
+  display: flex;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.brand-mgmt .group-actions button {
+  height: 31px;
+  border: 1px dashed #d5d7da;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #777a7f;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.brand-mgmt .group-actions button:hover {
+  border-style: solid;
+  color: var(--ink);
+}
+
+.brand-mgmt .dashboard-heading {
+  margin-bottom: 18px;
+}
+
+.brand-mgmt .budget-card {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 18px;
+}
+
+.brand-mgmt .budget-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 13px;
+  margin-bottom: 13px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.brand-mgmt .budget-total span {
+  color: #8c8f94;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.brand-mgmt .budget-total strong {
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.brand-mgmt .budget-card-top {
+  display: flex;
+  justify-content: space-between;
+}
+
+.brand-mgmt .budget-card-top span,
+.brand-mgmt .budget-stats span,
+.brand-mgmt .people-summary > div > span {
+  color: #8c8f94;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.brand-mgmt .budget-card-top strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 21px;
+  letter-spacing: -0.04em;
+}
+
+.brand-mgmt .budget-card-top p {
+  margin: 5px 0 0;
+  color: #a5a7ab;
+  font-size: 8px;
+}
+
+.brand-mgmt .metric-icon {
+  background: #f5f6f7;
+}
+
+.brand-mgmt .budget-bar {
+  margin: 19px 0 15px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.brand-mgmt .budget-bar i {
+  height: 5px;
+  flex: 1;
+}
+
+.brand-mgmt .budget-bar i b {
+  background: var(--green);
+}
+
+.brand-mgmt .budget-bar > span {
+  color: #81848a;
+  font-size: 9px;
+}
+
+.brand-mgmt .budget-stats {
+  padding-top: 14px;
+  border-top: 1px solid #eff0f1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.brand-mgmt .budget-stats > div + div {
+  padding-left: 17px;
+  border-left: 1px solid #eff0f1;
+}
+
+.brand-mgmt .budget-stats strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 13px;
+}
+
+.brand-mgmt .budget-stats small {
+  display: block;
+  margin-top: 3px;
+  color: #a1a3a7;
+  font-size: 8px;
+}
+
+.brand-mgmt .people-summary {
+  margin-top: 10px;
+  min-height: 105px;
+  padding: 15px 18px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand-mgmt .people-ring {
+  width: 67px;
+  height: 67px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(var(--ink) var(--progress), #ececee 0);
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.brand-mgmt .people-ring::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.brand-mgmt .people-ring span {
+  position: relative;
+  z-index: 1;
+  font-size: 8px;
+  color: #9b9da1;
+}
+
+.brand-mgmt .people-ring strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.brand-mgmt .people-summary > div > strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+
+.brand-mgmt .people-summary p {
+  margin: 4px 0 0;
+  color: #96999e;
+  font-size: 8px;
+}
+
+.brand-mgmt .people-summary p b {
+  color: var(--orange);
+}
+
+.brand-mgmt .dashboard-section {
+  margin-top: 28px;
+}
+
+.brand-mgmt .dashboard-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand-mgmt .dashboard-title h3 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.brand-mgmt .dashboard-title > span {
+  color: #a0a2a6;
+  font-size: 8px;
+}
+
+.brand-mgmt .progress-list {
+  margin-top: 14px;
+  display: grid;
+  gap: 13px;
+}
+
+.brand-mgmt .progress-list > div > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.brand-mgmt .progress-list span {
+  color: #63666b;
+  font-size: 9px;
+}
+
+.brand-mgmt .progress-list strong {
+  font-size: 9px;
+}
+
+.brand-mgmt .progress-list strong small {
+  color: #929499;
+  font-weight: 500;
+}
+
+.brand-mgmt .progress-list i {
+  height: 3px;
+}
+
+.brand-mgmt .progress-amount {
+  margin: 5px 0 0;
+  color: #9a9ca1;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.brand-mgmt .partner-list {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.brand-mgmt .partner-list details {
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-mgmt .partner-list summary {
+  min-height: 48px;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 28px 1fr auto 16px;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.brand-mgmt .partner-list summary::-webkit-details-marker {
+  display: none;
+}
+
+.brand-mgmt .partner-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: #f0f1f2;
+  display: grid;
+  place-items: center;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.brand-mgmt .partner-list summary strong {
+  font-size: 10px;
+}
+
+.brand-mgmt .partner-list summary > span:nth-of-type(2) {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.brand-mgmt .partner-list details[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.brand-mgmt .partner-list details > div {
+  padding: 0 6px 10px 35px;
+}
+
+.brand-mgmt .partner-list details p {
+  margin: 0;
+  min-height: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #85888d;
+  font-size: 8px;
+}
+
+.brand-mgmt .partner-list details p b {
+  color: #55585d;
+}
+
+.brand-mgmt .partner-total-row {
+  margin-top: 3px;
+  padding-top: 8px !important;
+  border-top: 1px dashed var(--line);
+  font-weight: 700;
+}
+
+.brand-mgmt .partner-total-row span {
+  color: #55585d;
+  font-weight: 700;
+}
+
+.brand-mgmt .modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  background: rgba(14, 15, 16, 0.46);
+  backdrop-filter: blur(3px);
+  animation: fade-in 0.16s ease;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+
+.brand-mgmt .modal {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.2);
+}
+
+.brand-mgmt .modal.wide {
+  width: min(960px, 100%);
+}
+
+.brand-mgmt .modal-header {
+  min-height: 82px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.brand-mgmt .modal-header h2 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: -0.03em;
+}
+
+.brand-mgmt .modal-header p {
+  margin: 6px 0 0;
+  color: #85888d;
+  font-size: 10px;
+}
+
+.brand-mgmt .modal-header > button,
+.brand-mgmt .icon-button {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  color: #888b90;
+}
+
+.brand-mgmt .modal-header > button:hover,
+.brand-mgmt .icon-button:hover {
+  background: var(--soft);
+}
+
+.brand-mgmt .modal-actions {
+  min-height: 68px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.brand-mgmt .settings-layout {
+  display: grid;
+  grid-template-columns: 1fr 250px;
+}
+
+.brand-mgmt .settings-main {
+  min-width: 0;
+}
+
+.brand-mgmt .settings-main .form-section {
+  border-right: 1px solid var(--line);
+}
+
+.brand-mgmt .form-section {
+  padding: 22px;
+}
+
+.brand-mgmt .settings-main .form-section + .form-section {
+  border-top: 1px solid var(--line);
+}
+
+.brand-mgmt .form-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.brand-mgmt .form-section h3 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.brand-mgmt .form-section p {
+  margin: 5px 0 0;
+  color: #929499;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.brand-mgmt .form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 13px;
+}
+
+.brand-mgmt .form-grid label,
+.brand-mgmt .simple-form label,
+.brand-mgmt .delete-content label,
+.brand-mgmt .invoice-title-field {
+  display: grid;
+  gap: 7px;
+}
+
+.brand-mgmt .form-grid label > span,
+.brand-mgmt .simple-form label > span,
+.brand-mgmt .delete-content label > span,
+.brand-mgmt .invoice-title-field > span {
+  color: #6f7277;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.brand-mgmt .form-grid input,
+.brand-mgmt .simple-form input,
+.brand-mgmt .delete-content input,
+.brand-mgmt .inline-add input,
+.brand-mgmt .invoice-title-field input {
+  width: 100%;
+  height: 37px;
+  padding: 0 10px;
+  border: 1px solid #dfe0e2;
+  border-radius: 7px;
+  outline: 0;
+  background: #fff;
+  font-size: 11px;
+}
+
+.brand-mgmt .form-grid input:focus,
+.brand-mgmt .simple-form input:focus,
+.brand-mgmt .delete-content input:focus,
+.brand-mgmt .inline-add input:focus,
+.brand-mgmt .paste-area:focus {
+  border-color: #9da0a6;
+}
+
+.brand-mgmt .calculated-field {
+  border-radius: 7px;
+  background: #f3f4f5;
+  padding: 9px 11px;
+}
+
+.brand-mgmt .calculated-field span {
+  display: block;
+  color: #878a8f;
+  font-size: 8px;
+}
+
+.brand-mgmt .calculated-field strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.brand-mgmt .group-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.brand-mgmt .group-setting {
+  min-height: 42px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  opacity: 0.55;
+}
+
+.brand-mgmt .group-setting.active {
+  opacity: 1;
+  border-color: #d1d3d6;
+}
+
+.brand-mgmt .check-label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.brand-mgmt .check-label input {
+  position: absolute;
+  opacity: 0;
+}
+
+.brand-mgmt .custom-check {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 1px solid #cfd1d4;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+}
+
+.brand-mgmt .group-setting.active .custom-check {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+.brand-mgmt .check-label strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9px;
+}
+
+.brand-mgmt .target-input {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.brand-mgmt .target-input input {
+  width: 36px;
+  height: 27px;
+  padding: 0 5px;
+  border: 1px solid #e0e1e3;
+  border-radius: 5px;
+  text-align: right;
+  font-size: 9px;
+}
+
+.brand-mgmt .target-input span {
+  color: #898c91;
+  font-size: 8px;
+}
+
+.brand-mgmt .inline-add {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+}
+
+.brand-mgmt .inline-add button {
+  height: 37px;
+  padding: 0 11px;
+  border: 1px solid #d9dbde;
+  border-radius: 7px;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.brand-mgmt .settings-aside {
+  background: #fafafa;
+}
+
+.brand-mgmt .partner-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 15px;
+}
+
+.brand-mgmt .partner-tags > span {
+  height: 27px;
+  padding: 0 8px;
+  border: 1px solid #dfe0e2;
+  border-radius: 6px;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.brand-mgmt .partner-tags button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #999ca1;
+}
+
+.brand-mgmt .inline-add.compact {
+  grid-template-columns: 1fr 37px;
+}
+
+.brand-mgmt .inline-add.compact button {
+  padding: 0;
+  justify-content: center;
+}
+
+.brand-mgmt .visibility-card {
+  margin: 0 14px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.brand-mgmt .visibility-card strong {
+  display: block;
+  font-size: 9px;
+}
+
+.brand-mgmt .visibility-card p {
+  margin: 3px 0 0;
+  color: #999ca1;
+  font-size: 8px;
+}
+
+.brand-mgmt .visibility-card select {
+  height: 29px;
+  border: 1px solid #dedfe1;
+  border-radius: 5px;
+  background: #fff;
+  font-size: 9px;
+}
+
+.brand-mgmt .danger-link {
+  margin: 17px 22px;
+  border: 0;
+  background: transparent;
+  color: var(--red);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.brand-mgmt .import-layout {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+}
+
+.brand-mgmt .import-layout > div {
+  padding: 22px;
+}
+
+.brand-mgmt .import-layout > div + div {
+  border-left: 1px solid var(--line);
+  background: #fafafa;
+}
+
+.brand-mgmt .paste-guide {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+
+.brand-mgmt .paste-guide > span {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.brand-mgmt .paste-guide strong {
+  display: block;
+  font-size: 11px;
+}
+
+.brand-mgmt .paste-guide p {
+  margin: 4px 0 0;
+  color: #8c8f94;
+  font-size: 9px;
+}
+
+.brand-mgmt .paste-area {
+  width: 100%;
+  height: 205px;
+  margin-top: 15px;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid #dcdde0;
+  border-radius: 8px;
+  outline: 0;
+  line-height: 1.6;
+  font-family: "Pretendard", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 10px;
+}
+
+.brand-mgmt .partner-pick {
+  margin-top: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand-mgmt .partner-pick span {
+  color: #75787d;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.brand-mgmt .partner-pick select {
+  height: 32px;
+  min-width: 90px;
+  border: 1px solid #dfe0e2;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 8px;
+  font-size: 9px;
+}
+
+.brand-mgmt .preview-table {
+  margin-top: 15px;
+  min-height: 247px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.brand-mgmt .preview-table > div:not(.empty-state) {
+  min-height: 48px;
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: 27px 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-mgmt .preview-table > div + div {
+  border-top: 1px solid #eff0f1;
+}
+
+.brand-mgmt .preview-table strong,
+.brand-mgmt .preview-table small {
+  display: block;
+}
+
+.brand-mgmt .preview-table strong {
+  font-size: 9px;
+}
+
+.brand-mgmt .preview-table small {
+  margin-top: 2px;
+  color: #999ca1;
+  font-size: 8px;
+}
+
+.brand-mgmt .valid-icon {
+  color: var(--green);
+}
+
+.brand-mgmt .more-preview {
+  margin: 0;
+  padding: 10px;
+  text-align: center;
+  color: #85888d;
+  font-size: 8px;
+}
+
+.brand-mgmt .simple-form {
+  padding: 22px;
+  display: grid;
+  gap: 16px;
+}
+
+.brand-mgmt .simple-form small {
+  color: #999ca1;
+  font-size: 9px;
+}
+
+.brand-mgmt .modal-actions.inset {
+  margin: 5px -22px -22px;
+}
+
+.brand-mgmt .hidden-list {
+  padding: 7px 22px 22px;
+}
+
+.brand-mgmt .hidden-list > div:not(.empty-state) {
+  min-height: 67px;
+  display: grid;
+  grid-template-columns: 39px 1fr auto 30px;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-mgmt .hidden-list strong,
+.brand-mgmt .hidden-list small {
+  display: block;
+}
+
+.brand-mgmt .hidden-list strong {
+  font-size: 11px;
+}
+
+.brand-mgmt .hidden-list small {
+  margin-top: 4px;
+  color: #9a9ca1;
+  font-size: 8px;
+}
+
+.brand-mgmt .secondary-button.small {
+  height: 31px;
+  padding: 0 10px;
+  font-size: 9px;
+}
+
+.brand-mgmt .icon-button.danger {
+  color: var(--red);
+}
+
+.brand-mgmt .delete-content {
+  padding: 26px 22px;
+}
+
+.brand-mgmt .danger-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--red-soft);
+  color: var(--red);
+  display: grid;
+  place-items: center;
+}
+
+.brand-mgmt .delete-content p {
+  margin: 15px 0 20px;
+  color: #696c71;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.brand-mgmt .delete-content p strong {
+  color: var(--ink);
+}
+
+.brand-mgmt .danger-button {
+  background: var(--red);
+  color: #fff;
+}
+
+.brand-mgmt .empty-state {
+  min-height: 210px;
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.brand-mgmt .empty-state > span {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  background: #f1f2f3;
+  color: #74777c;
+  display: grid;
+  place-items: center;
+}
+
+.brand-mgmt .empty-state strong {
+  margin-top: 12px;
+  font-size: 12px;
+}
+
+.brand-mgmt .empty-state p {
+  max-width: 320px;
+  margin: 6px 0 14px;
+  color: #999ca1;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.brand-mgmt .login-screen {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+}
+
+.brand-mgmt .login-panel {
+  width: min(440px, calc(100% - 60px));
+  margin: auto;
+}
+
+.brand-mgmt .login-panel .eyebrow {
+  margin-top: 34px;
+}
+
+.brand-mgmt .login-panel h1 {
+  margin: 0;
+  font-size: clamp(38px, 4vw, 54px);
+  line-height: 1.06;
+  letter-spacing: -0.055em;
+}
+
+.brand-mgmt .login-copy {
+  max-width: 370px;
+  margin: 20px 0 35px;
+  color: #777a7f;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.brand-mgmt .google-button {
+  width: 100%;
+  height: 48px;
+  border: 1px solid #d8dade;
+  border-radius: 9px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.brand-mgmt .google-button:hover {
+  background: var(--soft);
+}
+
+.brand-mgmt .google-button span {
+  color: #4285f4;
+  font-weight: 800;
+}
+
+.brand-mgmt .login-panel > small {
+  display: block;
+  margin-top: 12px;
+  text-align: center;
+  color: #a0a2a7;
+  font-size: 10px;
+}
+
+.brand-mgmt .form-error {
+  color: var(--red);
+  text-align: center;
+  font-size: 11px;
+}
+
+.brand-mgmt .login-visual {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  background: #151617;
+}
+
+.brand-mgmt .login-visual::before,
+.brand-mgmt .login-visual::after {
+  content: "";
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 50%;
+}
+
+.brand-mgmt .login-visual::before {
+  width: 640px;
+  height: 640px;
+  right: -190px;
+  top: -170px;
+}
+
+.brand-mgmt .login-visual::after {
+  width: 480px;
+  height: 480px;
+  left: -190px;
+  bottom: -190px;
+}
+
+.brand-mgmt .visual-card {
+  position: absolute;
+  width: 280px;
+  padding: 25px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+}
+
+.brand-mgmt .visual-card span {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+}
+
+.brand-mgmt .visual-card strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 23px;
+}
+
+.brand-mgmt .visual-card i {
+  display: block;
+  height: 4px;
+  margin-top: 25px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.brand-mgmt .visual-card i b {
+  display: block;
+  height: 100%;
+  background: #54d4a6;
+}
+
+.brand-mgmt .visual-card em {
+  display: inline-block;
+  margin-top: 18px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: #f7e4d9;
+  color: #c85e24;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.brand-mgmt .card-one {
+  left: 18%;
+  top: 24%;
+  transform: rotate(-3deg);
+}
+
+.brand-mgmt .card-two {
+  right: 13%;
+  bottom: 25%;
+  transform: rotate(4deg);
+}
+
+.brand-mgmt .loading-screen {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+}
+
+.brand-mgmt .loading-screen p {
+  color: #8d9095;
+  font-size: 11px;
+}
+
+.brand-mgmt .mobile-menu,
+.brand-mgmt .mobile-close,
+.brand-mgmt .mobile-backdrop {
+  display: none;
+}
+
+/* Periods */
+.brand-mgmt .header-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.brand-mgmt .period-bar {
+  margin: 4px 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.brand-mgmt .period-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+}
+
+.brand-mgmt .period-picker > span {
+  color: #8b8e93;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.brand-mgmt .period-picker select {
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.brand-mgmt .period-note {
+  color: #8f9297;
+  font-size: 12px;
+}
+
+.brand-mgmt .period-tabs {
+  padding: 0 34px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.brand-mgmt .period-tab {
+  flex: 0 0 auto;
+  padding: 11px 15px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #83868b;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.brand-mgmt .period-tab small {
+  padding: 2px 6px;
+  border-radius: 9px;
+  background: var(--soft);
+  color: #8c8f94;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.brand-mgmt .period-tab:hover {
+  color: var(--ink);
+}
+
+.brand-mgmt .period-tab.on {
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+}
+
+.brand-mgmt .period-tab.on small {
+  background: #ebedf0;
+  color: #55585e;
+}
+
+.brand-mgmt .period-add {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  margin-bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px dashed #d3d5d8;
+  border-radius: 8px;
+  color: #7c7f84;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.brand-mgmt .period-add select {
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 11px;
+  font-weight: 650;
+  color: inherit;
+}
+
+.brand-mgmt .period-chips {
+  padding: 0 17px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.brand-mgmt .period-chip {
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--soft);
+  color: #909398;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.brand-mgmt .period-chip.on {
+  background: #e9ecf6;
+  color: #3550c4;
+}
+
+.brand-mgmt .period-manage {
+  margin-top: 10px;
+  display: grid;
+  gap: 5px;
+}
+
+.brand-mgmt .period-manage-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.brand-mgmt .period-manage-row.on {
+  border-color: #c9d2f4;
+  background: #f7f9ff;
+}
+
+.brand-mgmt .period-manage-row strong {
+  font-size: 12px;
+}
+
+.brand-mgmt .period-manage-row small {
+  color: #93969b;
+  font-size: 10px;
+}
+
+.brand-mgmt .period-manage-row button {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--soft);
+  color: #8b8e93;
+  display: grid;
+  place-items: center;
+}
+
+.brand-mgmt .period-manage-row button:hover {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.brand-mgmt .form-section-heading > button {
+  flex: 0 0 auto;
+}
+
+.brand-mgmt .share-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.brand-mgmt .share-link-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.brand-mgmt .share-link-row.revoked {
+  opacity: 0.55;
+}
+
+.brand-mgmt .share-link-row strong {
+  display: block;
+  font-size: 12px;
+}
+
+.brand-mgmt .share-link-row small {
+  color: #93969b;
+  font-size: 10px;
+}
+
+.brand-mgmt .share-link-row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--soft);
+  color: #62656b;
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.brand-mgmt .share-link-row button.danger-link {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+/* 캠페인 헤더의 "공유 링크" 버튼 — 발급/복사/해지를 팝오버 안에서 처리한다 */
+.brand-mgmt .share-link-popover {
+  position: relative;
+}
+
+.brand-mgmt .share-link-menu {
+  position: absolute;
+  right: 0;
+  top: 38px;
+  width: 320px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(20, 21, 22, 0.12);
+  display: none;
+  z-index: 20;
+}
+
+.brand-mgmt .share-link-popover:focus-within .share-link-menu {
+  display: block;
+}
+
+.brand-mgmt .share-link-menu-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.brand-mgmt .share-link-menu-heading strong {
+  display: block;
+  font-size: 12px;
+}
+
+.brand-mgmt .share-link-menu-heading p {
+  margin: 4px 0 0;
+  color: #929499;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.brand-mgmt .share-link-menu-heading > button {
+  flex: 0 0 auto;
+}
+
+/* Platform badge */
+.brand-mgmt .platform-badge {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--soft);
+  color: #7b7e83;
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+
+.brand-mgmt .platform-IG { background: #fdeef4; color: #c2367a; }
+.brand-mgmt .platform-TT { background: #eef0f2; color: #35383d; }
+.brand-mgmt .platform-X { background: #eceef0; color: #26292e; }
+.brand-mgmt .platform-YT { background: var(--red-soft); color: #c23434; }
+.brand-mgmt .platform-기타 { background: var(--soft); color: #83868b; }
+
+/* 프로필 사진 자리에 들어가는 플랫폼 배지 (mini-avatar 를 대신한다) */
+.brand-mgmt .mini-avatar.platform-avatar {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.brand-mgmt .mini-avatar.platform-avatar.large {
+  font-size: 12px;
+}
+
+/* 플랫폼 뱃지가 있던 자리 — 눌러서 프로필로 이동하는 로고 */
+.brand-mgmt .platform-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 6px;
+  color: #86898e;
+}
+
+.brand-mgmt .platform-link:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.brand-mgmt .platform-link.disabled {
+  color: #cdcfd2;
+  cursor: default;
+}
+
+.brand-mgmt .status-tag {
+  padding: 3px 6px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.brand-mgmt .rate-input.accent {
+  color: #4b5f9e;
+}
+
+.brand-mgmt .rate-input.accent input {
+  font-weight: 650;
+}
+
+/* Budget split */
+.brand-mgmt .budget-split {
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid #eeeff0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.brand-mgmt .budget-split span {
+  display: block;
+  color: #93969b;
+  font-size: 10px;
+}
+
+.brand-mgmt .budget-split strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  letter-spacing: -0.02em;
+}
+
+/* CRM */
+.brand-mgmt .crm-filters {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.brand-mgmt .filter-reset {
+  margin-left: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0;
+}
+
+/* 체크박스 복수 선택 드롭다운 — 포커스가 밖으로 나가면 CSS로 자동 닫힌다 */
+.brand-mgmt .multi-filter {
+  position: relative;
+}
+
+.brand-mgmt .multi-filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.brand-mgmt .multi-filter-toggle span {
+  color: #8b8e93;
+  font-weight: 650;
+}
+
+.brand-mgmt .multi-filter-toggle b {
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: #ebedf0;
+  color: #45484d;
+  font-size: 10px;
+}
+
+.brand-mgmt .multi-filter-menu {
+  position: absolute;
+  left: 0;
+  top: 43px;
+  min-width: 160px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(20, 21, 22, 0.12);
+  display: none;
+  z-index: 6;
+}
+
+.brand-mgmt .multi-filter:focus-within .multi-filter-menu {
+  display: grid;
+  gap: 1px;
+}
+
+.brand-mgmt .multi-filter-option {
+  min-height: 32px;
+  padding: 0 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.brand-mgmt .multi-filter-option:hover {
+  background: var(--soft);
+}
+
+.brand-mgmt .multi-filter-option input {
+  position: absolute;
+  opacity: 0;
+}
+
+.brand-mgmt .multi-filter-option input:checked + .custom-check {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+.brand-mgmt .multi-filter-empty {
+  margin: 0;
+  padding: 8px 6px;
+  color: #a2a5aa;
+  font-size: 11px;
+}
+
+.brand-mgmt .multi-filter-clear {
+  width: 100%;
+  height: 28px;
+  margin-top: 3px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: #8b8e93;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.brand-mgmt .multi-filter-clear:hover {
+  color: var(--red);
+}
+
+.brand-mgmt .crm-table {
+  margin-top: 6px;
+  border: 1px solid #e5e6e8;
+  border-radius: 10px;
+  background: #fff;
+  overflow-x: auto;
+}
+
+.brand-mgmt .crm-head,
+.brand-mgmt .crm-row {
+  min-width: 960px;
+  display: grid;
+  grid-template-columns:
+    minmax(200px, 1.5fr) 84px 78px 60px minmax(130px, 1fr) 92px 100px 100px;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.brand-mgmt .crm-head {
+  min-height: 36px;
+  padding: 0 14px;
+  border-bottom: 1px solid #ececee;
+  background: #f8f8f9;
+  color: #999ba0;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.brand-mgmt .crm-row {
+  width: 100%;
+  min-height: 56px;
+  padding: 9px 14px;
+  border: 0;
+  border-top: 1px solid #f0f0f1;
+  background: #fff;
+}
+
+.brand-mgmt .crm-row:first-of-type {
+  border-top: 0;
+}
+
+.brand-mgmt .crm-row:hover {
+  background: #fbfbfc;
+}
+
+.brand-mgmt .crm-identity {
+  min-width: 0;
+  display: block;
+}
+
+.brand-mgmt .crm-identity strong {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-mgmt .crm-identity small {
+  display: block;
+  margin-top: 2px;
+  color: #93969b;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-mgmt .crm-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.brand-mgmt .crm-num {
+  font-size: 12px;
+  font-weight: 650;
+  color: #4b4e53;
+}
+
+.brand-mgmt .crm-num b {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.brand-mgmt .crm-num.accent {
+  color: #3550c4;
+}
+
+.brand-mgmt .crm-brands {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.brand-mgmt .crm-brands em {
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: var(--soft);
+  color: #6c6f74;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.brand-mgmt .crm-brands em.more {
+  background: #eceef0;
+}
+
+.brand-mgmt .crm-partners {
+  color: #74777c;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+/* CRM detail */
+.brand-mgmt .crm-detail {
+  padding: 20px 26px 4px;
+}
+
+.brand-mgmt .crm-detail-top {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.brand-mgmt .mini-avatar.large {
+  width: 46px;
+  height: 46px;
+  font-size: 16px;
+}
+
+.brand-mgmt .crm-detail-top p {
+  margin: 7px 0 0;
+  color: #85888d;
+  font-size: 12px;
+}
+
+.brand-mgmt .crm-detail-top a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--blue);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.brand-mgmt .crm-comment-field {
+  display: block;
+  margin: 14px 0 4px;
+}
+
+.brand-mgmt .crm-comment-field span {
+  display: block;
+  margin-bottom: 6px;
+  color: #8f9297;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.brand-mgmt .crm-comment-field textarea {
+  width: 100%;
+  min-height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+  outline: none;
+}
+
+.brand-mgmt .crm-comment-field textarea:focus {
+  border-color: #c9d2f4;
+}
+
+.brand-mgmt .crm-stat-grid {
+  margin: 18px 0 14px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.brand-mgmt .crm-stat-grid > div {
+  padding: 13px 15px;
+}
+
+.brand-mgmt .crm-stat-grid > div + div {
+  border-left: 1px solid var(--line);
+}
+
+.brand-mgmt .crm-stat-grid span {
+  display: block;
+  color: #8f9297;
+  font-size: 11px;
+}
+
+.brand-mgmt .crm-stat-grid strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 19px;
+  letter-spacing: -0.03em;
+}
+
+.brand-mgmt .crm-stat-grid strong small {
+  margin-left: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #93969b;
+}
+
+.brand-mgmt .crm-partner-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.brand-mgmt .crm-partner-row > span {
+  color: #8f9297;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.brand-mgmt .partner-tags.readonly span {
+  padding-right: 9px;
+}
+
+.brand-mgmt .partner-tags .muted {
+  color: #a2a5aa;
+}
+
+.brand-mgmt .history-table {
+  margin: 14px 0 20px;
+  border: 1px solid #e5e6e8;
+  border-radius: 9px;
+  background: #fff;
+  overflow-x: auto;
+}
+
+.brand-mgmt .history-head,
+.brand-mgmt .history-row {
+  min-width: 780px;
+  display: grid;
+  grid-template-columns: 66px minmax(110px, 1fr) minmax(96px, 1fr) 70px 58px 62px 92px 96px;
+  align-items: center;
+  gap: 9px;
+}
+
+.brand-mgmt .history-head {
+  min-height: 33px;
+  padding: 0 13px;
+  border-bottom: 1px solid #ececee;
+  background: #f8f8f9;
+  color: #999ba0;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.brand-mgmt .history-row {
+  min-height: 46px;
+  padding: 8px 13px;
+  font-size: 11px;
+  color: #5c5f64;
+}
+
+.brand-mgmt .history-row + .history-row {
+  border-top: 1px solid #f0f0f1;
+}
+
+.brand-mgmt .history-row b {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.brand-mgmt .paste-area.tall {
+  min-height: 260px;
+}
+
+.brand-mgmt .paste-guide code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--soft);
+  font-size: 11px;
+}
+
+/* Readability scale */
+.brand-mgmt {
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.brand-mgmt .nav-brand strong {
+  font-size: 15px;
+}
+
+.brand-mgmt .nav-brand small {
+  font-size: 12px;
+}
+
+.brand-mgmt .side-nav nav button {
+  height: 46px;
+  font-size: 15px;
+}
+
+.brand-mgmt .demo-badge,
+.brand-mgmt .data-badge {
+  font-size: 12px;
+}
+
+.brand-mgmt .user-block strong {
+  font-size: 13px;
+}
+
+.brand-mgmt .user-block small {
+  font-size: 11px;
+}
+
+.brand-mgmt .eyebrow {
+  font-size: 12px;
+}
+
+.brand-mgmt .page-header h1 {
+  font-size: clamp(38px, 4vw, 48px);
+}
+
+.brand-mgmt .page-header > div > p:last-child {
+  font-size: 16px;
+}
+
+.brand-mgmt .primary-button,
+.brand-mgmt .secondary-button,
+.brand-mgmt .danger-button {
+  min-height: 44px;
+  padding-inline: 18px;
+  font-size: 14px;
+}
+
+.brand-mgmt .overview-strip > div {
+  min-height: 116px;
+}
+
+.brand-mgmt .overview-strip span {
+  font-size: 13px;
+}
+
+.brand-mgmt .overview-strip strong {
+  font-size: 23px;
+}
+
+.brand-mgmt .overview-strip strong small {
+  font-size: 14px;
+}
+
+.brand-mgmt .list-toolbar h2 {
+  font-size: 21px;
+}
+
+.brand-mgmt .list-toolbar > div span {
+  font-size: 13px;
+}
+
+.brand-mgmt .search-field {
+  height: 42px;
+}
+
+.brand-mgmt .search-field input {
+  font-size: 14px;
+}
+
+.brand-mgmt .brand-card {
+  padding: 24px;
+}
+
+.brand-mgmt .brand-identity h3 {
+  font-size: 17px;
+}
+
+.brand-mgmt .brand-identity p {
+  font-size: 12px;
+}
+
+.brand-mgmt .card-menu > div button {
+  font-size: 13px;
+}
+
+.brand-mgmt .card-budget > span {
+  font-size: 13px;
+}
+
+.brand-mgmt .card-budget > strong {
+  font-size: 26px;
+}
+
+.brand-mgmt .card-budget p {
+  font-size: 11px;
+}
+
+.brand-mgmt .card-progress span,
+.brand-mgmt .card-progress b {
+  font-size: 12px;
+}
+
+.brand-mgmt .shortage,
+.brand-mgmt .complete,
+.brand-mgmt .unset {
+  padding: 6px 9px;
+  font-size: 12px;
+}
+
+.brand-mgmt .card-footer button {
+  font-size: 12px;
+}
+
+.brand-mgmt .campaign-header {
+  min-height: 100px;
+}
+
+.brand-mgmt .campaign-heading p {
+  font-size: 11px;
+}
+
+.brand-mgmt .campaign-heading h1 {
+  font-size: 25px;
+}
+
+.brand-mgmt .live-pill {
+  height: 32px;
+  font-size: 12px;
+}
+
+.brand-mgmt .section-heading h2 {
+  font-size: 19px;
+}
+
+.brand-mgmt .section-heading p {
+  font-size: 12px;
+}
+
+.brand-mgmt .count-pill {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.brand-mgmt .group-toggle {
+  min-height: 70px;
+}
+
+.brand-mgmt .group-toggle > div strong {
+  font-size: 15px;
+}
+
+.brand-mgmt .group-toggle > div span {
+  font-size: 12px;
+}
+
+.brand-mgmt .status-open,
+.brand-mgmt .status-done,
+.brand-mgmt .status-unset {
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.brand-mgmt .table-head {
+  min-height: 38px;
+  font-size: 11px;
+}
+
+.brand-mgmt .table-row {
+  min-height: 60px;
+}
+
+.brand-mgmt .account-cell input,
+.brand-mgmt .cell-input,
+.brand-mgmt .rate-input input,
+.brand-mgmt .table-row select {
+  height: 34px;
+  font-size: 13px;
+}
+
+.brand-mgmt .rate-input {
+  height: 34px;
+}
+
+.brand-mgmt .duplicate-tag {
+  font-size: 10px;
+}
+
+.brand-mgmt .group-empty {
+  min-height: 68px;
+  font-size: 12px;
+}
+
+.brand-mgmt .group-actions button {
+  height: 36px;
+  padding-inline: 12px;
+  font-size: 12px;
+}
+
+.brand-mgmt .budget-card-top span,
+.brand-mgmt .budget-stats span,
+.brand-mgmt .people-summary > div > span {
+  font-size: 12px;
+}
+
+.brand-mgmt .budget-card-top strong {
+  font-size: 27px;
+}
+
+.brand-mgmt .budget-card-top p {
+  font-size: 11px;
+}
+
+.brand-mgmt .budget-bar > span {
+  font-size: 11px;
+}
+
+.brand-mgmt .budget-stats strong {
+  font-size: 17px;
+}
+
+.brand-mgmt .budget-stats small {
+  font-size: 11px;
+}
+
+.brand-mgmt .people-ring span {
+  font-size: 11px;
+}
+
+.brand-mgmt .people-ring strong {
+  font-size: 17px;
+}
+
+.brand-mgmt .people-summary > div > strong {
+  font-size: 25px;
+}
+
+.brand-mgmt .people-summary p {
+  font-size: 11px;
+}
+
+.brand-mgmt .dashboard-title h3 {
+  font-size: 15px;
+}
+
+.brand-mgmt .dashboard-title > span {
+  font-size: 11px;
+}
+
+.brand-mgmt .progress-list span {
+  font-size: 12px;
+}
+
+.brand-mgmt .progress-list strong {
+  font-size: 12px;
+}
+
+.brand-mgmt .progress-amount {
+  font-size: 11px;
+}
+
+.brand-mgmt .partner-logo {
+  font-size: 10px;
+}
+
+.brand-mgmt .partner-list summary strong,
+.brand-mgmt .partner-list summary > span:nth-of-type(2) {
+  font-size: 13px;
+}
+
+.brand-mgmt .partner-list details p {
+  min-height: 30px;
+  font-size: 11px;
+}
+
+.brand-mgmt .budget-total span {
+  font-size: 12px;
+}
+
+.brand-mgmt .budget-total strong {
+  font-size: 18px;
+}
+
+.brand-mgmt .modal-header h2 {
+  font-size: 21px;
+}
+
+.brand-mgmt .modal-header p {
+  font-size: 13px;
+}
+
+.brand-mgmt .form-section h3 {
+  font-size: 15px;
+}
+
+.brand-mgmt .form-section p {
+  font-size: 12px;
+}
+
+.brand-mgmt .form-grid label > span,
+.brand-mgmt .simple-form label > span,
+.brand-mgmt .delete-content label > span,
+.brand-mgmt .invoice-title-field > span {
+  font-size: 12px;
+}
+
+.brand-mgmt .form-grid input,
+.brand-mgmt .simple-form input,
+.brand-mgmt .delete-content input,
+.brand-mgmt .inline-add input,
+.brand-mgmt .invoice-title-field input {
+  height: 42px;
+  font-size: 14px;
+}
+
+.brand-mgmt .calculated-field span {
+  font-size: 11px;
+}
+
+.brand-mgmt .calculated-field strong {
+  font-size: 15px;
+}
+
+.brand-mgmt .group-setting {
+  min-height: 48px;
+}
+
+.brand-mgmt .check-label strong {
+  font-size: 12px;
+}
+
+.brand-mgmt .target-input input {
+  width: 44px;
+  height: 32px;
+  font-size: 12px;
+}
+
+.brand-mgmt .target-input span {
+  font-size: 11px;
+}
+
+.brand-mgmt .inline-add button {
+  height: 42px;
+  font-size: 12px;
+}
+
+.brand-mgmt .partner-tags > span {
+  height: 32px;
+  font-size: 12px;
+}
+
+.brand-mgmt .visibility-card strong {
+  font-size: 12px;
+}
+
+.brand-mgmt .visibility-card p {
+  font-size: 10px;
+}
+
+.brand-mgmt .visibility-card select {
+  height: 34px;
+  font-size: 12px;
+}
+
+.brand-mgmt .danger-link {
+  font-size: 12px;
+}
+
+.brand-mgmt .paste-guide strong {
+  font-size: 14px;
+}
+
+.brand-mgmt .paste-guide p {
+  font-size: 12px;
+}
+
+.brand-mgmt .paste-area {
+  font-size: 13px;
+}
+
+.brand-mgmt .partner-pick span,
+.brand-mgmt .partner-pick select {
+  font-size: 12px;
+}
+
+.brand-mgmt .preview-table strong {
+  font-size: 12px;
+}
+
+.brand-mgmt .preview-table small,
+.brand-mgmt .more-preview {
+  font-size: 11px;
+}
+
+.brand-mgmt .simple-form small {
+  font-size: 11px;
+}
+
+.brand-mgmt .hidden-list strong {
+  font-size: 14px;
+}
+
+.brand-mgmt .hidden-list small {
+  font-size: 11px;
+}
+
+.brand-mgmt .secondary-button.small {
+  height: 35px;
+  font-size: 12px;
+}
+
+.brand-mgmt .delete-content p {
+  font-size: 13px;
+}
+
+.brand-mgmt .empty-state strong {
+  font-size: 15px;
+}
+
+.brand-mgmt .empty-state p {
+  font-size: 12px;
+}
+
+.brand-mgmt .login-copy {
+  font-size: 16px;
+}
+
+.brand-mgmt .google-button {
+  font-size: 15px;
+}
+
+.brand-mgmt .login-panel > small,
+.brand-mgmt .form-error {
+  font-size: 12px;
+}
+
+.brand-mgmt .visual-card span {
+  font-size: 13px;
+}
+
+.brand-mgmt .visual-card strong {
+  font-size: 26px;
+}
+
+.brand-mgmt .visual-card em {
+  font-size: 12px;
+}
+
+.brand-mgmt .loading-screen p {
+  font-size: 13px;
+}
+
+@media (max-width: 1220px) {
+  .brand-mgmt .brand-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .brand-mgmt .campaign-layout {
+    grid-template-columns: minmax(560px, 1fr) 350px;
+  }
+}
+
+@media (max-width: 980px) {
+  .brand-mgmt .campaign-layout {
+    display: block;
+  }
+
+  .brand-mgmt .dashboard-panel {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .brand-mgmt .dashboard-panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 20px;
+  }
+
+  .brand-mgmt .dashboard-heading {
+    grid-column: 1 / -1;
+  }
+
+  .brand-mgmt .dashboard-section {
+    margin-top: 10px;
+  }
+}
+
+@media (max-width: 760px) {
+  .brand-mgmt .side-nav {
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: 15px 0 40px rgba(0, 0, 0, 0.12);
+  }
+
+  .brand-mgmt .side-nav.open {
+    transform: translateX(0);
+  }
+
+  .brand-mgmt .side-nav.open + .mobile-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .brand-mgmt .mobile-close {
+    display: block;
+    margin-left: auto;
+  }
+
+  .brand-mgmt .main-area {
+    margin-left: 0;
+  }
+
+  .brand-mgmt .mobile-menu {
+    display: grid;
+    place-items: center;
+    position: fixed;
+    left: 13px;
+    top: 14px;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    z-index: 20;
+  }
+
+  .brand-mgmt .page-wrap {
+    width: calc(100% - 32px);
+    padding: 75px 0 50px;
+  }
+
+  .brand-mgmt .page-header {
+    align-items: flex-start;
+  }
+
+  .brand-mgmt .page-header .primary-button {
+    margin-top: 3px;
+    font-size: 0;
+    padding: 0 12px;
+  }
+
+  .brand-mgmt .page-header .primary-button svg {
+    margin: 0;
+  }
+
+  .brand-mgmt .overview-strip {
+    grid-template-columns: 1fr 1fr;
+    margin-top: 32px;
+  }
+
+  .brand-mgmt .overview-strip > div {
+    min-height: 86px;
+    padding: 18px;
+  }
+
+  .brand-mgmt .overview-strip > div + div {
+    border-left: 0;
+  }
+
+  .brand-mgmt .overview-strip > div:nth-child(even) {
+    border-left: 1px solid var(--line);
+  }
+
+  .brand-mgmt .overview-strip > div:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+
+  .brand-mgmt .list-toolbar {
+    align-items: flex-end;
+  }
+
+  .brand-mgmt .search-field {
+    width: 160px;
+  }
+
+  .brand-mgmt .brand-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .brand-mgmt .campaign-header {
+    min-height: 77px;
+    padding: 0 15px 0 58px;
+  }
+
+  .brand-mgmt .campaign-actions .live-pill {
+    display: none;
+  }
+
+  .brand-mgmt .campaign-actions .secondary-button {
+    width: 38px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .brand-mgmt .management-panel,
+.brand-mgmt .dashboard-panel {
+    padding: 22px 15px 45px;
+  }
+
+  .brand-mgmt .group-toggle {
+    grid-template-columns: 24px minmax(120px, 1fr) 22px 55px;
+  }
+
+  .brand-mgmt .group-toggle > i {
+    display: none;
+  }
+
+  .brand-mgmt .period-tabs {
+    padding: 0 15px;
+  }
+
+  .brand-mgmt .header-actions {
+    width: 100%;
+  }
+
+  .brand-mgmt .header-actions button {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .brand-mgmt .crm-filters {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .brand-mgmt .crm-stat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .brand-mgmt .crm-stat-grid > div:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .brand-mgmt .crm-stat-grid > div:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+
+  .brand-mgmt .crm-detail {
+    padding: 16px 15px 4px;
+  }
+
+  .brand-mgmt .dashboard-panel {
+    display: block;
+  }
+
+  .brand-mgmt .dashboard-section {
+    margin-top: 28px;
+  }
+
+  .brand-mgmt .settings-layout,
+.brand-mgmt .import-layout {
+    display: block;
+  }
+
+  .brand-mgmt .settings-main .form-section,
+.brand-mgmt .import-layout > div + div {
+    border-right: 0;
+    border-left: 0;
+  }
+
+  .brand-mgmt .import-layout > div + div {
+    border-top: 1px solid var(--line);
+  }
+
+  .brand-mgmt .settings-aside {
+    padding-bottom: 18px;
+    border-top: 1px solid var(--line);
+  }
+
+  .brand-mgmt .settings-aside .danger-link {
+    margin-bottom: 0;
+  }
+
+  .brand-mgmt .modal-backdrop {
+    padding: 10px;
+  }
+
+  .brand-mgmt .modal {
+    max-height: calc(100vh - 20px);
+  }
+
+  .brand-mgmt .login-screen {
+    display: block;
+  }
+
+  .brand-mgmt .login-panel {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .brand-mgmt .login-visual {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand-mgmt .page-header h1 {
+    font-size: 36px;
+  }
+
+  .brand-mgmt .page-header > div > p:last-child {
+    max-width: 260px;
+    font-size: 14px;
+  }
+
+  .brand-mgmt .list-toolbar {
+    display: grid;
+    gap: 12px;
+  }
+
+  .brand-mgmt .search-field {
+    width: 100%;
+  }
+
+  .brand-mgmt .form-grid,
+.brand-mgmt .group-settings {
+    grid-template-columns: 1fr;
+  }
+
+  .brand-mgmt .campaign-heading p {
+    display: none;
+  }
+
+  .brand-mgmt .campaign-heading h1 {
+    font-size: 19px;
+  }
+
+  .brand-mgmt .section-heading > div {
+    gap: 8px;
+  }
+
+  .brand-mgmt .section-heading p {
+    max-width: 210px;
+  }
+
+  .brand-mgmt .hidden-list > div:not(.empty-state) {
+    grid-template-columns: 39px 1fr 30px;
+  }
+
+  .brand-mgmt .hidden-list .secondary-button {
+    grid-column: 2 / 3;
+    justify-self: start;
+    margin-top: -8px;
+  }
+
+  .brand-mgmt .hidden-list .icon-button {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-mgmt *,
+.brand-mgmt *::before,
+.brand-mgmt *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 브랜드 공유 링크 페이지 — 사이드바 없는 단독 화면 */
+.brand-mgmt .share-notice {
+  max-width: 420px;
+  margin: 18vh auto 0;
+  padding: 0 20px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.brand-mgmt .share-notice strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.brand-mgmt .share-page {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 20px 60px;
+}
+
+.brand-mgmt .share-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.brand-mgmt .share-header h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.brand-mgmt .share-header p {
+  margin: 0 0 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.brand-mgmt .share-header-side {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.brand-mgmt .share-header-side > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #62656b;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.brand-mgmt .share-header-side > button:hover {
+  background: var(--soft);
+}
+
+.brand-mgmt .share-total-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.brand-mgmt .share-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.brand-mgmt .share-group {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.brand-mgmt .share-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--soft);
+  font-size: 13px;
+}
+
+.brand-mgmt .share-group-head span {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.brand-mgmt .share-row {
+  display: grid;
+  grid-template-columns:
+    22px minmax(160px, 1.2fr) 90px 126px minmax(170px, 1fr) 130px 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.brand-mgmt .share-row-head {
+  padding: 8px 14px;
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--soft);
+  color: #999ba0;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.brand-mgmt .share-account {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.brand-mgmt .share-account span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-weight: 650;
+  font-size: 13px;
+}
+
+.brand-mgmt .share-cell {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.brand-mgmt .share-date-input {
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 8px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.brand-mgmt .share-upload-url {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.brand-mgmt .share-upload-url input {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 8px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.brand-mgmt .share-empty {
+  padding: 16px 14px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 콘셉트 드롭다운 — 기본 .concept-select는 테두리가 없어서, 공유 페이지에서만
+   둥근 사각형 테두리를 준다. 콘셉트 색상이 있으면 인라인 style로 덧씌운다. */
+.brand-mgmt .share-row .concept-select {
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 8px;
+  background-color: #fff;
+}
+
+.brand-mgmt .share-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 21, 22, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+
+.brand-mgmt .share-modal {
+  width: 100%;
+  max-width: 440px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 22px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 20px 50px rgba(20, 21, 22, 0.25);
+}
+
+.brand-mgmt .share-modal h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.brand-mgmt .share-modal > p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.brand-mgmt .share-concept-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.brand-mgmt .share-concept-row {
+  display: grid;
+  grid-template-columns: 32px 1fr 28px;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-mgmt .share-concept-row input[type="color"] {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+}
+
+.brand-mgmt .share-concept-row input[type="text"] {
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.brand-mgmt .share-concept-row button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--soft);
+  color: #8b8e93;
+  display: grid;
+  place-items: center;
+}
+
+.brand-mgmt .share-concept-row button:hover {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.brand-mgmt .share-concept-add-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.brand-mgmt .share-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.brand-mgmt .share-modal-actions button {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.brand-mgmt .share-modal-actions button.primary {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+
+@media (max-width: 640px) {
+  .brand-mgmt .share-header {
+    flex-direction: column;
+  }
+
+  .brand-mgmt .share-header-side {
+    align-items: flex-start;
+    flex-direction: row;
+  }
+
+  .brand-mgmt .share-row-head {
+    display: none;
+  }
+
+  .brand-mgmt .share-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .brand-mgmt .share-row .share-account {
+    flex: 1 1 100%;
+    order: 1;
+  }
+
+  .brand-mgmt .share-row .confirm-check {
+    order: 0;
+  }
+
+  .brand-mgmt .share-row .share-cell {
+    order: 2;
+  }
+
+  .brand-mgmt .share-row .share-date-input,
+.brand-mgmt .share-row .share-upload-url {
+    flex: 1 1 100%;
+    order: 3;
+  }
+
+  .brand-mgmt .share-row .concept-select,
+.brand-mgmt .share-row .comment-popover {
+    order: 4;
+  }
+}
+
+/* 인보이스 생성 모달 */
+.brand-mgmt .invoice-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+}
+
+.brand-mgmt .invoice-items {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.brand-mgmt .invoice-items-head,
+.brand-mgmt .invoice-items-row {
+  display: grid;
+  grid-template-columns: 1.7fr 1fr 0.8fr 1fr 28px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.brand-mgmt .invoice-items-head {
+  background: var(--soft);
+  color: #999ba0;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.brand-mgmt .invoice-items-row + .invoice-items-row {
+  border-top: 1px solid var(--line);
+}
+
+.brand-mgmt .invoice-items-row input {
+  width: 100%;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 8px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.brand-mgmt .invoice-items-row button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #acafb3;
+  display: grid;
+  place-items: center;
+}
+
+.brand-mgmt .invoice-items-row button:hover {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.brand-mgmt .invoice-empty {
+  margin: 0;
+  padding: 16px 10px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.brand-mgmt .invoice-totals {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+}
+
+.brand-mgmt .invoice-totals > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.brand-mgmt .invoice-totals > div.grand {
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.brand-mgmt .invoice-totals strong {
+  font-weight: 650;
+}
+
+.brand-mgmt .invoice-totals > div.grand strong {
+  font-weight: 750;
+}
+
+/* 브랜드 로고 선택기 — URL 직접 입력 + 추천 후보 썸네일 */
+.brand-mgmt .logo-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.brand-mgmt .logo-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-mgmt .logo-picker-preview {
+  flex: 0 0 auto;
+  width: 37px;
+  height: 37px;
+  border: 1px solid #dfe0e2;
+  border-radius: 7px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  color: #b5b7bb;
+  overflow: hidden;
+}
+
+.brand-mgmt .logo-picker-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.brand-mgmt .logo-picker-row input {
+  flex: 1 1 auto;
+}
+
+.brand-mgmt .logo-picker-hint {
+  margin: 0;
+  color: #93969b;
+  font-size: 10px;
+}
+
+.brand-mgmt .logo-picker-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.brand-mgmt .logo-candidate {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #dfe0e2;
+  border-radius: 7px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  padding: 4px;
+}
+
+.brand-mgmt .logo-candidate img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.brand-mgmt .logo-candidate.active {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 1px var(--blue);
+}
+
+/* ---------------------------------------------------------------------------
+ * GFU Hub 편입용 오버라이드.
+ * 원본은 좌측 고정 사이드바(228px)를 자기가 그렸지만, 허브에서는 허브 사이드바가
+ * 그 역할을 하므로 오프셋을 지우고 원본 내비게이션 자리에 하위 탭 바를 넣는다.
+ * ------------------------------------------------------------------------ */
+.brand-mgmt {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.brand-mgmt .main-area {
+  margin-left: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.brand-mgmt .sub-tabs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 35;
+}
+
+.brand-mgmt .sub-tabs nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.brand-mgmt .sub-tabs nav button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 13px 12px;
+  border: 0;
+  background: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.brand-mgmt .sub-tabs nav button:hover {
+  color: var(--ink);
+}
+
+.brand-mgmt .sub-tabs nav button.active {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+.brand-mgmt .sub-tabs nav button > span {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--soft);
+  font-size: 11px;
+  line-height: 17px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.brand-mgmt .sub-tabs .demo-badge,
+.brand-mgmt .sub-tabs .data-badge {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .brand-mgmt .sub-tabs {
+    padding: 0 14px;
+  }
+}
