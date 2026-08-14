@@ -32,7 +32,6 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { downloadInvoicePdf } from "@/lib/invoice-pdf";
 import {
   FormEvent,
   ReactNode,
@@ -3496,6 +3495,9 @@ function InvoiceModal({ onClose }: { onClose: () => void }) {
   async function handleGenerate() {
     setGenerating(true);
     try {
+      // PDF 렌더러는 300KB가 넘어 브랜드 관리 화면 전체를 무겁게 만든다.
+      // 거래명세서를 실제로 뽑을 때만 받아 온다.
+      const { downloadInvoicePdf } = await import("@/lib/invoice-pdf");
       await downloadInvoicePdf({
         no: meta.no,
         code: meta.code,

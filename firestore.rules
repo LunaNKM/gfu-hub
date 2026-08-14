@@ -15,6 +15,10 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function linkIsActive(token) {
+      return get(/databases/$(database)/documents/shareLinks/$(token)).data.revoked == false;
+    }
+
     // ?? ?ъ슜???뺣낫 ??????????????????????????????????????????
     match /users/{userId} {
       allow read: if isGfutures();
@@ -85,58 +89,6 @@ service cloud.firestore {
       allow read, write: if isGfutures() && isOwner(userId);
     }
 
-    // ?? 罹좏럹???덈툕 ???????????????????????????????????????????
-    // ?쒕쾭(API ?쇱슦???먯꽌???묎렐 媛?ν븯?꾨줉 request.auth == null ?덉슜
-    match /campaigns/{campaignId} {
-      allow read, write: if isGfutures() || isAuthenticated() || request.auth == null;
-    }
-
-    // ?? 罹좏럹???뚰겕?뚮줈???쒖뒪???????????????????????????????
-    match /campaignTasks/{taskId} {
-      allow read, write: if isGfutures();
-    }
-
-    // ?? 罹좏럹???뚰겕?ㅽ럹?댁뒪 ?뱀뀡 ?????????????????????????????
-    match /campaignSections/{sectionId} {
-      allow read, write: if isGfutures() || isAuthenticated();
-    }
-
-    match /campaignBlocks/{blockId} {
-      allow read, write: if isGfutures() || isAuthenticated();
-    }
-
-    match /campaignDatabases/{databaseId} {
-      allow read, write: if isGfutures() || isAuthenticated();
-    }
-
-    match /campaignDatabaseRows/{rowId} {
-      allow read, write: if isGfutures() || isAuthenticated();
-    }
-
-    match /campaignMetaMappings/{mappingId} {
-      allow read, write: if isGfutures() || isAuthenticated();
-    }
-
-    match /campaignMetaInsightSnapshots/{snapshotId} {
-      allow read, write: if isGfutures() || isAuthenticated();
-    }
-
-    // ?? 罹좏럹?몃퀎 ?명뵆猷⑥뼵???먯닔 ?????????????????????????????
-    match /influencerScores/{scoreId} {
-      allow read, write: if isGfutures();
-    }
-
-    // ?? AI ?낅Т ?ㅽ뻾 湲곕줉 ????????????????????????????????????
-    match /aiActionRuns/{runId} {
-      allow read, write: if isGfutures();
-    }
-
-    // ?? ?명뵆猷⑥뼵??CRM ?????????????????????????????????????????
-    // Sheets ?숆린?????쒕쾭(API ?쇱슦???먯꽌 upsert ??request.auth == null ?덉슜
-    match /influencers/{influencerId} {
-      allow read, write: if isGfutures() || request.auth == null;
-    }
-
     // ?? ?쇰낯 ?쒖옣 ?명뀛由ъ쟾??釉뚮━?????????????????????????????
     // Cron / ?섎룞 ?앹꽦 紐⑤몢 ?쒕쾭?먯꽌 addDoc ??request.auth == null ?덉슜
     match /marketBriefs/{briefId} {
@@ -168,5 +120,57 @@ service cloud.firestore {
       allow create: if isGfutures() || request.auth == null;
       allow update, delete: if false;
     }
+
+    // ── 브랜드 관리(브랜드 · 인플루언서 CRM · 숨긴 브랜드) ──────────
+    match /brands/{brandId} {
+      allow read, write: if isGfutures();
+    }
+
+    // 공유 링크: 문서 자체(예산·협력사 없이 추려낸 스냅샷)는 스태프만 쓰고,
+    // 해지되지 않았다면 토큰을 아는 누구나(로그인 없이) 읽을 수 있다.
+    // 배열 하나(influencers)에 민감한 값과 공개 가능한 값이 섞여 있어 문서 단위
+    // 필드 제한으로는 부족하므로, 브랜드가 실제로 쓰는 값은 별도 서브컬렉션에
+    // 딱 5개 필드만 두고 그 서브컬렉션에서만 필드 단위 제한을 건다.
+    match /shareLinks/{token} {
+      allow read: if isGfutures() || resource.data.revoked == false;
+      allow write: if isGfutures();
+
+      // 필드 하나만 merge:true로 부분 갱신하는 것도 허용하므로, 각 필드는
+      // "이번 쓰기 결과에 그 필드가 있으면" 타입/값을 검사하는 식으로 조건을 건다.
+      match /edits/{influencerId} {
+        allow read: if isGfutures() || linkIsActive(token);
+        allow create, update: if linkIsActive(token)
+          && request.resource.data.keys()
+            .hasOnly(['status', 'concept', 'brandComment', 'uploadDate', 'uploadUrl'])
+          && (!('status' in request.resource.data)
+              || request.resource.data.status in ['확정', '미진행'])
+          && (!('concept' in request.resource.data)
+              || (request.resource.data.concept is string
+                  && request.resource.data.concept.size() < 60))
+          && (!('brandComment' in request.resource.data)
+              || (request.resource.data.brandComment is string
+                  && request.resource.data.brandComment.size() < 2000))
+          && (!('uploadDate' in request.resource.data)
+              || (request.resource.data.uploadDate is string
+                  && request.resource.data.uploadDate.size() < 20))
+          && (!('uploadUrl' in request.resource.data)
+              || (request.resource.data.uploadUrl is string
+                  && request.resource.data.uploadUrl.size() < 500));
+      }
+
+      // 브랜드가 "콘셉트 설정"에서 정한 콘셉트 목록·색상 전체를 담는 단일 문서.
+      // 항상 전체를 덮어써서 추가/삭제/색상 변경을 한 번에 반영하며, 스태프가
+      // 읽어서 brand.concepts/conceptColors에 반영한다(공개 read는 필요 없음 —
+      // 공유 페이지는 shareLinks 문서의 스냅샷만 읽는다).
+      match /settings/concepts {
+        allow read: if isGfutures();
+        allow create, update: if linkIsActive(token)
+          && request.resource.data.keys().hasOnly(['concepts', 'colors'])
+          && request.resource.data.concepts is list
+          && request.resource.data.concepts.size() < 60
+          && request.resource.data.colors is map;
+      }
+    }
+
   }
 }
