@@ -34,8 +34,6 @@ import {
 } from "lucide-react";
 import {
   FormEvent,
-  KeyboardEvent as ReactKeyboardEvent,
-  PointerEvent as ReactPointerEvent,
   ReactNode,
   useEffect,
   useMemo,
@@ -1701,145 +1699,75 @@ function MultiSelectFilter({
 }
 
 /**
- * 분포 막대 + 양쪽 원 핸들 구간 필터. 팝오버는 MultiSelectFilter 와 같은
- * :focus-within 방식으로 열리므로, 핸들도 포커스를 받아야 드래그 중에 닫히지 않는다.
+ * 최소·최대를 직접 입력하는 구간 필터. 팝오버는 MultiSelectFilter 와 같은
+ * :focus-within 방식으로 열린다 — 입력칸이 메뉴 안에 있으니 타이핑 중에도 열려 있다.
  */
-function RangeSliderFilter({
+function RangeInputFilter({
   label,
-  domainMax,
+  unit,
   value,
   onChange,
-  histogram,
   format,
   footer,
 }: {
   label: string;
-  domainMax: number;
+  unit: string;
   value: RangeValue | null;
   onChange: (next: RangeValue | null) => void;
-  histogram: { start: number; end: number; count: number }[];
   format: (value: number) => string;
   footer?: ReactNode;
 }) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const lo = Math.min(value?.min ?? 0, domainMax);
-  const hi = Math.min(value?.max ?? domainMax, domainMax);
-  const active = rangeActive(value, domainMax);
-  const ratio = (target: number) => (domainMax ? (target / domainMax) * 100 : 0);
-  const peak = Math.max(1, ...histogram.map((bin) => bin.count));
+  const min = value?.min ?? null;
+  const max = value?.max ?? null;
+  const active = rangeActive(value);
+  const inverted = min !== null && max !== null && min > max;
 
-  function commit(handle: "min" | "max", next: number) {
-    const snapped = Math.min(
-      domainMax,
-      Math.max(0, Math.round(next / RANGE_STEP) * RANGE_STEP),
-    );
-    onChange(
-      handle === "min"
-        ? { min: Math.min(snapped, hi), max: hi }
-        : { min: lo, max: Math.max(snapped, lo) },
-    );
+  function setBound(key: "min" | "max", raw: string) {
+    const digits = raw.replace(/[^0-9]/g, "");
+    const next: RangeValue = { min, max, [key]: digits ? Number(digits) : null };
+    onChange(next.min === null && next.max === null ? null : next);
   }
 
-  function dragProps(handle: "min" | "max") {
-    function fromClientX(clientX: number) {
-      const track = trackRef.current;
-      if (!track) return null;
-      const rect = track.getBoundingClientRect();
-      if (!rect.width) return null;
-      return ((clientX - rect.left) / rect.width) * domainMax;
-    }
-    return {
-      onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-        event.preventDefault();
-        event.currentTarget.focus();
-        event.currentTarget.setPointerCapture(event.pointerId);
-      },
-      onPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
-        if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
-        const next = fromClientX(event.clientX);
-        if (next !== null) commit(handle, next);
-      },
-      onPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      },
-      onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-        const current = handle === "min" ? lo : hi;
-        const delta =
-          event.key === "ArrowLeft" || event.key === "ArrowDown"
-            ? -RANGE_STEP
-            : event.key === "ArrowRight" || event.key === "ArrowUp"
-              ? RANGE_STEP
-              : 0;
-        if (delta) {
-          event.preventDefault();
-          commit(handle, current + delta);
-          return;
-        }
-        if (event.key === "Home") {
-          event.preventDefault();
-          commit(handle, 0);
-        }
-        if (event.key === "End") {
-          event.preventDefault();
-          commit(handle, domainMax);
-        }
-      },
-    };
-  }
+  const badge =
+    min !== null && max !== null
+      ? `${format(min)} – ${format(max)}`
+      : min !== null
+        ? `${format(min)} 이상`
+        : max !== null
+          ? `${format(max)} 이하`
+          : "";
 
   return (
     <div className="multi-filter range-filter">
       <button type="button" className="multi-filter-toggle">
         <span>{label}</span>
-        {active && <b>{`${format(lo)} – ${format(hi)}`}</b>}
+        {active && <b>{badge}</b>}
         <ChevronDown size={13} />
       </button>
       <div className="multi-filter-menu range-menu">
-        <div className="range-values">
-          <strong>{format(lo)}</strong>
-          <em>–</em>
-          <strong>{hi >= domainMax ? `${format(domainMax)}+` : format(hi)}</strong>
-        </div>
-        <div className="range-histogram">
-          {histogram.map((bin) => (
-            <span
-              key={bin.start}
-              className={bin.end > lo && bin.start <= hi ? "range-bar in" : "range-bar"}
-              style={{ height: `${Math.max(bin.count ? 8 : 2, (bin.count / peak) * 100)}%` }}
-              title={`${format(bin.start)} – ${format(bin.end)} · ${bin.count}명`}
+        <div className="range-inputs">
+          <label>
+            <span>최소</span>
+            <input
+              inputMode="numeric"
+              placeholder="제한 없음"
+              value={min === null ? "" : withThousands(String(min))}
+              onChange={(event) => setBound("min", event.target.value)}
             />
-          ))}
+          </label>
+          <em>–</em>
+          <label>
+            <span>최대</span>
+            <input
+              inputMode="numeric"
+              placeholder="제한 없음"
+              value={max === null ? "" : withThousands(String(max))}
+              onChange={(event) => setBound("max", event.target.value)}
+            />
+          </label>
         </div>
-        <div className="range-track" ref={trackRef}>
-          <span
-            className="range-fill"
-            style={{ left: `${ratio(lo)}%`, right: `${100 - ratio(hi)}%` }}
-          />
-          <div
-            className="range-handle"
-            role="slider"
-            tabIndex={0}
-            aria-label={`${label} 최소`}
-            aria-valuemin={0}
-            aria-valuemax={hi}
-            aria-valuenow={lo}
-            aria-valuetext={format(lo)}
-            style={{ left: `${ratio(lo)}%` }}
-            {...dragProps("min")}
-          />
-          <div
-            className="range-handle"
-            role="slider"
-            tabIndex={0}
-            aria-label={`${label} 최대`}
-            aria-valuemin={lo}
-            aria-valuemax={domainMax}
-            aria-valuenow={hi}
-            aria-valuetext={format(hi)}
-            style={{ left: `${ratio(hi)}%` }}
-            {...dragProps("max")}
-          />
-        </div>
+        <p className="range-unit">단위: {unit}</p>
+        {inverted && <p className="range-warn">최소가 최대보다 큽니다</p>}
         {footer}
         {active && (
           <button
@@ -3237,46 +3165,20 @@ const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
   { value: "기타", label: "기타" },
 ];
 
-/** 구간 필터의 이동 단위 — 핸들은 1만 단위로만 멈춘다. */
-const RANGE_STEP = 10_000;
-/** 분포 막대 최대 개수 — 막대 폭이 1px 이하로 뭉개지지 않게 묶는다. */
-const RANGE_MAX_BINS = 32;
+/** 최소·최대를 직접 입력하는 구간. 한쪽만 채우면 그쪽만 제한한다. */
+type RangeValue = { min: number | null; max: number | null };
 
-type RangeValue = { min: number; max: number };
+const rangeActive = (range: RangeValue | null) =>
+  !!range && (range.min !== null || range.max !== null);
 
-const ceilToStep = (value: number) =>
-  Math.max(RANGE_STEP, Math.ceil(value / RANGE_STEP) * RANGE_STEP);
-
-/** 값이 선택 구간 안인가. 구간 미설정이면 전부 통과, 값이 없으면(null) 제외된다. */
+/** 값이 입력한 구간 안인가. 구간 미설정이면 전부 통과, 값이 없으면(null) 제외된다. */
 function inRange(value: number | null, range: RangeValue | null) {
-  if (!range) return true;
+  if (!rangeActive(range)) return true;
   if (value === null) return false;
-  return value >= range.min && value <= range.max;
-}
-
-/** 슬라이더 양 끝까지 벌어진 상태는 필터가 꺼진 것과 같다. */
-const rangeActive = (range: RangeValue | null, domainMax: number) =>
-  !!range && (range.min > 0 || range.max < domainMax);
-
-/**
- * 0 ~ domainMax 를 같은 폭으로 나눈 분포. 막대 폭은 1만의 배수를 유지하되,
- * 구간이 너무 잘게 쪼개지면 몇 칸씩 묶어 RANGE_MAX_BINS 안으로 맞춘다.
- */
-function buildHistogram(values: (number | null)[], domainMax: number) {
-  const steps = Math.max(1, Math.round(domainMax / RANGE_STEP));
-  const binSize = RANGE_STEP * Math.ceil(steps / RANGE_MAX_BINS);
-  const binCount = Math.max(1, Math.ceil(domainMax / binSize));
-  const bins = Array.from({ length: binCount }, (_, index) => ({
-    start: index * binSize,
-    end: (index + 1) * binSize,
-    count: 0,
-  }));
-  for (const value of values) {
-    if (value === null) continue;
-    const index = Math.min(binCount - 1, Math.floor(value / binSize));
-    bins[index].count += 1;
-  }
-  return bins;
+  return (
+    (range!.min === null || value >= range!.min) &&
+    (range!.max === null || value <= range!.max)
+  );
 }
 
 /**
@@ -3328,23 +3230,7 @@ function CrmPage({
     [records],
   );
 
-  /** 슬라이더 축은 전체 데이터 기준이라 다른 필터를 만져도 눈금이 흔들리지 않는다. */
-  const followerMax = useMemo(
-    () => ceilToStep(Math.max(0, ...records.map((record) => record.followers ?? 0))),
-    [records],
-  );
-  const rateMax = useMemo(
-    () =>
-      ceilToStep(
-        Math.max(
-          0,
-          ...records.map((record) => Math.max(record.latestRate ?? 0, record.latestAdRate ?? 0)),
-        ),
-      ),
-    [records],
-  );
-
-  const matchesCommon = (record: CrmRecord) => {
+  const filtered = records.filter((record) => {
     const term = search.trim().toLowerCase();
     const matchesTerm =
       !term ||
@@ -3363,29 +3249,15 @@ function CrmPage({
     const matchesPartner =
       !partnerFilter.length || record.partners.some((name) => partnerFilter.includes(name));
     return (
-      matchesTerm && matchesBrand && matchesPeriod && matchesPlatform && matchesPartner
-    );
-  };
-
-  const common = records.filter(matchesCommon);
-  /** 각 분포는 자기 구간을 뺀 나머지 필터 결과를 센다 — 드래그로 막대가 사라지지 않게. */
-  const followerHistogram = buildHistogram(
-    common
-      .filter((record) => inRange(filterRate(record, useAdRate), rateRange))
-      .map((record) => record.followers),
-    followerMax,
-  );
-  const rateHistogram = buildHistogram(
-    common
-      .filter((record) => inRange(record.followers, followerRange))
-      .map((record) => filterRate(record, useAdRate)),
-    rateMax,
-  );
-  const filtered = common.filter(
-    (record) =>
+      matchesTerm &&
+      matchesBrand &&
+      matchesPeriod &&
+      matchesPlatform &&
+      matchesPartner &&
       inRange(record.followers, followerRange) &&
-      inRange(filterRate(record, useAdRate), rateRange),
-  );
+      inRange(filterRate(record, useAdRate), rateRange)
+    );
+  });
 
   const totalRuns = records.reduce((sum, record) => sum + record.entries.length, 0);
   const repeatCount = records.filter((record) => record.brandNames.length > 1).length;
@@ -3394,8 +3266,8 @@ function CrmPage({
     periodFilter.length ||
     platformFilter.length ||
     partnerFilter.length ||
-    rangeActive(followerRange, followerMax) ||
-    rangeActive(rateRange, rateMax)
+    rangeActive(followerRange) ||
+    rangeActive(rateRange)
   );
 
   return (
@@ -3483,20 +3355,18 @@ function CrmPage({
             selected={partnerFilter}
             onChange={setPartnerFilter}
           />
-          <RangeSliderFilter
+          <RangeInputFilter
             label="팔로워"
-            domainMax={followerMax}
+            unit="명"
             value={followerRange}
             onChange={setFollowerRange}
-            histogram={followerHistogram}
             format={(value) => compactOr(value)}
           />
-          <RangeSliderFilter
+          <RangeInputFilter
             label={useAdRate ? "단가 (광고 포함)" : "단가"}
-            domainMax={rateMax}
+            unit="JPY"
             value={rateRange}
             onChange={setRateRange}
-            histogram={rateHistogram}
             format={(value) => yen(value)}
             footer={
               <label className="filter-check">
