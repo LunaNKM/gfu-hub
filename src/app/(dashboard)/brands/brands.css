@@ -828,6 +828,13 @@
   gap: 11px;
 }
 
+.brand-mgmt .heading-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .brand-mgmt .section-icon,
 .brand-mgmt .metric-icon {
   width: 34px;

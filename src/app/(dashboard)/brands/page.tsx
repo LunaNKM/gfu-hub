@@ -186,7 +186,7 @@ type BulkRow = ParsedInfluencer & {
 
 type ModalState =
   | { type: "create" }
-  | { type: "bulk" }
+  | { type: "bulk"; brandId?: string; periodId?: string }
   | { type: "settings"; brandId: string; periodId: string }
   | { type: "delete"; brandId: string }
   | { type: "import"; brandId: string; periodId: string; groupId: string }
@@ -879,8 +879,14 @@ function parsePaste(text: string): ParsedInfluencer[] {
 /**
  * 일괄 붙여넣기 — 브랜드 / 기간 / 계정명 / 팔로워 / 링크 / 단가 / 광고 포함 단가 / 상태.
  * 상태 칸은 생략할 수 있고, 생략하면 "미진행"으로 들어간다.
+ *
+ * locked 를 주면 브랜드·기간 칸 없이 계정명부터 붙여넣는다 — 브랜드 캠페인 안에서
+ * 여는 일괄 등록이 그 경우다.
  */
-function parseBulkPaste(text: string): { rows: BulkRow[]; skipped: number } {
+function parseBulkPaste(
+  text: string,
+  locked?: { brandName: string; periodId: string },
+): { rows: BulkRow[]; skipped: number } {
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
@@ -889,15 +895,15 @@ function parseBulkPaste(text: string): { rows: BulkRow[]; skipped: number } {
   const rows: BulkRow[] = [];
 
   for (const line of lines) {
-    if (isHeaderLine(line) && line.includes("브랜드")) continue;
+    if (isHeaderLine(line) && (locked || line.includes("브랜드"))) continue;
     const cells = splitCells(line);
-    if (cells.length < 3) {
+    if (cells.length < (locked ? 1 : 3)) {
       skipped += 1;
       continue;
     }
     const [brandName = "", periodRaw = "", handleRaw = "", followerRaw = "", urlRaw = "", rateRaw = "", adRateRaw = "", statusRaw = ""] =
-      cells;
-    const periodId = parsePeriodId(periodRaw);
+      locked ? [locked.brandName, locked.periodId, ...cells] : cells;
+    const periodId = locked ? locked.periodId : parsePeriodId(periodRaw);
     const profileUrl = /^https?:\/\/\S+$/i.test(urlRaw.trim()) ? urlRaw.trim() : "";
     const handle = handleRaw.trim().replace(/^@/, "") || handleFromUrl(profileUrl);
     if (!brandName.trim() || !periodId || (!handle && !profileUrl)) {
@@ -919,6 +925,32 @@ function parseBulkPaste(text: string): { rows: BulkRow[]; skipped: number } {
   }
 
   return { rows, skipped };
+}
+
+/** 일괄 등록의 팔로워 구간 — 20만 이상 매크로, 10만 이상 미들, 나머지는 마이크로. */
+const FOLLOWER_TIERS = [
+  { min: 200_000, keyword: "매크로" },
+  { min: 100_000, keyword: "미들" },
+  { min: 0, keyword: "마이크로" },
+];
+
+/**
+ * 팔로워 수로 갈 그룹을 고른다. 이름에 구간 이름이 들어 있으면 같은 그룹으로 본다 —
+ * '마이크로 (설명계)' 도 그냥 '마이크로' 도 마이크로다. 팔로워를 모르면 마이크로로
+ * 보내고, 맞는 그룹이 아예 없으면 미분류로 둔다.
+ */
+function autoGroupId(groups: Group[], followers: number | null) {
+  const keyword =
+    FOLLOWER_TIERS.find((tier) => (followers ?? 0) >= tier.min)?.keyword ?? "마이크로";
+  const active = groups.filter((group) => group.active);
+  const match =
+    keyword === "마이크로"
+      ? // 마이크로가 여럿이면 설명계를 먼저 본다.
+        active.find(
+          (group) => group.name.includes("마이크로") && group.name.includes("설명"),
+        ) ?? active.find((group) => group.name.includes("마이크로"))
+      : active.find((group) => group.name.includes(keyword));
+  return match?.id ?? UNASSIGNED_GROUP_ID;
 }
 
 function isDuplicate(period: Period, influencer: Influencer) {
@@ -1619,6 +1651,13 @@ export default function BrandManagementPage() {
                 groupId,
               })
             }
+            onBulk={() =>
+              setModal({
+                type: "bulk",
+                brandId: selectedBrand.id,
+                periodId: detailPeriod.id,
+              })
+            }
             onUpdate={(updater) =>
               updatePeriod(selectedBrand.id, detailPeriod.id, updater)
             }
@@ -1668,6 +1707,15 @@ export default function BrandManagementPage() {
       {modal?.type === "bulk" && (
         <BulkImportModal
           brands={brands}
+          locked={
+            modal.brandId && modal.periodId
+              ? {
+                  brandName:
+                    brands.find((item) => item.id === modal.brandId)?.name ?? "",
+                  periodId: modal.periodId,
+                }
+              : undefined
+          }
           onClose={() => setModal(null)}
           onApply={({ createdBrands, updates }) => {
             addBrands(createdBrands);
@@ -2501,6 +2549,7 @@ function CampaignDetail({
   onAddPeriod,
   onSettings,
   onImport,
+  onBulk,
   onUpdate,
   onSyncComment,
 }: {
@@ -2511,6 +2560,7 @@ function CampaignDetail({
   onAddPeriod: (periodId: string) => void;
   onSettings: () => void;
   onImport: (groupId: string) => void;
+  onBulk: () => void;
   onUpdate: (updater: (period: Period) => Period) => void;
   onSyncComment: (key: string, comment: string) => void;
 }) {
@@ -3266,7 +3316,14 @@ function CampaignDetail({
                 </p>
               </div>
             </div>
-            <span className="count-pill">{numFmt(period.influencers.length)}명 등록</span>
+            <div className="heading-actions">
+              <span className="count-pill">
+                {numFmt(period.influencers.length)}명 등록
+              </span>
+              <button className="secondary-button" onClick={onBulk}>
+                <CopyPlus size={16} /> 일괄 등록
+              </button>
+            </div>
           </div>
 
           <div className="group-stack">
@@ -4824,16 +4881,19 @@ type BulkApply = {
 
 function BulkImportModal({
   brands,
+  locked,
   onClose,
   onApply,
 }: {
   brands: Brand[];
+  /** 브랜드 캠페인 안에서 열었을 때 — 브랜드·기간이 이미 정해져 있다. */
+  locked?: { brandName: string; periodId: string };
   onClose: () => void;
   onApply: (value: BulkApply) => void;
 }) {
   const [text, setText] = useState("");
   const [partner, setPartner] = useState("RL");
-  const { rows, skipped } = useMemo(() => parseBulkPaste(text), [text]);
+  const { rows, skipped } = useMemo(() => parseBulkPaste(text, locked), [text, locked]);
 
   const brandKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, "");
   const summary = useMemo(() => {
@@ -4870,7 +4930,7 @@ function BulkImportModal({
 
     const stamp = Date.now();
     let counter = 0;
-    const toInfluencer = (row: BulkRow): Influencer => ({
+    const toInfluencer = (row: BulkRow, groups: Group[]): Influencer => ({
       id: `inf-${stamp}-${counter++}`,
       handle: row.handle,
       displayName: row.displayName || row.handle,
@@ -4884,25 +4944,31 @@ function BulkImportModal({
       concept: "",
       comment: "",
       brandComment: "",
-      groupId: UNASSIGNED_GROUP_ID,
+      groupId: autoGroupId(groups, row.followers),
     });
 
     const mergeIntoPeriod = (period: Period, incoming: BulkRow[]): Period => {
-      const groups = period.groups.some((group) => group.id === UNASSIGNED_GROUP_ID)
-        ? period.groups
-        : [
-            ...period.groups,
-            {
-              id: UNASSIGNED_GROUP_ID,
-              name: "미분류",
-              target: 0,
-              active: true,
-              sectionId: DEFAULT_SECTION_ID,
-            },
-          ];
+      // 미분류는 갈 곳 없는 행이 실제로 생겼을 때만 만든다.
+      const needsUnassigned = incoming.some(
+        (row) => autoGroupId(period.groups, row.followers) === UNASSIGNED_GROUP_ID,
+      );
+      const groups =
+        !needsUnassigned ||
+        period.groups.some((group) => group.id === UNASSIGNED_GROUP_ID)
+          ? period.groups
+          : [
+              ...period.groups,
+              {
+                id: UNASSIGNED_GROUP_ID,
+                name: "미분류",
+                target: 0,
+                active: true,
+                sectionId: DEFAULT_SECTION_ID,
+              },
+            ];
       const influencers = [...period.influencers];
       for (const row of incoming) {
-        const next = toInfluencer(row);
+        const next = toInfluencer(row, period.groups);
         // 플랫폼까지 같아야 "같은 계정"이다 — 같은 사람이라도 IG/TT/YT 핸들이
         // 텍스트로 우연히 같으면 서로 다른 계정이므로 덮어써서는 안 된다.
         const key = crmKey(next) && `${crmKey(next)}|${next.platform}`;
@@ -4994,7 +5060,11 @@ function BulkImportModal({
   return (
     <Modal
       title="인플루언서 일괄 등록"
-      description="브랜드 · 기간 · 계정명 · 팔로워 · 링크 · 단가 · 광고 포함 단가 · 상태 순서로 붙여넣으세요."
+      description={
+        locked
+          ? `${locked.brandName} · ${periodLabel(locked.periodId)} · 계정명 · 팔로워 · 링크 · 단가 · 광고 포함 단가 · 상태 순서로 붙여넣으세요.`
+          : "브랜드 · 기간 · 계정명 · 팔로워 · 링크 · 단가 · 광고 포함 단가 · 상태 순서로 붙여넣으세요."
+      }
       onClose={onClose}
       wide
     >
@@ -5005,9 +5075,16 @@ function BulkImportModal({
             <div>
               <strong>엑셀에서 그대로 붙여넣기</strong>
               <p>
-                없는 브랜드와 기간은 자동으로 만들어지고, 이미 있는 계정은 값이
-                갱신됩니다. 단가가 없는 칸은 <code>-</code> 로 두면 됩니다. 상태
-                칸을 비우면 미진행으로 들어갑니다.
+                {locked
+                  ? "브랜드와 기간 칸 없이 계정명부터 붙여넣으세요. "
+                  : "없는 브랜드와 기간은 자동으로 만들어지고, "}
+                이미 있는 계정은 값이 갱신됩니다. 단가가 없는 칸은 <code>-</code> 로
+                두면 됩니다. 상태 칸을 비우면 미진행으로 들어갑니다.
+              </p>
+              <p>
+                그룹은 팔로워 수로 자동 배정됩니다 — 20만 이상 매크로, 10만 이상
+                미들, 그 아래는 마이크로. 맞는 이름의 그룹이 없으면 미분류로
+                들어갑니다.
               </p>
             </div>
           </div>
@@ -5017,8 +5094,11 @@ function BulkImportModal({
             value={text}
             onChange={(event) => setText(event.target.value)}
             placeholder={
-              "스킨앤랩\t26 Q3\tminamikato_0115\t204000\thttps://www.instagram.com/minamikato_0115/\t-\t514000\t확정\n" +
-              "투슬래시포\t26 Q3\tunn_nel\t16000\thttps://www.instagram.com/unn_nel/\t70000\t80000\t확정"
+              locked
+                ? "minamikato_0115\t204000\thttps://www.instagram.com/minamikato_0115/\t-\t514000\t확정\n" +
+                  "unn_nel\t16000\thttps://www.instagram.com/unn_nel/\t70000\t80000\t확정"
+                : "스킨앤랩\t26 Q3\tminamikato_0115\t204000\thttps://www.instagram.com/minamikato_0115/\t-\t514000\t확정\n" +
+                  "투슬래시포\t26 Q3\tunn_nel\t16000\thttps://www.instagram.com/unn_nel/\t70000\t80000\t확정"
             }
           />
           <label className="partner-pick">
@@ -5035,7 +5115,9 @@ function BulkImportModal({
               <strong>자동 인식 결과</strong>
               <p>
                 {rows.length
-                  ? `${rows.length}개 행 · 브랜드 ${summary.brandCount}개(신규 ${summary.newBrandCount}) · 기간 ${summary.periodCount}개`
+                  ? locked
+                    ? `${rows.length}개 행`
+                    : `${rows.length}개 행 · 브랜드 ${summary.brandCount}개(신규 ${summary.newBrandCount}) · 기간 ${summary.periodCount}개`
                   : "붙여넣으면 결과가 표시됩니다."}
                 {!!skipped && ` · 건너뜀 ${skipped}행`}
               </p>
@@ -5048,7 +5130,7 @@ function BulkImportModal({
                 <div>
                   <strong>{row.handle || "계정명 없음"}</strong>
                   <small>
-                    {row.brandName} · {periodLabel(row.periodId)} ·{" "}
+                    {!locked && `${row.brandName} · ${periodLabel(row.periodId)} · `}
                     {compactOr(row.followers)} · {yenOr(row.rateJpy)} /{" "}
                     {yenOr(row.adRateJpy)}
                   </small>
@@ -5063,7 +5145,11 @@ function BulkImportModal({
               <EmptyState
                 icon={<Upload size={20} />}
                 title="아직 붙여넣은 내용이 없습니다"
-                description="브랜드와 기간 칸이 채워진 행만 등록됩니다."
+                description={
+                  locked
+                    ? "계정명이나 링크가 있는 행만 등록됩니다."
+                    : "브랜드와 기간 칸이 채워진 행만 등록됩니다."
+                }
               />
             )}
           </div>
