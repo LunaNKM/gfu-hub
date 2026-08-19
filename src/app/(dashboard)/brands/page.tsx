@@ -828,6 +828,8 @@ function splitCells(line: string) {
   );
 }
 
+const isProfileUrl = (value: string) => /^https?:\/\/\S+$/i.test(value.trim());
+
 const isHeaderLine = (line: string) => {
   const lower = line.toLowerCase();
   return (
@@ -901,10 +903,15 @@ function parseBulkPaste(
       skipped += 1;
       continue;
     }
-    const [brandName = "", periodRaw = "", handleRaw = "", followerRaw = "", urlRaw = "", rateRaw = "", adRateRaw = "", statusRaw = ""] =
+    const [brandName = "", periodRaw = "", handleRaw = "", cellD = "", cellE = "", rateRaw = "", adRateRaw = "", statusRaw = ""] =
       locked ? [locked.brandName, locked.periodId, ...cells] : cells;
+    // 팔로워와 링크 칸을 바꿔 붙여넣는 경우가 잦다. 링크는 생김새로 구별되니
+    // 두 칸이 뒤집혀 있으면 되돌려 준다 — 안 그러면 팔로워와 링크가 함께 사라진다.
+    const swapped = isProfileUrl(cellD) && !isProfileUrl(cellE);
+    const followerRaw = swapped ? cellE : cellD;
+    const urlRaw = swapped ? cellD : cellE;
     const periodId = locked ? locked.periodId : parsePeriodId(periodRaw);
-    const profileUrl = /^https?:\/\/\S+$/i.test(urlRaw.trim()) ? urlRaw.trim() : "";
+    const profileUrl = isProfileUrl(urlRaw) ? urlRaw.trim() : "";
     const handle = handleRaw.trim().replace(/^@/, "") || handleFromUrl(profileUrl);
     if (!brandName.trim() || !periodId || (!handle && !profileUrl)) {
       skipped += 1;
@@ -3235,7 +3242,8 @@ function CampaignDetail({
           rateJpy: null,
           adRateJpy: null,
           partner: brand.partners[0] ?? "",
-          status: "확정",
+          // 추가 직후에는 아직 확정 전이다. 확정은 사람이 직접 체크한다.
+          status: "미진행",
           concept: "",
           comment: "",
           brandComment: "",
@@ -4858,7 +4866,7 @@ function ImportModal({
                 ...item,
                 id: `inf-${Date.now()}-${index}`,
                 partner,
-                status: "확정" as InfluencerStatus,
+                status: "미진행" as InfluencerStatus,
                 concept: "",
                 comment: "",
                 brandComment: "",
