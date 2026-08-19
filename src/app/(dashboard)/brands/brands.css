@@ -2869,26 +2869,20 @@
   padding: 0;
 }
 
-/* 단가 구간 필터의 기준가 토글 */
+/* 단가 구간 필터의 기준가 토글 — 슬라이더 팝오버 바닥에 붙는다 */
 .brand-mgmt .filter-check {
   position: relative;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 7px;
-  height: 38px;
-  padding: 0 11px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: #fff;
+  gap: 8px;
+  min-height: 32px;
+  margin-top: 4px;
+  padding: 0 2px;
   color: #8b8e93;
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
   white-space: nowrap;
-}
-
-.brand-mgmt .filter-check:hover {
-  border-color: #d7d9dc;
 }
 
 .brand-mgmt .filter-check input {
@@ -2904,6 +2898,94 @@
   background: var(--ink);
   border-color: var(--ink);
   color: #fff;
+}
+
+/* 분포 막대 + 원 핸들 구간 슬라이더 */
+.brand-mgmt .range-menu {
+  width: 268px;
+  padding: 12px;
+  overflow: visible;
+}
+
+.brand-mgmt .multi-filter.range-filter:focus-within .range-menu {
+  display: block;
+}
+
+.brand-mgmt .range-values {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.brand-mgmt .range-values strong {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.brand-mgmt .range-values em {
+  font-style: normal;
+  color: #a2a5aa;
+}
+
+.brand-mgmt .range-histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 56px;
+}
+
+.brand-mgmt .range-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  border-radius: 2px 2px 0 0;
+  background: #e5e6e8;
+}
+
+.brand-mgmt .range-bar.in {
+  background: var(--ink);
+}
+
+.brand-mgmt .range-track {
+  position: relative;
+  height: 4px;
+  margin: 9px 8px 4px;
+  border-radius: 2px;
+  background: #e5e6e8;
+  touch-action: none;
+}
+
+.brand-mgmt .range-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+  background: var(--ink);
+}
+
+.brand-mgmt .range-handle {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 1px solid #cfd1d4;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(20, 21, 22, 0.18);
+  cursor: grab;
+  touch-action: none;
+}
+
+.brand-mgmt .range-handle:active {
+  cursor: grabbing;
+}
+
+.brand-mgmt .range-handle:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
 }
 
 /* 체크박스 복수 선택 드롭다운 — 포커스가 밖으로 나가면 CSS로 자동 닫힌다 */
