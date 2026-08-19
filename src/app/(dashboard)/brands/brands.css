@@ -2869,6 +2869,43 @@
   padding: 0;
 }
 
+/* 단가 구간 필터의 기준가 토글 */
+.brand-mgmt .filter-check {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: #8b8e93;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.brand-mgmt .filter-check:hover {
+  border-color: #d7d9dc;
+}
+
+.brand-mgmt .filter-check input {
+  position: absolute;
+  opacity: 0;
+}
+
+.brand-mgmt .filter-check:has(input:checked) {
+  color: var(--ink);
+}
+
+.brand-mgmt .filter-check input:checked + .custom-check {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
 /* 체크박스 복수 선택 드롭다운 — 포커스가 밖으로 나가면 CSS로 자동 닫힌다 */
 .brand-mgmt .multi-filter {
   position: relative;

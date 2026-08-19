@@ -3080,6 +3080,51 @@ const PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
   { value: "기타", label: "기타" },
 ];
 
+/**
+ * 구간 필터 정의 — min 이상 max 미만. 여러 구간을 동시에 고르면 합집합이고,
+ * 구간끼리 범위가 겹쳐도 문제 없다(같은 레코드가 중복으로 세지지 않는다).
+ */
+type RangeBucket = { value: string; label: string; min: number; max: number | null };
+
+const FOLLOWER_BUCKETS: RangeBucket[] = [
+  { value: "f0", label: "1만 미만", min: 0, max: 10_000 },
+  { value: "f1", label: "1만 – 5만", min: 10_000, max: 50_000 },
+  { value: "f2", label: "5만 – 10만", min: 50_000, max: 100_000 },
+  { value: "f3", label: "10만 – 50만", min: 100_000, max: 500_000 },
+  { value: "f4", label: "50만 이상", min: 500_000, max: null },
+];
+
+const RATE_BUCKETS: RangeBucket[] = [
+  { value: "r0", label: "5만엔 미만", min: 0, max: 50_000 },
+  { value: "r1", label: "5만 – 10만엔", min: 50_000, max: 100_000 },
+  { value: "r2", label: "10만 – 30만엔", min: 100_000, max: 300_000 },
+  { value: "r3", label: "30만 – 50만엔", min: 300_000, max: 500_000 },
+  { value: "r4", label: "50만엔 이상", min: 500_000, max: null },
+];
+
+/** 선택한 구간 중 하나라도 값을 품으면 통과. 값이 없으면(null) 구간 필터에서 제외된다. */
+function matchesBuckets(
+  value: number | null,
+  selected: string[],
+  buckets: RangeBucket[],
+) {
+  if (!selected.length) return true;
+  if (value === null) return false;
+  return buckets.some(
+    (bucket) =>
+      selected.includes(bucket.value) &&
+      value >= bucket.min &&
+      (bucket.max === null || value < bucket.max),
+  );
+}
+
+/**
+ * 단가 구간 필터의 기준가. 광고 포함을 켜면 광고 2차사용 포함 단가를 쓰되,
+ * 그 값이 없는 인플루언서는 기본 단가로 대신 본다 (billableRate 와 같은 규칙).
+ */
+const filterRate = (record: CrmRecord, useAdRate: boolean) =>
+  useAdRate ? record.latestAdRate ?? record.latestRate : record.latestRate;
+
 function CrmPage({
   records,
   onOpen,
@@ -3094,6 +3139,10 @@ function CrmPage({
   const [periodFilter, setPeriodFilter] = useState<string[]>([]);
   const [platformFilter, setPlatformFilter] = useState<string[]>([]);
   const [partnerFilter, setPartnerFilter] = useState<string[]>([]);
+  const [followerFilter, setFollowerFilter] = useState<string[]>([]);
+  const [rateFilter, setRateFilter] = useState<string[]>([]);
+  /** 단가 구간의 기준가 — 켜면 광고 2차사용 포함 단가로 거른다. */
+  const [useAdRate, setUseAdRate] = useState(false);
 
   const brandOptions = useMemo(
     () =>
@@ -3136,15 +3185,37 @@ function CrmPage({
       record.platforms.some((item) => platformFilter.includes(item));
     const matchesPartner =
       !partnerFilter.length || record.partners.some((name) => partnerFilter.includes(name));
+    const matchesFollower = matchesBuckets(
+      record.followers,
+      followerFilter,
+      FOLLOWER_BUCKETS,
+    );
+    const matchesRate = matchesBuckets(
+      filterRate(record, useAdRate),
+      rateFilter,
+      RATE_BUCKETS,
+    );
     return (
-      matchesTerm && matchesBrand && matchesPeriod && matchesPlatform && matchesPartner
+      matchesTerm &&
+      matchesBrand &&
+      matchesPeriod &&
+      matchesPlatform &&
+      matchesPartner &&
+      matchesFollower &&
+      matchesRate
     );
   });
 
   const totalRuns = records.reduce((sum, record) => sum + record.entries.length, 0);
   const repeatCount = records.filter((record) => record.brandNames.length > 1).length;
-  const filtersActive =
-    !!(brandFilter.length || periodFilter.length || platformFilter.length || partnerFilter.length);
+  const filtersActive = !!(
+    brandFilter.length ||
+    periodFilter.length ||
+    platformFilter.length ||
+    partnerFilter.length ||
+    followerFilter.length ||
+    rateFilter.length
+  );
 
   return (
     <div className="page-wrap">
@@ -3197,6 +3268,8 @@ function CrmPage({
                   setPeriodFilter([]);
                   setPlatformFilter([]);
                   setPartnerFilter([]);
+                  setFollowerFilter([]);
+                  setRateFilter([]);
                 }}
               >
                 필터 초기화
@@ -3229,6 +3302,27 @@ function CrmPage({
             selected={partnerFilter}
             onChange={setPartnerFilter}
           />
+          <MultiSelectFilter
+            label="팔로워"
+            options={FOLLOWER_BUCKETS}
+            selected={followerFilter}
+            onChange={setFollowerFilter}
+          />
+          <MultiSelectFilter
+            label={useAdRate ? "단가 (광고 포함)" : "단가"}
+            options={RATE_BUCKETS}
+            selected={rateFilter}
+            onChange={setRateFilter}
+          />
+          <label className="filter-check">
+            <input
+              type="checkbox"
+              checked={useAdRate}
+              onChange={(event) => setUseAdRate(event.target.checked)}
+            />
+            <span className="custom-check">{useAdRate && <Check size={11} />}</span>
+            광고 포함 단가 기준
+          </label>
           <label className="search-field">
             <Search size={16} />
             <input
