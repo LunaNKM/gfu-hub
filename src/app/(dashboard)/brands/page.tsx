@@ -2649,6 +2649,9 @@ function CampaignDetail({
    */
   function beginDrag(item: DragItem, x: number, y: number, anchor: HTMLElement | null) {
     dragKindRef.current = item.kind;
+    // 꾹 누르는 동안 브라우저가 잡아둔 텍스트 선택을 걷어낸다. 그대로 두면
+    // 끌 때 선택 영역과 기본 드래그(텍스트/링크)가 같이 따라온다.
+    window.getSelection()?.removeAllRanges();
     setDrag(item);
     setDragPos({ x, y });
     scrollHostRef.current = findScrollHost(anchor);
@@ -2667,9 +2670,16 @@ function CampaignDetail({
       cleanup();
     }
 
+    /** 끄는 도중 브라우저 기본 드래그(텍스트·이미지·링크)가 끼어들지 않게. */
+    function blockNativeDrag(dragEvent: Event) {
+      dragEvent.preventDefault();
+    }
+
     function cleanup() {
       document.removeEventListener("pointermove", handleMove);
       document.removeEventListener("pointerup", handleUp);
+      document.removeEventListener("dragstart", blockNativeDrag);
+      document.removeEventListener("selectstart", blockNativeDrag);
       stopAutoScroll();
       scrollHostRef.current = null;
       dragKindRef.current = null;
@@ -2680,6 +2690,8 @@ function CampaignDetail({
 
     document.addEventListener("pointermove", handleMove);
     document.addEventListener("pointerup", handleUp);
+    document.addEventListener("dragstart", blockNativeDrag);
+    document.addEventListener("selectstart", blockNativeDrag);
   }
 
   function startDrag(
@@ -3184,7 +3196,7 @@ function CampaignDetail({
   }
 
   return (
-    <div className="campaign-page">
+    <div className={drag ? "campaign-page no-select" : "campaign-page"}>
       <header className="campaign-header">
         <div className="campaign-heading">
           <button className="back-button" onClick={onBack}>

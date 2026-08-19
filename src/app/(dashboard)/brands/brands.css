@@ -868,6 +868,13 @@
   gap: 10px;
 }
 
+/* 드래그 중에는 글자가 같이 끌려오지 않게 선택을 막는다 */
+.brand-mgmt .campaign-page.no-select,
+.brand-mgmt .campaign-page.no-select * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* 상위 분류 그리드 — 배경색은 설정에서 고른 반투명 색이 인라인으로 들어온다 */
 .brand-mgmt .section-card {
   border: 1px solid #e2e3e5;
