@@ -642,7 +642,9 @@ function normalizeBrand(raw: unknown): Brand | null {
             name:
               typeof section.name === "string" && section.name
                 ? section.name
-                : `분류 ${index + 1}`,
+                : section.id === DEFAULT_SECTION_ID
+                  ? DEFAULT_SECTION_NAME
+                  : `분류 ${index + 1}`,
             color:
               typeof section.color === "string" && /^#[0-9a-f]{6}$/i.test(section.color)
                 ? section.color
@@ -2697,7 +2699,8 @@ function CampaignDetail({
   }
 
   // 인플루언서 행은 입력칸투성이라 바로 끌면 값 편집과 부딪힌다. 그래서 빈 곳을
-  // 꾹 누르고 있을 때만 드래그로 넘어간다 — 누르는 동안 조금이라도 움직이면 취소.
+  // 잠깐 누르고 있을 때만 드래그로 넘어간다 — 누르는 동안 조금이라도 움직이면
+  // 취소되므로, 지연은 클릭과 구분할 만큼만 짧게 둔다.
   const pressRef = useRef<{ timer: number; x: number; y: number } | null>(null);
 
   function endPress() {
@@ -2724,7 +2727,7 @@ function CampaignDetail({
       timer: window.setTimeout(() => {
         pressRef.current = null;
         beginDrag({ kind: "influencer", id: influencer.id, label }, clientX, clientY, row);
-      }, 260),
+      }, 120),
     };
   }
 
@@ -4251,8 +4254,8 @@ function SettingsModal({
                 <div>
                   <h3>상위 분류</h3>
                   <p>
-                    그룹을 묶는 큰 분류입니다. 분류마다 그리드 배경색과 투명도를
-                    정할 수 있고, 기본 분류는 지울 수 없습니다.
+                    그룹을 묶는 큰 분류입니다. 분류마다 이름과 그리드 배경색,
+                    투명도를 정할 수 있습니다. 맨 처음 분류는 지울 수 없습니다.
                   </p>
                 </div>
               </div>
@@ -4268,7 +4271,6 @@ function SettingsModal({
                       className="section-name"
                       value={section.name}
                       aria-label={`${section.name} 이름`}
-                      disabled={section.id === DEFAULT_SECTION_ID}
                       onChange={(event) =>
                         setDraft({
                           ...draft,

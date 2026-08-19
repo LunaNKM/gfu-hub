@@ -964,11 +964,6 @@
   font-weight: 650;
 }
 
-.brand-mgmt .section-name:disabled {
-  background: var(--soft);
-  color: #8b8e93;
-}
-
 .brand-mgmt .section-palette {
   flex: 0 0 auto;
   display: flex;
