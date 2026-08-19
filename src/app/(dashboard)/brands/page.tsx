@@ -55,7 +55,9 @@ import { useAuth } from "@/hooks/useAuth";
 import "./brands.css";
 
 const EXCHANGE_RATE = 10;
-const DEFAULT_PARTNERS = ["RL", "CP", "DN"];
+const DEFAULT_PARTNERS = ["RL", "CP", "DN", "Bit"];
+/** 나중에 추가된 기본 협력사 — 예전에 저장된 브랜드에도 목록 끝에 채워 넣는다. */
+const BACKFILL_PARTNERS = ["Bit"];
 const DEFAULT_GROUPS = [
   "매크로",
   "미들",
@@ -65,6 +67,23 @@ const DEFAULT_GROUPS = [
   "마이크로 (동경계)",
 ];
 const UNASSIGNED_GROUP_ID = "group-unassigned";
+
+/** 상위 분류 — 그룹(하위 분류)들을 하나의 그리드로 묶는다. 지정 전에는 전부 '기본'. */
+const DEFAULT_SECTION_ID = "section-default";
+const DEFAULT_SECTION_NAME = "기본";
+const DEFAULT_SECTION_COLOR = "#8b8e93";
+const DEFAULT_SECTION_ALPHA = 0.1;
+/** 상위 분류 배경 프리셋 — 컬러 피커로 이 밖의 색도 고를 수 있다. */
+const SECTION_COLOR_PRESETS = [
+  "#8b8e93",
+  "#2f6df6",
+  "#12a150",
+  "#e8a33d",
+  "#e05252",
+  "#8b5cf6",
+  "#0ea5b7",
+  "#d9548f",
+];
 
 const PERIOD_IDS = [
   "25Q1",
@@ -85,11 +104,22 @@ type BrandVisibility = "visible" | "hidden";
 type Platform = "IG" | "TT" | "X" | "YT" | "기타";
 type MainView = "brands" | "crm" | "hidden";
 
+type Section = {
+  id: string;
+  name: string;
+  /** 그리드 배경 색상(hex). 실제 배경은 alpha 를 섞은 반투명이다. */
+  color: string;
+  /** 배경 불투명도 0~1. */
+  alpha: number;
+};
+
 type Group = {
   id: string;
   name: string;
   target: number;
   active: boolean;
+  /** 소속 상위 분류. 모르는 값이면 '기본'으로 되돌린다. */
+  sectionId: string;
 };
 
 type Influencer = {
@@ -118,6 +148,7 @@ type Period = {
   id: string;
   totalBudgetKrw: number;
   marginRate: number;
+  sections: Section[];
   groups: Group[];
   influencers: Influencer[];
 };
@@ -182,14 +213,39 @@ const newGroups = (): Group[] =>
     name,
     target: [2, 4, 3, 3, 8, 5][index] ?? 1,
     active: true,
+    sectionId: DEFAULT_SECTION_ID,
   }));
+
+const defaultSection = (): Section => ({
+  id: DEFAULT_SECTION_ID,
+  name: DEFAULT_SECTION_NAME,
+  color: DEFAULT_SECTION_COLOR,
+  alpha: DEFAULT_SECTION_ALPHA,
+});
+
+/** hex + alpha 를 CSS 색으로. 잘못된 hex 는 기본 무채색으로 떨어진다. */
+function sectionBackground(section: Section) {
+  const hex = /^#[0-9a-f]{6}$/i.test(section.color)
+    ? section.color
+    : DEFAULT_SECTION_COLOR;
+  const alpha = Math.min(1, Math.max(0, section.alpha));
+  const [r, g, b] = [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 function newPeriod(
   id: string,
   totalBudgetKrw = 50_000_000,
   marginRate = 20,
 ): Period {
-  return { id, totalBudgetKrw, marginRate, groups: newGroups(), influencers: [] };
+  return {
+    id,
+    totalBudgetKrw,
+    marginRate,
+    sections: [defaultSection()],
+    groups: newGroups(),
+    influencers: [],
+  };
 }
 
 /** 일괄 등록으로 만드는 기간 — 목표 인원은 사용자가 설정하기 전까지 0으로 둔다. */
@@ -198,6 +254,7 @@ function importedPeriod(id: string): Period {
     id,
     totalBudgetKrw: 0,
     marginRate: 20,
+    sections: [defaultSection()],
     groups: newGroups().map((group) => ({ ...group, target: 0 })),
     influencers: [],
   };
@@ -216,6 +273,7 @@ const seedBrands: Brand[] = [
         id: "26Q3",
         totalBudgetKrw: 50_000_000,
         marginRate: 20,
+        sections: [defaultSection()],
         groups: newGroups(),
         influencers: [
           {
@@ -330,6 +388,7 @@ const seedBrands: Brand[] = [
         id: "26Q3",
         totalBudgetKrw: 36_000_000,
         marginRate: 15,
+        sections: [defaultSection()],
         groups: newGroups().map((group, index) => ({
           ...group,
           target: [1, 3, 4, 2, 6, 4][index] ?? 1,
@@ -350,6 +409,7 @@ const seedBrands: Brand[] = [
         id: "26Q3",
         totalBudgetKrw: 80_000_000,
         marginRate: 18,
+        sections: [defaultSection()],
         groups: newGroups().map((group, index) => ({
           ...group,
           active: index < 4,
@@ -371,6 +431,7 @@ const seedBrands: Brand[] = [
         id: "26Q3",
         totalBudgetKrw: 42_000_000,
         marginRate: 20,
+        sections: [defaultSection()],
         groups: newGroups(),
         influencers: [],
       },
@@ -478,6 +539,17 @@ function sortPeriods(periods: Period[]) {
 }
 
 /** 활성 그룹만 드래그로 순서를 바꾼다. 비활성 그룹은 뒤에 그대로 붙여둔다. */
+/** 나중에 늘어난 기본 협력사를 예전 브랜드 목록 끝에 채운다. */
+function withBackfilledPartners(partners: string[]) {
+  const missing = BACKFILL_PARTNERS.filter((name) => !partners.includes(name));
+  return missing.length ? [...partners, ...missing] : partners;
+}
+
+/** 그룹을 다른 그룹 자리로. 상위 분류가 다르면 그 분류로 옮겨간다. */
+type DragKind = "group" | "section" | "influencer";
+type DragItem = { kind: DragKind; id: string; label: string };
+type DropTarget = { kind: "group" | "section"; id: string };
+
 function moveGroup(period: Period, fromId: string, toId: string): Period {
   if (fromId === toId) return period;
   const active = period.groups.filter((group) => group.active);
@@ -487,8 +559,33 @@ function moveGroup(period: Period, fromId: string, toId: string): Period {
   if (fromIndex === -1 || toIndex === -1) return period;
   const reordered = [...active];
   const [moved] = reordered.splice(fromIndex, 1);
-  reordered.splice(toIndex, 0, moved);
+  reordered.splice(toIndex, 0, { ...moved, sectionId: active[toIndex].sectionId });
   return { ...period, groups: [...reordered, ...inactive] };
+}
+
+/** 그룹을 상위 분류의 맨 끝으로. 비어 있는 분류에 떨어뜨릴 때 쓴다. */
+function moveGroupToSection(period: Period, groupId: string, sectionId: string): Period {
+  const target = period.groups.find((group) => group.id === groupId);
+  if (!target || target.sectionId === sectionId) return period;
+  const rest = period.groups.filter((group) => group.id !== groupId);
+  const lastIndex = rest.reduce(
+    (found, group, index) => (group.active && group.sectionId === sectionId ? index : found),
+    -1,
+  );
+  const next = [...rest];
+  next.splice(lastIndex + 1, 0, { ...target, sectionId });
+  return { ...period, groups: next };
+}
+
+function moveSection(period: Period, fromId: string, toId: string): Period {
+  if (fromId === toId) return period;
+  const fromIndex = period.sections.findIndex((section) => section.id === fromId);
+  const toIndex = period.sections.findIndex((section) => section.id === toId);
+  if (fromIndex === -1 || toIndex === -1) return period;
+  const reordered = [...period.sections];
+  const [moved] = reordered.splice(fromIndex, 1);
+  reordered.splice(toIndex, 0, moved);
+  return { ...period, sections: reordered };
 }
 
 function latestPeriodId(brand: Brand) {
@@ -535,22 +632,57 @@ function normalizeBrand(raw: unknown): Brand | null {
     };
   };
 
-  const normalizeGroups = (input: unknown): Group[] =>
-    Array.isArray(input) && input.length
+  /** 상위 분류 — 없던 문서에는 '기본' 하나만 만들어 준다. '기본'은 항상 존재한다. */
+  const normalizeSections = (input: unknown): Section[] => {
+    const parsed: Section[] = Array.isArray(input)
+      ? input.map((item, index) => {
+          const section = (item ?? {}) as Record<string, unknown>;
+          return {
+            id: typeof section.id === "string" ? section.id : `section-${index + 1}`,
+            name:
+              typeof section.name === "string" && section.name
+                ? section.name
+                : `분류 ${index + 1}`,
+            color:
+              typeof section.color === "string" && /^#[0-9a-f]{6}$/i.test(section.color)
+                ? section.color
+                : DEFAULT_SECTION_COLOR,
+            alpha:
+              typeof section.alpha === "number" && section.alpha >= 0 && section.alpha <= 1
+                ? section.alpha
+                : DEFAULT_SECTION_ALPHA,
+          };
+        })
+      : [];
+    return parsed.some((section) => section.id === DEFAULT_SECTION_ID)
+      ? parsed
+      : [defaultSection(), ...parsed];
+  };
+
+  const normalizeGroups = (input: unknown, sections: Section[]): Group[] => {
+    const known = new Set(sections.map((section) => section.id));
+    return Array.isArray(input) && input.length
       ? input.map((item, index) => {
           const group = (item ?? {}) as Record<string, unknown>;
+          const sectionId =
+            typeof group.sectionId === "string" && known.has(group.sectionId)
+              ? group.sectionId
+              : DEFAULT_SECTION_ID;
           return {
             id: typeof group.id === "string" ? group.id : `group-${index + 1}`,
             name: typeof group.name === "string" ? group.name : `그룹 ${index + 1}`,
             target: typeof group.target === "number" ? group.target : 0,
             active: group.active !== false,
+            sectionId,
           };
         })
       : newGroups();
+  };
 
   const periods: Period[] = Array.isArray(value.periods)
     ? value.periods.map((item, index) => {
         const period = (item ?? {}) as Record<string, unknown>;
+        const sections = normalizeSections(period.sections);
         return {
           id:
             typeof period.id === "string" && PERIOD_IDS.includes(period.id)
@@ -560,7 +692,8 @@ function normalizeBrand(raw: unknown): Brand | null {
             typeof period.totalBudgetKrw === "number" ? period.totalBudgetKrw : 0,
           marginRate:
             typeof period.marginRate === "number" ? period.marginRate : 20,
-          groups: normalizeGroups(period.groups),
+          sections,
+          groups: normalizeGroups(period.groups, sections),
           influencers: Array.isArray(period.influencers)
             ? period.influencers.map(normalizeInfluencer)
             : [],
@@ -573,7 +706,8 @@ function normalizeBrand(raw: unknown): Brand | null {
           totalBudgetKrw:
             typeof value.totalBudgetKrw === "number" ? value.totalBudgetKrw : 0,
           marginRate: typeof value.marginRate === "number" ? value.marginRate : 20,
-          groups: normalizeGroups(value.groups),
+          sections: [defaultSection()],
+          groups: normalizeGroups(value.groups, [defaultSection()]),
           influencers: Array.isArray(value.influencers)
             ? value.influencers.map(normalizeInfluencer)
             : [],
@@ -586,7 +720,9 @@ function normalizeBrand(raw: unknown): Brand | null {
     visibility: value.visibility === "hidden" ? "hidden" : "visible",
     logoUrl: typeof value.logoUrl === "string" ? value.logoUrl : undefined,
     partners: Array.isArray(value.partners)
-      ? value.partners.filter((item): item is string => typeof item === "string")
+      ? withBackfilledPartners(
+          value.partners.filter((item): item is string => typeof item === "string"),
+        )
       : DEFAULT_PARTNERS,
     concepts: Array.isArray(value.concepts)
       ? value.concepts.filter((item): item is string => typeof item === "string")
@@ -2382,17 +2518,37 @@ function CampaignDetail({
         period.groups.filter((group) => group.active).map((group) => group.id),
       ),
   );
-  const [dragGroupId, setDragGroupId] = useState<string | null>(null);
-  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
+  const [drag, setDrag] = useState<DragItem | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
   const groupCardRefs = useRef(new Map<string, HTMLElement>());
+  const sectionCardRefs = useRef(new Map<string, HTMLElement>());
+  const dragKindRef = useRef<DragKind | null>(null);
   const scrollRafRef = useRef<number | null>(null);
   const scrollHostRef = useRef<HTMLElement | null>(null);
 
-  function hitTestGroup(clientY: number): string | null {
-    for (const [id, el] of groupCardRefs.current) {
+  function hitTest(refs: Map<string, HTMLElement>, clientY: number): string | null {
+    for (const [id, el] of refs) {
       const rect = el.getBoundingClientRect();
       if (clientY >= rect.top && clientY <= rect.bottom) return id;
+    }
+    return null;
+  }
+
+  /**
+   * 끌고 있는 대상마다 받아주는 곳이 다르다. 그룹 카드는 상위 분류 안에 들어
+   * 있으므로 항상 그룹을 먼저 맞혀 보고, 빈 분류일 때만 분류가 받는다.
+   */
+  function findDropTarget(kind: DragKind, clientY: number): DropTarget | null {
+    if (kind === "section") {
+      const id = hitTest(sectionCardRefs.current, clientY);
+      return id ? { kind: "section", id } : null;
+    }
+    const groupId = hitTest(groupCardRefs.current, clientY);
+    if (groupId) return { kind: "group", id: groupId };
+    if (kind === "group") {
+      const sectionId = hitTest(sectionCardRefs.current, clientY);
+      if (sectionId) return { kind: "section", id: sectionId };
     }
     return null;
   }
@@ -2447,34 +2603,65 @@ function CampaignDetail({
     const step = () => {
       if (host) host.scrollTop += speed;
       else window.scrollBy(0, speed);
-      setDragOverGroupId(hitTestGroup(clientY));
+      if (dragKindRef.current) {
+        setDropTarget(findDropTarget(dragKindRef.current, clientY));
+      }
       scrollRafRef.current = requestAnimationFrame(step);
     };
     scrollRafRef.current = requestAnimationFrame(step);
   }
 
-  /** 커서를 따라오는 커스텀 드래그 — 그룹 헤더의 잡기 아이콘에서 시작한다. */
-  function startGroupDrag(groupId: string, event: React.PointerEvent) {
-    event.preventDefault();
-    setDragGroupId(groupId);
-    setDragPos({ x: event.clientX, y: event.clientY });
-    scrollHostRef.current = findScrollHost(
-      groupCardRefs.current.get(groupId) ?? (event.currentTarget as HTMLElement),
-    );
+  /** 놓았을 때 실제로 데이터를 옮긴다. */
+  function applyDrop(item: DragItem, target: DropTarget) {
+    if (item.kind === "section") {
+      if (target.kind === "section" && target.id !== item.id) {
+        onUpdate((current) => moveSection(current, item.id, target.id));
+      }
+      return;
+    }
+    if (item.kind === "group") {
+      if (target.kind === "group") {
+        if (target.id !== item.id) {
+          onUpdate((current) => moveGroup(current, item.id, target.id));
+        }
+      } else {
+        onUpdate((current) => moveGroupToSection(current, item.id, target.id));
+      }
+      return;
+    }
+    if (target.kind === "group") {
+      onUpdate((current) => ({
+        ...current,
+        influencers: current.influencers.map((influencer) =>
+          influencer.id === item.id
+            ? { ...influencer, groupId: target.id }
+            : influencer,
+        ),
+      }));
+    }
+  }
 
-    let overId: string | null = null;
+  /**
+   * 커서를 따라오는 커스텀 드래그. 상위 분류·그룹은 잡기 아이콘에서, 인플루언서는
+   * 행을 꾹 누르고 있으면 시작한다.
+   */
+  function beginDrag(item: DragItem, x: number, y: number, anchor: HTMLElement | null) {
+    dragKindRef.current = item.kind;
+    setDrag(item);
+    setDragPos({ x, y });
+    scrollHostRef.current = findScrollHost(anchor);
+
+    let over: DropTarget | null = null;
 
     function handleMove(moveEvent: PointerEvent) {
       setDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
-      overId = hitTestGroup(moveEvent.clientY);
-      setDragOverGroupId(overId);
+      over = findDropTarget(item.kind, moveEvent.clientY);
+      setDropTarget(over);
       updateAutoScroll(moveEvent.clientY);
     }
 
     function handleUp() {
-      if (overId && overId !== groupId) {
-        onUpdate((current) => moveGroup(current, groupId, overId!));
-      }
+      if (over) applyDrop(item, over);
       cleanup();
     }
 
@@ -2483,13 +2670,370 @@ function CampaignDetail({
       document.removeEventListener("pointerup", handleUp);
       stopAutoScroll();
       scrollHostRef.current = null;
-      setDragGroupId(null);
-      setDragOverGroupId(null);
+      dragKindRef.current = null;
+      setDrag(null);
+      setDropTarget(null);
       setDragPos(null);
     }
 
     document.addEventListener("pointermove", handleMove);
     document.addEventListener("pointerup", handleUp);
+  }
+
+  function startDrag(
+    kind: "group" | "section",
+    id: string,
+    label: string,
+    event: React.PointerEvent,
+  ) {
+    event.preventDefault();
+    const refs = kind === "group" ? groupCardRefs : sectionCardRefs;
+    beginDrag(
+      { kind, id, label },
+      event.clientX,
+      event.clientY,
+      refs.current.get(id) ?? (event.currentTarget as HTMLElement),
+    );
+  }
+
+  // 인플루언서 행은 입력칸투성이라 바로 끌면 값 편집과 부딪힌다. 그래서 빈 곳을
+  // 꾹 누르고 있을 때만 드래그로 넘어간다 — 누르는 동안 조금이라도 움직이면 취소.
+  const pressRef = useRef<{ timer: number; x: number; y: number } | null>(null);
+
+  function endPress() {
+    if (!pressRef.current) return;
+    window.clearTimeout(pressRef.current.timer);
+    pressRef.current = null;
+  }
+
+  function startInfluencerPress(
+    influencer: Influencer,
+    event: React.PointerEvent<HTMLDivElement>,
+  ) {
+    if (event.button !== 0) return;
+    if ((event.target as HTMLElement).closest("input, select, textarea, button, a, label")) {
+      return;
+    }
+    const row = event.currentTarget;
+    const { clientX, clientY } = event;
+    const label = influencer.handle ? `@${influencer.handle}` : "인플루언서";
+    endPress();
+    pressRef.current = {
+      x: clientX,
+      y: clientY,
+      timer: window.setTimeout(() => {
+        pressRef.current = null;
+        beginDrag({ kind: "influencer", id: influencer.id, label }, clientX, clientY, row);
+      }, 260),
+    };
+  }
+
+  function movePress(event: React.PointerEvent<HTMLDivElement>) {
+    const press = pressRef.current;
+    if (!press) return;
+    if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > 8) endPress();
+  }
+
+  function renderGroupCard(group: Group) {
+    const items = period.influencers.filter(
+      (influencer) => influencer.groupId === group.id,
+    );
+    const confirmed = items.filter(
+      (influencer) => influencer.status === "확정",
+    ).length;
+    const isOpen = openGroups.has(group.id);
+    return (
+      <article
+        className={[
+          "group-card",
+          drag?.kind === "group" && drag.id === group.id ? "dragging" : "",
+          dropTarget?.kind === "group" &&
+          dropTarget.id === group.id &&
+          drag?.id !== group.id
+            ? "drag-over"
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        key={group.id}
+        ref={(el) => {
+          if (el) groupCardRefs.current.set(group.id, el);
+          else groupCardRefs.current.delete(group.id);
+        }}
+      >
+        <div className="group-card-header">
+          <button
+            type="button"
+            className="group-drag-handle"
+            aria-label={`${group.name} 순서 변경`}
+            onPointerDown={(event) =>
+              startDrag("group", group.id, group.name, event)
+            }
+          >
+            <GripVertical size={14} />
+          </button>
+          <div
+            role="button"
+            tabIndex={0}
+            className="group-toggle"
+            onClick={() =>
+              setOpenGroups((current) => {
+                const next = new Set(current);
+                if (next.has(group.id)) next.delete(group.id);
+                else next.add(group.id);
+                return next;
+              })
+            }
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              setOpenGroups((current) => {
+                const next = new Set(current);
+                if (next.has(group.id)) next.delete(group.id);
+                else next.add(group.id);
+                return next;
+              });
+            }}
+          >
+            <span className="group-chevron">
+              {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </span>
+            <div>
+              <strong>{group.name}</strong>
+              <span className={confirmed >= group.target ? "met" : ""}>
+                {numFmt(confirmed)} / {numFmt(group.target)}명
+              </span>
+            </div>
+            <GroupEditPopover
+              group={group}
+              onRename={(name) => renameGroup(group.id, name)}
+              onTarget={(target) => retargetGroup(group.id, target)}
+              onDelete={() => deleteGroup(group.id)}
+            />
+            <i>
+              <b style={{ width: `${percent(confirmed, group.target)}%` }} />
+            </i>
+            <span
+              className={
+                group.target === 0
+                  ? "status-unset"
+                  : confirmed >= group.target
+                    ? "status-done"
+                    : "status-open"
+              }
+            >
+              {group.target === 0
+                ? "미설정"
+                : confirmed >= group.target
+                  ? "달성"
+                  : `${numFmt(Math.max(group.target - confirmed, 0))}명 부족`}
+            </span>
+          </div>
+        </div>
+        {isOpen && (
+          <div className="group-body">
+            {!!items.length && (
+              <div className="influencer-table">
+                <div className="table-head">
+                  <span>계정</span>
+                  <span>팔로워</span>
+                  <span>단가 (JPY)</span>
+                  <span>광고 포함 (JPY)</span>
+                  <span>그룹</span>
+                  <span>협력사</span>
+                  <span>콘셉트</span>
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                {items.map((influencer) => {
+                  const duplicate = isDuplicate(period, influencer);
+                  const key = crmKey(influencer);
+                  return (
+                    <div
+                      className={[
+                        "table-row",
+                        duplicate ? "duplicate" : "",
+                        drag?.kind === "influencer" && drag.id === influencer.id
+                          ? "dragging"
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      key={influencer.id}
+                      onPointerDown={(event) =>
+                        startInfluencerPress(influencer, event)
+                      }
+                      onPointerMove={movePress}
+                      onPointerUp={endPress}
+                      onPointerLeave={endPress}
+                    >
+                      <div className="account-cell">
+                        <label
+                          className="confirm-check"
+                          title={influencer.status === "확정" ? "확정" : "미진행"}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={influencer.status === "확정"}
+                            aria-label={`${influencer.handle} 확정 여부`}
+                            onChange={(event) =>
+                              updateInfluencer(influencer.id, {
+                                status: event.target.checked ? "확정" : "미진행",
+                              })
+                            }
+                          />
+                          <span className="custom-check">
+                            {influencer.status === "확정" && <Check size={11} />}
+                          </span>
+                        </label>
+                        <label>
+                          <span>@</span>
+                          <input
+                            value={influencer.handle}
+                            placeholder="account"
+                            onChange={(event) =>
+                              updateInfluencer(influencer.id, {
+                                handle: event.target.value.replace(/^@/, ""),
+                              })
+                            }
+                          />
+                        </label>
+                        <PlatformLink
+                          platform={influencer.platform}
+                          url={influencer.profileUrl}
+                        />
+                        {duplicate && (
+                          <span className="duplicate-tag">
+                            <AlertTriangle size={11} /> 중복
+                          </span>
+                        )}
+                      </div>
+                      <NumberInput
+                        className="cell-input"
+                        value={influencer.followers}
+                        placeholder="-"
+                        ariaLabel={`${influencer.handle} 팔로워`}
+                        onChange={(value) =>
+                          updateInfluencer(influencer.id, { followers: value })
+                        }
+                      />
+                      <div className="rate-input">
+                        <span>¥</span>
+                        <NumberInput
+                          value={influencer.rateJpy}
+                          placeholder="-"
+                          ariaLabel={`${influencer.handle} 기본 단가`}
+                          onChange={(value) =>
+                            updateInfluencer(influencer.id, { rateJpy: value })
+                          }
+                        />
+                      </div>
+                      <div className="rate-input accent">
+                        <span>¥</span>
+                        <NumberInput
+                          value={influencer.adRateJpy}
+                          placeholder="-"
+                          ariaLabel={`${influencer.handle} 광고 포함 단가`}
+                          onChange={(value) =>
+                            updateInfluencer(influencer.id, { adRateJpy: value })
+                          }
+                        />
+                      </div>
+                      <select
+                        value={influencer.groupId}
+                        aria-label={`${influencer.handle} 그룹`}
+                        onChange={(event) =>
+                          updateInfluencer(influencer.id, {
+                            groupId: event.target.value,
+                          })
+                        }
+                      >
+                        {period.groups.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.name}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={influencer.partner}
+                        aria-label={`${influencer.handle} 협력사`}
+                        onChange={(event) =>
+                          updateInfluencer(influencer.id, {
+                            partner: event.target.value,
+                          })
+                        }
+                      >
+                        {brand.partners.map((partner) => (
+                          <option key={partner}>{partner}</option>
+                        ))}
+                      </select>
+                      <select
+                        className="concept-select"
+                        value={influencer.concept}
+                        aria-label={`${influencer.handle} 콘셉트`}
+                        onChange={(event) =>
+                          updateInfluencer(influencer.id, {
+                            concept: event.target.value,
+                          })
+                        }
+                      >
+                        <option value="">미지정</option>
+                        {brand.concepts.map((concept) => (
+                          <option key={concept} value={concept}>
+                            {concept}
+                          </option>
+                        ))}
+                      </select>
+                      <CommentButton
+                        value={influencer.comment}
+                        onChange={(value) => onSyncComment(key, value)}
+                      />
+                      <CommentButton
+                        variant="brand"
+                        value={influencer.brandComment}
+                        placeholder="공유 링크로 브랜드가 남긴 코멘트입니다"
+                        onChange={(value) =>
+                          updateInfluencer(influencer.id, { brandComment: value })
+                        }
+                      />
+                      <button
+                        className="row-delete"
+                        aria-label="인플루언서 삭제"
+                        onClick={() =>
+                          onUpdate((current) => ({
+                            ...current,
+                            influencers: current.influencers.filter(
+                              (item) => item.id !== influencer.id,
+                            ),
+                          }))
+                        }
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {!items.length && (
+              <div className="group-empty">
+                <Users size={18} />
+                아직 등록된 인플루언서가 없습니다.
+              </div>
+            )}
+            <div className="group-actions">
+              <button onClick={() => addBlank(group.id)}>
+                <Plus size={15} /> 한 명 추가
+              </button>
+              <button onClick={() => onImport(group.id)}>
+                <CopyPlus size={15} /> 엑셀에서 붙여넣기
+              </button>
+            </div>
+          </div>
+        )}
+      </article>
+    );
   }
 
   // --- 되돌리기 (Ctrl+Z) ---------------------------------------------
@@ -2577,7 +3121,13 @@ function CampaignDetail({
         ? remaining
         : [
             ...remaining,
-            { id: UNASSIGNED_GROUP_ID, name: "미분류", target: 0, active: true },
+            {
+              id: UNASSIGNED_GROUP_ID,
+              name: "미분류",
+              target: 0,
+              active: true,
+              sectionId: DEFAULT_SECTION_ID,
+            },
           ];
       return {
         ...current,
@@ -2705,300 +3255,67 @@ function CampaignDetail({
           </div>
 
           <div className="group-stack">
-            {metrics.activeGroups.map((group) => {
-              const items = period.influencers.filter(
-                (influencer) => influencer.groupId === group.id,
-              );
-              const confirmed = items.filter(
-                (influencer) => influencer.status === "확정",
-              ).length;
-              const isOpen = openGroups.has(group.id);
-              return (
-                <article
-                  className={[
-                    "group-card",
-                    dragGroupId === group.id ? "dragging" : "",
-                    dragOverGroupId === group.id && dragGroupId !== group.id ? "drag-over" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  key={group.id}
-                  ref={(el) => {
-                    if (el) groupCardRefs.current.set(group.id, el);
-                    else groupCardRefs.current.delete(group.id);
-                  }}
-                >
-                  <div className="group-card-header">
-                    <button
-                      type="button"
-                      className="group-drag-handle"
-                      aria-label={`${group.name} 순서 변경`}
-                      onPointerDown={(event) => startGroupDrag(group.id, event)}
-                    >
-                      <GripVertical size={14} />
-                    </button>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      className="group-toggle"
-                      onClick={() =>
-                        setOpenGroups((current) => {
-                          const next = new Set(current);
-                          if (next.has(group.id)) next.delete(group.id);
-                          else next.add(group.id);
-                          return next;
-                        })
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter" && event.key !== " ") return;
-                        event.preventDefault();
-                        setOpenGroups((current) => {
-                          const next = new Set(current);
-                          if (next.has(group.id)) next.delete(group.id);
-                          else next.add(group.id);
-                          return next;
-                        });
+            {period.sections.length <= 1
+              ? metrics.activeGroups.map(renderGroupCard)
+              : period.sections.map((section) => {
+                  const sectionGroups = metrics.activeGroups.filter(
+                    (group) => group.sectionId === section.id,
+                  );
+                  return (
+                    <section
+                      className={[
+                        "section-card",
+                        drag?.kind === "section" && drag.id === section.id ? "dragging" : "",
+                        dropTarget?.kind === "section" && dropTarget.id === section.id
+                          ? "drag-over"
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      key={section.id}
+                      style={{ background: sectionBackground(section) }}
+                      ref={(el) => {
+                        if (el) sectionCardRefs.current.set(section.id, el);
+                        else sectionCardRefs.current.delete(section.id);
                       }}
                     >
-                      <span className="group-chevron">
-                        {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                      </span>
-                      <div>
-                        <strong>{group.name}</strong>
-                        <span className={confirmed >= group.target ? "met" : ""}>
-                          {numFmt(confirmed)} / {numFmt(group.target)}명
-                        </span>
-                      </div>
-                      <GroupEditPopover
-                        group={group}
-                        onRename={(name) => renameGroup(group.id, name)}
-                        onTarget={(target) => retargetGroup(group.id, target)}
-                        onDelete={() => deleteGroup(group.id)}
-                      />
-                      <i>
-                        <b style={{ width: `${percent(confirmed, group.target)}%` }} />
-                      </i>
-                      <span
-                        className={
-                          group.target === 0
-                            ? "status-unset"
-                            : confirmed >= group.target
-                              ? "status-done"
-                              : "status-open"
-                        }
-                      >
-                        {group.target === 0
-                          ? "미설정"
-                          : confirmed >= group.target
-                            ? "달성"
-                            : `${numFmt(Math.max(group.target - confirmed, 0))}명 부족`}
-                      </span>
-                    </div>
-                  </div>
-                  {isOpen && (
-                    <div className="group-body">
-                      {!!items.length && (
-                        <div className="influencer-table">
-                          <div className="table-head">
-                            <span>계정</span>
-                            <span>팔로워</span>
-                            <span>단가 (JPY)</span>
-                            <span>광고 포함 (JPY)</span>
-                            <span>그룹</span>
-                            <span>협력사</span>
-                            <span>콘셉트</span>
-                            <span />
-                            <span />
-                            <span />
-                          </div>
-                          {items.map((influencer) => {
-                            const duplicate = isDuplicate(period, influencer);
-                            const key = crmKey(influencer);
-                            return (
-                              <div
-                                className={duplicate ? "table-row duplicate" : "table-row"}
-                                key={influencer.id}
-                              >
-                                <div className="account-cell">
-                                  <label
-                                    className="confirm-check"
-                                    title={influencer.status === "확정" ? "확정" : "미진행"}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={influencer.status === "확정"}
-                                      aria-label={`${influencer.handle} 확정 여부`}
-                                      onChange={(event) =>
-                                        updateInfluencer(influencer.id, {
-                                          status: event.target.checked ? "확정" : "미진행",
-                                        })
-                                      }
-                                    />
-                                    <span className="custom-check">
-                                      {influencer.status === "확정" && <Check size={11} />}
-                                    </span>
-                                  </label>
-                                  <label>
-                                    <span>@</span>
-                                    <input
-                                      value={influencer.handle}
-                                      placeholder="account"
-                                      onChange={(event) =>
-                                        updateInfluencer(influencer.id, {
-                                          handle: event.target.value.replace(/^@/, ""),
-                                        })
-                                      }
-                                    />
-                                  </label>
-                                  <PlatformLink
-                                    platform={influencer.platform}
-                                    url={influencer.profileUrl}
-                                  />
-                                  {duplicate && (
-                                    <span className="duplicate-tag">
-                                      <AlertTriangle size={11} /> 중복
-                                    </span>
-                                  )}
-                                </div>
-                                <NumberInput
-                                  className="cell-input"
-                                  value={influencer.followers}
-                                  placeholder="-"
-                                  ariaLabel={`${influencer.handle} 팔로워`}
-                                  onChange={(value) =>
-                                    updateInfluencer(influencer.id, { followers: value })
-                                  }
-                                />
-                                <div className="rate-input">
-                                  <span>¥</span>
-                                  <NumberInput
-                                    value={influencer.rateJpy}
-                                    placeholder="-"
-                                    ariaLabel={`${influencer.handle} 기본 단가`}
-                                    onChange={(value) =>
-                                      updateInfluencer(influencer.id, { rateJpy: value })
-                                    }
-                                  />
-                                </div>
-                                <div className="rate-input accent">
-                                  <span>¥</span>
-                                  <NumberInput
-                                    value={influencer.adRateJpy}
-                                    placeholder="-"
-                                    ariaLabel={`${influencer.handle} 광고 포함 단가`}
-                                    onChange={(value) =>
-                                      updateInfluencer(influencer.id, { adRateJpy: value })
-                                    }
-                                  />
-                                </div>
-                                <select
-                                  value={influencer.groupId}
-                                  aria-label={`${influencer.handle} 그룹`}
-                                  onChange={(event) =>
-                                    updateInfluencer(influencer.id, {
-                                      groupId: event.target.value,
-                                    })
-                                  }
-                                >
-                                  {period.groups.map((option) => (
-                                    <option key={option.id} value={option.id}>
-                                      {option.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                <select
-                                  value={influencer.partner}
-                                  aria-label={`${influencer.handle} 협력사`}
-                                  onChange={(event) =>
-                                    updateInfluencer(influencer.id, {
-                                      partner: event.target.value,
-                                    })
-                                  }
-                                >
-                                  {brand.partners.map((partner) => (
-                                    <option key={partner}>{partner}</option>
-                                  ))}
-                                </select>
-                                <select
-                                  className="concept-select"
-                                  value={influencer.concept}
-                                  aria-label={`${influencer.handle} 콘셉트`}
-                                  onChange={(event) =>
-                                    updateInfluencer(influencer.id, {
-                                      concept: event.target.value,
-                                    })
-                                  }
-                                >
-                                  <option value="">미지정</option>
-                                  {brand.concepts.map((concept) => (
-                                    <option key={concept} value={concept}>
-                                      {concept}
-                                    </option>
-                                  ))}
-                                </select>
-                                <CommentButton
-                                  value={influencer.comment}
-                                  onChange={(value) => onSyncComment(key, value)}
-                                />
-                                <CommentButton
-                                  variant="brand"
-                                  value={influencer.brandComment}
-                                  placeholder="공유 링크로 브랜드가 남긴 코멘트입니다"
-                                  onChange={(value) =>
-                                    updateInfluencer(influencer.id, { brandComment: value })
-                                  }
-                                />
-                                <button
-                                  className="row-delete"
-                                  aria-label="인플루언서 삭제"
-                                  onClick={() =>
-                                    onUpdate((current) => ({
-                                      ...current,
-                                      influencers: current.influencers.filter(
-                                        (item) => item.id !== influencer.id,
-                                      ),
-                                    }))
-                                  }
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                      {!items.length && (
-                        <div className="group-empty">
-                          <Users size={18} />
-                          아직 등록된 인플루언서가 없습니다.
-                        </div>
-                      )}
-                      <div className="group-actions">
-                        <button onClick={() => addBlank(group.id)}>
-                          <Plus size={15} /> 한 명 추가
+                      <header className="section-card-header">
+                        <button
+                          type="button"
+                          className="group-drag-handle"
+                          aria-label={`${section.name} 순서 변경`}
+                          onPointerDown={(event) =>
+                            startDrag("section", section.id, section.name, event)
+                          }
+                        >
+                          <GripVertical size={14} />
                         </button>
-                        <button onClick={() => onImport(group.id)}>
-                          <CopyPlus size={15} /> 엑셀에서 붙여넣기
-                        </button>
+                        <strong>{section.name}</strong>
+                        <span>{numFmt(sectionGroups.length)}개 그룹</span>
+                      </header>
+                      <div className="section-body">
+                        {sectionGroups.length ? (
+                          sectionGroups.map(renderGroupCard)
+                        ) : (
+                          <p className="section-empty">그룹을 여기로 끌어다 놓으세요</p>
+                        )}
                       </div>
-                    </div>
-                  )}
-                </article>
-              );
-            })}
+                    </section>
+                  );
+                })}
           </div>
         </section>
 
         <Dashboard brand={brand} period={period} />
       </div>
 
-      {dragGroupId && dragPos && (
+      {drag && dragPos && (
         <div
           className="group-drag-ghost"
           style={{ left: dragPos.x, top: dragPos.y }}
         >
           <GripVertical size={13} />
-          {metrics.activeGroups.find((group) => group.id === dragGroupId)?.name}
+          {drag.label}
         </div>
       )}
 
@@ -3843,6 +4160,8 @@ function SettingsModal({
   const [visibility, setVisibility] = useState(brand.visibility);
   const [draft, setDraft] = useState<Period>(() => structuredClone(period));
   const [customGroup, setCustomGroup] = useState("");
+  const [newGroupSectionId, setNewGroupSectionId] = useState(DEFAULT_SECTION_ID);
+  const [customSection, setCustomSection] = useState("");
   const [partner, setPartner] = useState("");
   const [concept, setConcept] = useState("");
   const usable = draft.totalBudgetKrw * (1 - draft.marginRate / 100);
@@ -3930,6 +4249,159 @@ function SettingsModal({
             <div className="form-section">
               <div className="form-section-heading">
                 <div>
+                  <h3>상위 분류</h3>
+                  <p>
+                    그룹을 묶는 큰 분류입니다. 분류마다 그리드 배경색과 투명도를
+                    정할 수 있고, 기본 분류는 지울 수 없습니다.
+                  </p>
+                </div>
+              </div>
+              <div className="section-settings">
+                {draft.sections.map((section) => (
+                  <div className="section-setting" key={section.id}>
+                    <span
+                      className="section-swatch"
+                      style={{ background: sectionBackground(section) }}
+                      aria-hidden
+                    />
+                    <input
+                      className="section-name"
+                      value={section.name}
+                      aria-label={`${section.name} 이름`}
+                      disabled={section.id === DEFAULT_SECTION_ID}
+                      onChange={(event) =>
+                        setDraft({
+                          ...draft,
+                          sections: draft.sections.map((candidate) =>
+                            candidate.id === section.id
+                              ? { ...candidate, name: event.target.value }
+                              : candidate,
+                          ),
+                        })
+                      }
+                    />
+                    <div className="section-palette">
+                      {SECTION_COLOR_PRESETS.map((preset) => (
+                        <button
+                          type="button"
+                          key={preset}
+                          className={
+                            section.color.toLowerCase() === preset
+                              ? "section-chip active"
+                              : "section-chip"
+                          }
+                          style={{ background: preset }}
+                          aria-label={`${section.name} 색상 ${preset}`}
+                          onClick={() =>
+                            setDraft({
+                              ...draft,
+                              sections: draft.sections.map((candidate) =>
+                                candidate.id === section.id
+                                  ? { ...candidate, color: preset }
+                                  : candidate,
+                              ),
+                            })
+                          }
+                        />
+                      ))}
+                      <input
+                        type="color"
+                        className="section-picker"
+                        value={section.color}
+                        aria-label={`${section.name} 사용자 색상`}
+                        onChange={(event) =>
+                          setDraft({
+                            ...draft,
+                            sections: draft.sections.map((candidate) =>
+                              candidate.id === section.id
+                                ? { ...candidate, color: event.target.value }
+                                : candidate,
+                            ),
+                          })
+                        }
+                      />
+                    </div>
+                    <label className="section-alpha">
+                      <input
+                        type="range"
+                        min="0"
+                        max="60"
+                        value={Math.round(section.alpha * 100)}
+                        aria-label={`${section.name} 투명도`}
+                        onChange={(event) =>
+                          setDraft({
+                            ...draft,
+                            sections: draft.sections.map((candidate) =>
+                              candidate.id === section.id
+                                ? { ...candidate, alpha: Number(event.target.value) / 100 }
+                                : candidate,
+                            ),
+                          })
+                        }
+                      />
+                      <span>{Math.round(section.alpha * 100)}%</span>
+                    </label>
+                    {section.id !== DEFAULT_SECTION_ID && (
+                      <button
+                        type="button"
+                        className="icon-button danger"
+                        aria-label={`${section.name} 삭제`}
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            sections: draft.sections.filter(
+                              (candidate) => candidate.id !== section.id,
+                            ),
+                            groups: draft.groups.map((group) =>
+                              group.sectionId === section.id
+                                ? { ...group, sectionId: DEFAULT_SECTION_ID }
+                                : group,
+                            ),
+                          })
+                        }
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="inline-add">
+                <input
+                  placeholder="새 상위 분류 이름"
+                  value={customSection}
+                  onChange={(event) => setCustomSection(event.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!customSection.trim()) return;
+                    setDraft({
+                      ...draft,
+                      sections: [
+                        ...draft.sections,
+                        {
+                          id: `section-${Date.now()}`,
+                          name: customSection.trim(),
+                          color:
+                            SECTION_COLOR_PRESETS[
+                              draft.sections.length % SECTION_COLOR_PRESETS.length
+                            ],
+                          alpha: DEFAULT_SECTION_ALPHA,
+                        },
+                      ],
+                    });
+                    setCustomSection("");
+                  }}
+                >
+                  <Plus size={15} /> 분류 추가
+                </button>
+              </div>
+            </div>
+
+            <div className="form-section">
+              <div className="form-section-heading">
+                <div>
                   <h3>그룹 및 목표 인원</h3>
                   <p>
                     {periodLabel(period.id)} 기간에서 사용할 그룹을 활성화하고
@@ -3963,6 +4435,28 @@ function SettingsModal({
                       </span>
                       <strong>{group.name}</strong>
                     </label>
+                    <select
+                      className="group-section-select"
+                      value={group.sectionId}
+                      disabled={!group.active}
+                      aria-label={`${group.name} 상위 분류`}
+                      onChange={(event) =>
+                        setDraft({
+                          ...draft,
+                          groups: draft.groups.map((candidate) =>
+                            candidate.id === group.id
+                              ? { ...candidate, sectionId: event.target.value }
+                              : candidate,
+                          ),
+                        })
+                      }
+                    >
+                      {draft.sections.map((section) => (
+                        <option key={section.id} value={section.id}>
+                          {section.name}
+                        </option>
+                      ))}
+                    </select>
                     <label className="target-input">
                       <input
                         type="number"
@@ -3992,6 +4486,18 @@ function SettingsModal({
                   value={customGroup}
                   onChange={(event) => setCustomGroup(event.target.value)}
                 />
+                <select
+                  className="group-section-select"
+                  value={newGroupSectionId}
+                  aria-label="새 그룹의 상위 분류"
+                  onChange={(event) => setNewGroupSectionId(event.target.value)}
+                >
+                  {draft.sections.map((section) => (
+                    <option key={section.id} value={section.id}>
+                      {section.name}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   onClick={() => {
@@ -4005,6 +4511,7 @@ function SettingsModal({
                           name: customGroup.trim(),
                           target: 1,
                           active: true,
+                          sectionId: newGroupSectionId,
                         },
                       ],
                     });
@@ -4371,7 +4878,13 @@ function BulkImportModal({
         ? period.groups
         : [
             ...period.groups,
-            { id: UNASSIGNED_GROUP_ID, name: "미분류", target: 0, active: true },
+            {
+              id: UNASSIGNED_GROUP_ID,
+              name: "미분류",
+              target: 0,
+              active: true,
+              sectionId: DEFAULT_SECTION_ID,
+            },
           ];
       const influencers = [...period.influencers];
       for (const row of incoming) {

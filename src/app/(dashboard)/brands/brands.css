@@ -868,6 +868,166 @@
   gap: 10px;
 }
 
+/* 상위 분류 그리드 — 배경색은 설정에서 고른 반투명 색이 인라인으로 들어온다 */
+.brand-mgmt .section-card {
+  border: 1px solid #e2e3e5;
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.brand-mgmt .section-card.dragging {
+  opacity: 0.45;
+}
+
+.brand-mgmt .section-card.drag-over {
+  box-shadow: 0 0 0 2px var(--blue) inset;
+}
+
+.brand-mgmt .section-card-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 2px;
+}
+
+.brand-mgmt .section-card-header .group-drag-handle {
+  align-self: center;
+  height: 22px;
+}
+
+.brand-mgmt .section-card-header strong {
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.brand-mgmt .section-card-header span {
+  color: #777a7f;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.brand-mgmt .section-body {
+  display: grid;
+  gap: 10px;
+}
+
+.brand-mgmt .section-empty {
+  margin: 0;
+  padding: 18px 10px;
+  border: 1px dashed #cfd1d4;
+  border-radius: 9px;
+  color: #8b8e93;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* 인플루언서 행 — 꾹 눌러 끌고 있는 동안 */
+.brand-mgmt .table-row.dragging {
+  opacity: 0.45;
+}
+
+/* 상위 분류 설정 */
+.brand-mgmt .section-settings {
+  display: grid;
+  gap: 8px;
+}
+
+.brand-mgmt .section-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+}
+
+.brand-mgmt .section-swatch {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #e2e3e5;
+  border-radius: 5px;
+}
+
+.brand-mgmt .section-name {
+  flex: 1 1 120px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.brand-mgmt .section-name:disabled {
+  background: var(--soft);
+  color: #8b8e93;
+}
+
+.brand-mgmt .section-palette {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.brand-mgmt .section-chip {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid rgba(20, 21, 22, 0.12);
+  border-radius: 50%;
+}
+
+.brand-mgmt .section-chip.active {
+  box-shadow: 0 0 0 2px #fff inset, 0 0 0 3px var(--ink);
+}
+
+.brand-mgmt .section-picker {
+  width: 24px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fff;
+}
+
+.brand-mgmt .section-alpha {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.brand-mgmt .section-alpha input {
+  width: 74px;
+}
+
+.brand-mgmt .section-alpha span {
+  width: 30px;
+  color: #777a7f;
+  font-size: 11px;
+  font-weight: 650;
+  text-align: right;
+}
+
+.brand-mgmt .group-section-select {
+  flex: 0 0 auto;
+  height: 30px;
+  max-width: 116px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .brand-mgmt .group-card {
   border: 1px solid #e2e3e5;
   border-radius: 10px;
