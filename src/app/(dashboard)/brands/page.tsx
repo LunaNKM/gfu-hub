@@ -483,6 +483,18 @@ function detectPlatform(url: string): Platform {
   return "기타";
 }
 
+/**
+ * 붙여넣은 계정명 칸에 실제 ID 대신 표시 이름이 들어오는 일이 잦다. 링크에서
+ * 계정명을 뽑을 수 있으면 그쪽을 계정명으로 쓰고, 적어 준 값은 표시 이름으로
+ * 남겨 둔다 — 검색은 표시 이름으로도 걸린다.
+ */
+function resolveHandle(pasted: string, profileUrl: string) {
+  const typed = pasted.trim().replace(/^@/, "");
+  const fromUrl = handleFromUrl(profileUrl);
+  const handle = fromUrl || typed;
+  return { handle, displayName: typed || handle };
+}
+
 /** 프로필 URL에서 계정명을 뽑아낸다. 게시물 URL(/p/, /reel/)은 계정명을 알 수 없어 빈 값. */
 function handleFromUrl(url: string) {
   if (!url) return "";
@@ -618,16 +630,18 @@ function normalizeBrand(raw: unknown): Brand | null {
   const normalizeInfluencer = (item: unknown, index: number): Influencer => {
     const inf = (item ?? {}) as Record<string, unknown>;
     const profileUrl = typeof inf.profileUrl === "string" ? inf.profileUrl : "";
-    const handle = typeof inf.handle === "string" ? inf.handle : "";
+    const stored = typeof inf.handle === "string" ? inf.handle : "";
+    const storedName =
+      typeof inf.displayName === "string" && inf.displayName ? inf.displayName : stored;
+    // 예전에 표시 이름을 계정명으로 저장해 둔 문서도 링크 기준으로 맞춘다.
+    const fromUrl = handleFromUrl(profileUrl);
+    const handle = fromUrl || stored;
     const numberOrNull = (input: unknown) =>
       typeof input === "number" && Number.isFinite(input) ? input : null;
     return {
       id: typeof inf.id === "string" ? inf.id : `inf-${index}`,
       handle,
-      displayName:
-        typeof inf.displayName === "string" && inf.displayName
-          ? inf.displayName
-          : handle,
+      displayName: storedName || handle,
       followers: numberOrNull(inf.followers),
       profileUrl,
       platform:
@@ -872,10 +886,10 @@ function parsePaste(text: string): ParsedInfluencer[] {
             parseAmount(value) === null &&
             /[a-zA-Z0-9_.@가-힣ぁ-んァ-ン一-龯]/.test(value),
         ) ?? "";
-      const handle = displayValue.replace(/^@/, "") || handleFromUrl(profileUrl);
+      const { handle, displayName } = resolveHandle(displayValue, profileUrl);
       return {
         handle,
-        displayName: displayValue || handle,
+        displayName,
         followers: followerValue ? parseFollower(followerValue) : null,
         profileUrl,
         platform: detectPlatform(profileUrl),
@@ -920,7 +934,7 @@ function parseBulkPaste(
     const urlRaw = swapped ? cellD : cellE;
     const periodId = target.periodId;
     const profileUrl = isProfileUrl(urlRaw) ? urlRaw.trim() : "";
-    const handle = handleRaw.trim().replace(/^@/, "") || handleFromUrl(profileUrl);
+    const { handle, displayName } = resolveHandle(handleRaw, profileUrl);
     if (!brandName.trim() || !periodId || (!handle && !profileUrl)) {
       skipped += 1;
       continue;
@@ -929,7 +943,7 @@ function parseBulkPaste(
       brandName: brandName.trim(),
       periodId,
       handle,
-      displayName: handleRaw.trim() || handle,
+      displayName,
       followers: parseFollower(followerRaw),
       profileUrl,
       platform: detectPlatform(profileUrl),
@@ -1049,6 +1063,8 @@ type CrmRecord = {
   key: string;
   handle: string;
   displayName: string;
+  /** 같은 사람에게 붙은 표시 이름들 — 검색에만 쓴다. */
+  aliases: string[];
   platforms: Platform[];
   followers: number | null;
   profileUrl: string;
@@ -1100,6 +1116,12 @@ function buildCrmRecords(brands: Brand[]): CrmRecord[] {
           if (!entry.pool && !existing.brandNames.includes(entry.brandName)) {
             existing.brandNames.push(entry.brandName);
           }
+          if (
+            influencer.displayName &&
+            !existing.aliases.includes(influencer.displayName)
+          ) {
+            existing.aliases.push(influencer.displayName);
+          }
           if (!existing.profileUrl && entry.profileUrl) {
             existing.profileUrl = entry.profileUrl;
           }
@@ -1111,6 +1133,7 @@ function buildCrmRecords(brands: Brand[]): CrmRecord[] {
             key,
             handle: influencer.handle || key,
             displayName: influencer.displayName || influencer.handle || key,
+            aliases: influencer.displayName ? [influencer.displayName] : [],
             platforms: [entry.platform],
             followers: entry.followers,
             profileUrl: entry.profileUrl,
@@ -2925,7 +2948,7 @@ function CampaignDetail({
     }
     const row = event.currentTarget;
     const { clientX, clientY } = event;
-    const label = influencer.handle ? `@${influencer.handle}` : "인플루언서";
+    const label = influencer.handle || "인플루언서";
     endPress();
     pressRef.current = {
       x: clientX,
@@ -3097,7 +3120,6 @@ function CampaignDetail({
                           </span>
                         </label>
                         <label>
-                          <span>@</span>
                           <input
                             value={influencer.handle}
                             placeholder="account"
@@ -3802,7 +3824,7 @@ function CrmPage({
     const matchesTerm =
       !term ||
       record.handle.toLowerCase().includes(term) ||
-      record.displayName.toLowerCase().includes(term) ||
+      record.aliases.some((alias) => alias.toLowerCase().includes(term)) ||
       record.brandNames.some((name) => name.toLowerCase().includes(term)) ||
       record.partners.some((name) => name.toLowerCase().includes(term));
     const matchesBrand =
