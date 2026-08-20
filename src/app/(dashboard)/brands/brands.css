@@ -1037,6 +1037,72 @@
   font-weight: 650;
 }
 
+/* 일괄 등록 — 대상 고르기 줄 */
+.brand-mgmt .bulk-target {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.brand-mgmt .bulk-target label {
+  flex: 1 1 130px;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.brand-mgmt .bulk-target label span {
+  color: #8b8e93;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.brand-mgmt .bulk-target select {
+  width: 100%;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.brand-mgmt .bulk-target select:disabled {
+  background: var(--soft);
+  color: #8b8e93;
+}
+
+/* 2차 사용 처리 드롭다운 — 표 안과 미리보기 양쪽에서 쓴다 */
+.brand-mgmt .secondary-pick {
+  width: 100%;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px dashed #cfd1d4;
+  border-radius: 7px;
+  background: #fff;
+  color: #777a7f;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.brand-mgmt .preview-table .secondary-pick {
+  width: auto;
+  flex: 0 0 auto;
+  max-width: 120px;
+}
+
+.brand-mgmt .preview-table .needs-choice {
+  background: var(--orange-soft);
+  border-radius: 8px;
+}
+
+.brand-mgmt .preview-table .needs-choice .secondary-pick {
+  border-color: #e0a878;
+  color: #b35d21;
+}
+
 .brand-mgmt .group-card {
   border: 1px solid #e2e3e5;
   border-radius: 10px;

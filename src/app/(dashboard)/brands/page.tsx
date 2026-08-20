@@ -68,6 +68,14 @@ const DEFAULT_GROUPS = [
 ];
 const UNASSIGNED_GROUP_ID = "group-unassigned";
 
+/**
+ * CRM 에만 올리는 인원을 담아 두는 시스템 브랜드. 브랜드 목록·숨긴 브랜드 어디에도
+ * 나오지 않고, CRM 에서도 '참여 브랜드'로 세지 않는다 — 계정 정보만 모아 두는 곳이다.
+ */
+const CRM_POOL_BRAND_ID = "crm-pool";
+const CRM_POOL_BRAND_NAME = "CRM 전용";
+const isCrmPool = (brand: { id: string }) => brand.id === CRM_POOL_BRAND_ID;
+
 /** 상위 분류 — 그룹(하위 분류)들을 하나의 그리드로 묶는다. 지정 전에는 전부 '기본'. */
 const DEFAULT_SECTION_ID = "section-default";
 const DEFAULT_SECTION_NAME = "기본";
@@ -142,6 +150,11 @@ type Influencer = {
   /** 공유 링크로 브랜드 측이 남기는 코멘트. 이 브랜드 안에서만 보이며 동기화되지 않는다. */
   brandComment: string;
   groupId: string;
+  /**
+   * 브랜드 화면에서 지운 인원. 문서에서 없애지 않고 표시만 해 둔다 — CRM 은 이
+   * 이력을 미진행 상태로 계속 보여준다.
+   */
+  removed?: boolean;
 };
 
 type Period = {
@@ -455,6 +468,13 @@ const percent = (value: number, total: number) =>
   total > 0 ? Math.min(Math.round((value / total) * 100), 100) : 0;
 const numFmt = (value: number) => Math.round(value).toLocaleString("ko-KR");
 
+/**
+ * 화면에 보여줄 2차 사용분. 저장은 계속 '광고 포함 총액'이라, 단가를 뺀 차액만
+ * 보여준다. 총액이 없으면(확인중) null.
+ */
+const secondaryUse = (rateJpy: number | null, adRateJpy: number | null) =>
+  adRateJpy === null ? null : adRateJpy - (rateJpy ?? 0);
+
 /** 예산 소진 기준가 — 광고 2차사용 포함 단가가 있으면 그 값, 없으면 기본 단가. */
 const billableRate = (influencer: Influencer) =>
   influencer.adRateJpy ?? influencer.rateJpy ?? 0;
@@ -507,7 +527,8 @@ function buildShareSnapshot(brand: Brand, period: Period) {
   // "0명인 카테고리"는 목표 인원(target)이 아니라 실제 배정된 인원 기준으로 판단한다 —
   // 일괄 등록으로 만든 기간은 목표 인원이 전부 0으로 시작하는데, 그걸 기준으로 하면
   // 실제로는 사람이 배정돼 있는데도 공유 페이지가 통째로 텅 비어 보인다.
-  const groupIdsWithInfluencers = new Set(period.influencers.map((influencer) => influencer.groupId));
+  const living = livingInfluencers(period);
+  const groupIdsWithInfluencers = new Set(living.map((influencer) => influencer.groupId));
   const visibleGroups = period.groups.filter(
     (group) => group.active && groupIdsWithInfluencers.has(group.id),
   );
@@ -517,7 +538,7 @@ function buildShareSnapshot(brand: Brand, period: Period) {
     concepts: brand.concepts,
     conceptColors: brand.conceptColors ?? {},
     groups: visibleGroups.map((group) => ({ id: group.id, name: group.name, target: group.target })),
-    influencers: period.influencers
+    influencers: living
       .filter((influencer) => visibleGroupIds.has(influencer.groupId))
       .map((influencer) => ({
         id: influencer.id,
@@ -629,6 +650,7 @@ function normalizeBrand(raw: unknown): Brand | null {
       brandComment: typeof inf.brandComment === "string" ? inf.brandComment : "",
       groupId:
         typeof inf.groupId === "string" ? inf.groupId : UNASSIGNED_GROUP_ID,
+      removed: inf.removed === true,
     };
   };
 
@@ -739,10 +761,14 @@ function normalizeBrand(raw: unknown): Brand | null {
   };
 }
 
+/** 브랜드 화면에 보이는 인원 — CRM 이력으로만 남긴 인원은 뺀다. */
+const livingInfluencers = (period: Period) =>
+  period.influencers.filter((influencer) => !influencer.removed);
+
 function getMetrics(period: Period) {
   const activeGroups = period.groups.filter((group) => group.active);
   const activeGroupIds = new Set(activeGroups.map((group) => group.id));
-  const confirmed = period.influencers.filter(
+  const confirmed = livingInfluencers(period).filter(
     (influencer) =>
       influencer.status === "확정" && activeGroupIds.has(influencer.groupId),
   );
@@ -809,19 +835,6 @@ function parseStatus(value: string): InfluencerStatus {
   return "미진행";
 }
 
-/** "26 Q3", "26Q3", "2026 Q3", "Q3" 를 모두 "26Q3" 로 맞춘다. */
-function parsePeriodId(value: string): string | null {
-  const raw = value.trim().toUpperCase().replace(/\s+/g, "");
-  const full = raw.match(/^(?:20)?(\d{2})Q([1-4])$/);
-  if (full) {
-    const id = `${full[1]}Q${full[2]}`;
-    return PERIOD_IDS.includes(id) ? id : null;
-  }
-  const quarterOnly = raw.match(/^Q([1-4])$/);
-  if (quarterOnly) return `26Q${quarterOnly[1]}`;
-  return null;
-}
-
 function splitCells(line: string) {
   return (line.includes("\t") ? line.split("\t") : line.split(/[,;]\s*|\s{2,}/)).map(
     (cell) => cell.trim(),
@@ -879,15 +892,14 @@ function parsePaste(text: string): ParsedInfluencer[] {
 }
 
 /**
- * 일괄 붙여넣기 — 브랜드 / 기간 / 계정명 / 팔로워 / 링크 / 단가 / 광고 포함 단가 / 상태.
- * 상태 칸은 생략할 수 있고, 생략하면 "미진행"으로 들어간다.
- *
- * locked 를 주면 브랜드·기간 칸 없이 계정명부터 붙여넣는다 — 브랜드 캠페인 안에서
- * 여는 일괄 등록이 그 경우다.
+ * 일괄 붙여넣기 — 계정명 / 팔로워 / 링크 / 단가 / 광고 포함 단가 / 상태.
+ * 단가는 항상 '기본 단가 → 광고 포함 총액' 순서로 들어온다. 상태 칸은 생략할 수
+ * 있고, 생략하면 "미진행"으로 들어간다. 어느 브랜드·기간에 넣을지는 붙여넣는
+ * 내용이 아니라 모달의 드롭다운으로 고른다.
  */
 function parseBulkPaste(
   text: string,
-  locked?: { brandName: string; periodId: string },
+  target: { brandName: string; periodId: string },
 ): { rows: BulkRow[]; skipped: number } {
   const lines = text
     .split(/\r?\n/)
@@ -897,20 +909,21 @@ function parseBulkPaste(
   const rows: BulkRow[] = [];
 
   for (const line of lines) {
-    if (isHeaderLine(line) && (locked || line.includes("브랜드"))) continue;
+    if (isHeaderLine(line)) continue;
     const cells = splitCells(line);
-    if (cells.length < (locked ? 1 : 3)) {
+    if (!cells.length) {
       skipped += 1;
       continue;
     }
-    const [brandName = "", periodRaw = "", handleRaw = "", cellD = "", cellE = "", rateRaw = "", adRateRaw = "", statusRaw = ""] =
-      locked ? [locked.brandName, locked.periodId, ...cells] : cells;
+    const [handleRaw = "", cellD = "", cellE = "", rateRaw = "", adRateRaw = "", statusRaw = ""] =
+      cells;
+    const brandName = target.brandName;
     // 팔로워와 링크 칸을 바꿔 붙여넣는 경우가 잦다. 링크는 생김새로 구별되니
     // 두 칸이 뒤집혀 있으면 되돌려 준다 — 안 그러면 팔로워와 링크가 함께 사라진다.
     const swapped = isProfileUrl(cellD) && !isProfileUrl(cellE);
     const followerRaw = swapped ? cellE : cellD;
     const urlRaw = swapped ? cellD : cellE;
-    const periodId = locked ? locked.periodId : parsePeriodId(periodRaw);
+    const periodId = target.periodId;
     const profileUrl = isProfileUrl(urlRaw) ? urlRaw.trim() : "";
     const handle = handleRaw.trim().replace(/^@/, "") || handleFromUrl(profileUrl);
     if (!brandName.trim() || !periodId || (!handle && !profileUrl)) {
@@ -946,24 +959,74 @@ const FOLLOWER_TIERS = [
  * '마이크로 (설명계)' 도 그냥 '마이크로' 도 마이크로다. 팔로워를 모르면 마이크로로
  * 보내고, 맞는 그룹이 아예 없으면 미분류로 둔다.
  */
-function autoGroupId(groups: Group[], followers: number | null) {
-  const keyword =
-    FOLLOWER_TIERS.find((tier) => (followers ?? 0) >= tier.min)?.keyword ?? "마이크로";
-  const active = groups.filter((group) => group.active);
-  const match =
-    keyword === "마이크로"
-      ? // 마이크로가 여럿이면 설명계를 먼저 본다.
-        active.find(
-          (group) => group.name.includes("마이크로") && group.name.includes("설명"),
-        ) ?? active.find((group) => group.name.includes("마이크로"))
-      : active.find((group) => group.name.includes(keyword));
-  return match?.id ?? UNASSIGNED_GROUP_ID;
+function tierKeyword(followers: number | null) {
+  return FOLLOWER_TIERS.find((tier) => (followers ?? 0) >= tier.min)?.keyword ?? "마이크로";
+}
+
+/** 이름에 구간 이름이 들어 있으면 같은 그룹으로 본다. 마이크로가 여럿이면 설명계 우선. */
+function findTierGroup(groups: Group[], keyword: string, sectionId?: string) {
+  const pool = groups.filter(
+    (group) => group.active && (!sectionId || group.sectionId === sectionId),
+  );
+  if (keyword !== "마이크로") return pool.find((group) => group.name.includes(keyword));
+  return (
+    pool.find((group) => group.name.includes("마이크로") && group.name.includes("설명")) ??
+    pool.find((group) => group.name.includes("마이크로"))
+  );
+}
+
+/**
+ * 팔로워 수로 갈 그룹을 고른다. 상위 분류를 주면 그 분류 안에서만 찾는다.
+ * 팔로워를 모르면 마이크로로 보내고, 맞는 그룹이 없으면 미분류로 둔다.
+ */
+function autoGroupId(groups: Group[], followers: number | null, sectionId?: string) {
+  return findTierGroup(groups, tierKeyword(followers), sectionId)?.id ?? UNASSIGNED_GROUP_ID;
+}
+
+function ensureUnassigned(groups: Group[]): Group[] {
+  return groups.some((group) => group.id === UNASSIGNED_GROUP_ID)
+    ? groups
+    : [
+        ...groups,
+        {
+          id: UNASSIGNED_GROUP_ID,
+          name: "미분류",
+          target: 0,
+          active: true,
+          sectionId: DEFAULT_SECTION_ID,
+        },
+      ];
+}
+
+/** 붙여넣은 인원이 필요로 하는 구간 그룹을, 고른 상위 분류 안에 만들어 둔다. */
+function ensureTierGroups(
+  groups: Group[],
+  sectionId: string,
+  rows: { followers: number | null }[],
+): Group[] {
+  const needed = [...new Set(rows.map((row) => tierKeyword(row.followers)))];
+  let next = [...groups];
+  let seq = 0;
+  for (const keyword of needed) {
+    if (findTierGroup(next, keyword, sectionId)) continue;
+    next = [
+      ...next,
+      {
+        id: `group-${Date.now()}-${seq++}`,
+        name: keyword === "마이크로" ? "마이크로 (설명계)" : keyword,
+        target: 0,
+        active: true,
+        sectionId,
+      },
+    ];
+  }
+  return next;
 }
 
 function isDuplicate(period: Period, influencer: Influencer) {
   const key = crmKey(influencer);
   const url = influencer.profileUrl.toLowerCase().replace(/\/$/, "");
-  return period.influencers.some(
+  return livingInfluencers(period).some(
     (candidate) =>
       candidate.id !== influencer.id &&
       ((key && crmKey(candidate) === key) ||
@@ -974,6 +1037,8 @@ function isDuplicate(period: Period, influencer: Influencer) {
 type CrmEntry = {
   brandId: string;
   brandName: string;
+  /** CRM 전용으로 올린 인원 — 캠페인 이력이 아니다. */
+  pool: boolean;
   periodId: string;
   groupName: string;
   partner: string;
@@ -997,7 +1062,11 @@ type CrmRecord = {
   entries: CrmEntry[];
   latestRate: number | null;
   latestAdRate: number | null;
+  /** 최근 2차 사용분 — 광고 포함 총액을 준 그 건의 차액. */
+  latestSecondary: number | null;
   confirmedCount: number;
+  /** 실제 캠페인 진행 건수 — CRM 전용 항목은 빼고 센다. */
+  runCount: number;
   /** 동일 인물의 모든 항목에 동기화된 코멘트. */
   comment: string;
 };
@@ -1015,6 +1084,7 @@ function buildCrmRecords(brands: Brand[]): CrmRecord[] {
         const entry: CrmEntry = {
           brandId: brand.id,
           brandName: brand.name,
+          pool: isCrmPool(brand),
           periodId: period.id,
           groupName: groupName(influencer.groupId),
           partner: influencer.partner,
@@ -1034,7 +1104,7 @@ function buildCrmRecords(brands: Brand[]): CrmRecord[] {
           if (entry.partner && !existing.partners.includes(entry.partner)) {
             existing.partners.push(entry.partner);
           }
-          if (!existing.brandNames.includes(entry.brandName)) {
+          if (!entry.pool && !existing.brandNames.includes(entry.brandName)) {
             existing.brandNames.push(entry.brandName);
           }
           if (!existing.profileUrl && entry.profileUrl) {
@@ -1052,11 +1122,13 @@ function buildCrmRecords(brands: Brand[]): CrmRecord[] {
             followers: entry.followers,
             profileUrl: entry.profileUrl,
             partners: entry.partner ? [entry.partner] : [],
-            brandNames: [entry.brandName],
+            brandNames: entry.pool ? [] : [entry.brandName],
             entries: [entry],
             latestRate: null,
             latestAdRate: null,
+            latestSecondary: null,
             confirmedCount: 0,
+            runCount: 0,
             comment: influencer.comment,
           });
         }
@@ -1070,20 +1142,26 @@ function buildCrmRecords(brands: Brand[]): CrmRecord[] {
         (a, b) => PERIOD_IDS.indexOf(b.periodId) - PERIOD_IDS.indexOf(a.periodId),
       );
       const withFollowers = ordered.find((entry) => entry.followers !== null);
+      const withAdRate = ordered.find((entry) => entry.adRateJpy !== null);
       return {
         ...record,
         entries: ordered,
         followers: withFollowers?.followers ?? null,
         latestRate: ordered.find((entry) => entry.rateJpy !== null)?.rateJpy ?? null,
-        latestAdRate:
-          ordered.find((entry) => entry.adRateJpy !== null)?.adRateJpy ?? null,
-        confirmedCount: ordered.filter((entry) => entry.status === "확정").length,
+        latestAdRate: withAdRate?.adRateJpy ?? null,
+        latestSecondary: withAdRate
+          ? secondaryUse(withAdRate.rateJpy, withAdRate.adRateJpy)
+          : null,
+        confirmedCount: ordered.filter(
+          (entry) => !entry.pool && entry.status === "확정",
+        ).length,
+        runCount: ordered.filter((entry) => !entry.pool).length,
       };
     })
     .sort(
       (a, b) =>
         b.confirmedCount - a.confirmedCount ||
-        b.entries.length - a.entries.length ||
+        b.runCount - a.runCount ||
         (b.followers ?? 0) - (a.followers ?? 0),
     );
 }
@@ -1512,10 +1590,13 @@ export default function BrandManagementPage() {
     brands.find((brand) => brand.id === selectedBrandId) ?? null;
   const visibleBrands = brands.filter(
     (brand) =>
+      !isCrmPool(brand) &&
       brand.visibility === "visible" &&
       brand.name.toLowerCase().includes(query.toLowerCase()),
   );
-  const hiddenBrands = brands.filter((brand) => brand.visibility === "hidden");
+  const hiddenBrands = brands.filter(
+    (brand) => !isCrmPool(brand) && brand.visibility === "hidden",
+  );
   const crmRecords = useMemo(() => buildCrmRecords(brands), [brands]);
 
   function openBrand(brandId: string) {
@@ -1714,13 +1795,9 @@ export default function BrandManagementPage() {
       {modal?.type === "bulk" && (
         <BulkImportModal
           brands={brands}
-          locked={
+          fixed={
             modal.brandId && modal.periodId
-              ? {
-                  brandName:
-                    brands.find((item) => item.id === modal.brandId)?.name ?? "",
-                  periodId: modal.periodId,
-                }
+              ? { brandId: modal.brandId, periodId: modal.periodId }
               : undefined
           }
           onClose={() => setModal(null)}
@@ -2807,7 +2884,7 @@ function CampaignDetail({
   }
 
   function renderGroupCard(group: Group) {
-    const items = period.influencers.filter(
+    const items = livingInfluencers(period).filter(
       (influencer) => influencer.groupId === group.id,
     );
     const confirmed = items.filter(
@@ -2910,7 +2987,7 @@ function CampaignDetail({
                   <span>계정</span>
                   <span>팔로워</span>
                   <span>단가 (JPY)</span>
-                  <span>광고 포함 (JPY)</span>
+                  <span>2차 사용 (JPY)</span>
                   <span>그룹</span>
                   <span>협력사</span>
                   <span>콘셉트</span>
@@ -2990,7 +3067,7 @@ function CampaignDetail({
                           updateInfluencer(influencer.id, { followers: value })
                         }
                       />
-                      <div className="rate-input">
+                      <div className="rate-input accent">
                         <span>¥</span>
                         <NumberInput
                           value={influencer.rateJpy}
@@ -3001,17 +3078,48 @@ function CampaignDetail({
                           }
                         />
                       </div>
-                      <div className="rate-input accent">
-                        <span>¥</span>
-                        <NumberInput
-                          value={influencer.adRateJpy}
-                          placeholder="-"
-                          ariaLabel={`${influencer.handle} 광고 포함 단가`}
-                          onChange={(value) =>
-                            updateInfluencer(influencer.id, { adRateJpy: value })
-                          }
-                        />
-                      </div>
+                      {influencer.adRateJpy === null ? (
+                        // 2차 사용 금액이 안 들어온 행 — 받은 금액의 성격을 정해 준다.
+                        <select
+                          className="secondary-pick"
+                          value=""
+                          aria-label={`${influencer.handle} 2차 사용`}
+                          onChange={(event) => {
+                            if (event.target.value === "included") {
+                              // 받은 금액이 2차 사용까지 포함한 값이면 단가는 알 수 없다.
+                              updateInfluencer(influencer.id, {
+                                rateJpy: null,
+                                adRateJpy: influencer.rateJpy,
+                              });
+                            } else if (event.target.value === "manual") {
+                              updateInfluencer(influencer.id, {
+                                adRateJpy: influencer.rateJpy ?? 0,
+                              });
+                            }
+                          }}
+                        >
+                          <option value="">확인중</option>
+                          <option value="included">2차 사용 포함</option>
+                          <option value="manual">직접 입력</option>
+                        </select>
+                      ) : (
+                        <div className="rate-input accent">
+                          <span>¥</span>
+                          <NumberInput
+                            value={secondaryUse(influencer.rateJpy, influencer.adRateJpy)}
+                            placeholder="-"
+                            ariaLabel={`${influencer.handle} 2차 사용`}
+                            onChange={(value) =>
+                              updateInfluencer(influencer.id, {
+                                adRateJpy:
+                                  value === null
+                                    ? null
+                                    : (influencer.rateJpy ?? 0) + value,
+                              })
+                            }
+                          />
+                        </div>
+                      )}
                       <select
                         value={influencer.groupId}
                         aria-label={`${influencer.handle} 그룹`}
@@ -3072,11 +3180,15 @@ function CampaignDetail({
                       <button
                         className="row-delete"
                         aria-label="인플루언서 삭제"
+                        title="브랜드에서 제외합니다. CRM 이력에는 미진행으로 남습니다."
                         onClick={() =>
                           onUpdate((current) => ({
                             ...current,
-                            influencers: current.influencers.filter(
-                              (item) => item.id !== influencer.id,
+                            // 문서에서 지우지 않는다 — CRM 에 미진행 이력으로 남는다.
+                            influencers: current.influencers.map((item) =>
+                              item.id === influencer.id
+                                ? { ...item, removed: true, status: "미진행" }
+                                : item,
                             ),
                           }))
                         }
@@ -3286,7 +3398,7 @@ function CampaignDetail({
             onClick={() => onPeriodChange(item.id)}
           >
             {periodLabel(item.id)}
-            <small>{numFmt(item.influencers.length)}명</small>
+            <small>{numFmt(livingInfluencers(item).length)}명</small>
           </button>
         ))}
         {!!missingPeriods.length && (
@@ -3326,7 +3438,7 @@ function CampaignDetail({
             </div>
             <div className="heading-actions">
               <span className="count-pill">
-                {numFmt(period.influencers.length)}명 등록
+                {numFmt(livingInfluencers(period).length)}명 등록
               </span>
               <button className="secondary-button" onClick={onBulk}>
                 <CopyPlus size={16} /> 일괄 등록
@@ -3656,7 +3768,7 @@ function CrmPage({
     );
   });
 
-  const totalRuns = records.reduce((sum, record) => sum + record.entries.length, 0);
+  const totalRuns = records.reduce((sum, record) => sum + record.runCount, 0);
   const repeatCount = records.filter((record) => record.brandNames.length > 1).length;
   const filtersActive = !!(
     brandFilter.length ||
@@ -3760,7 +3872,7 @@ function CrmPage({
             format={(value) => compactOr(value)}
           />
           <RangeInputFilter
-            label={useAdRate ? "단가 (광고 포함)" : "단가"}
+            label={useAdRate ? "단가 (2차 사용 포함)" : "단가"}
             unit="JPY"
             value={rateRange}
             onChange={setRateRange}
@@ -3773,7 +3885,7 @@ function CrmPage({
                   onChange={(event) => setUseAdRate(event.target.checked)}
                 />
                 <span className="custom-check">{useAdRate && <Check size={11} />}</span>
-                광고 포함 단가 기준
+                2차 사용 포함 단가 기준
               </label>
             }
           />
@@ -3798,7 +3910,7 @@ function CrmPage({
             <span>참여 브랜드</span>
             <span>협력사</span>
             <span>최근 단가</span>
-            <span>광고 포함</span>
+            <span>2차 사용</span>
           </div>
           {filtered.map((record) => (
             <button
@@ -3826,7 +3938,7 @@ function CrmPage({
               </span>
               <span className="crm-num">{compactOr(record.followers)}</span>
               <span className="crm-num">
-                <b>{record.confirmedCount}</b>/{record.entries.length}건
+                <b>{record.confirmedCount}</b>/{record.runCount}건
               </span>
               <span className="crm-brands">
                 {record.brandNames.slice(0, 3).map((name) => (
@@ -3841,8 +3953,8 @@ function CrmPage({
                   ? record.partners.join(", ")
                   : "-"}
               </span>
-              <span className="crm-num">{yenOr(record.latestRate)}</span>
-              <span className="crm-num accent">{yenOr(record.latestAdRate)}</span>
+              <span className="crm-num accent">{yenOr(record.latestRate)}</span>
+              <span className="crm-num accent">{yenOr(record.latestSecondary)}</span>
             </button>
           ))}
         </div>
@@ -3925,14 +4037,14 @@ function CrmDetailModal({
           </div>
           <div>
             <span>총 진행 건수</span>
-            <strong>{record.entries.length}<small>건</small></strong>
+            <strong>{record.runCount}<small>건</small></strong>
           </div>
           <div>
             <span>확정 건수</span>
             <strong>{confirmed.length}<small>건</small></strong>
           </div>
           <div>
-            <span>평균 단가 (광고 포함)</span>
+            <span>평균 단가 (2차 사용 포함)</span>
             <strong>{yenOr(average)}</strong>
           </div>
         </div>
@@ -3968,7 +4080,7 @@ function CrmDetailModal({
             <span>플랫폼</span>
             <span>상태</span>
             <span>단가</span>
-            <span>광고 포함</span>
+            <span>2차 사용</span>
           </div>
           {record.entries.map((entry, index) => (
             <div className="history-row" key={`${entry.brandId}-${entry.periodId}-${index}`}>
@@ -3982,8 +4094,10 @@ function CrmDetailModal({
               <span>
                 <em className={`status-tag status-${entry.status}`}>{entry.status}</em>
               </span>
-              <span className="crm-num">{yenOr(entry.rateJpy)}</span>
-              <span className="crm-num accent">{yenOr(entry.adRateJpy)}</span>
+              <span className="crm-num accent">{yenOr(entry.rateJpy)}</span>
+              <span className="crm-num accent">
+                {yenOr(secondaryUse(entry.rateJpy, entry.adRateJpy))}
+              </span>
             </div>
           ))}
         </div>
@@ -4614,7 +4728,7 @@ function SettingsModal({
                     className={item.id === period.id ? "period-manage-row on" : "period-manage-row"}
                   >
                     <strong>{periodLabel(item.id)}</strong>
-                    <small>{item.influencers.length}명</small>
+                    <small>{livingInfluencers(item).length}명</small>
                     {brand.periods.length > 1 && (
                       <button
                         type="button"
@@ -4821,7 +4935,7 @@ function ImportModal({
           </div>
           <div className="preview-table">
             {parsed.slice(0, 5).map((item, index) => {
-              const duplicate = period.influencers.some(
+              const duplicate = livingInfluencers(period).some(
                 (candidate) => crmKey(candidate) === crmKey(item),
               );
               return (
@@ -4830,8 +4944,8 @@ function ImportModal({
                   <div>
                     <strong>{item.handle || "계정명 없음"}</strong>
                     <small>
-                      {compactOr(item.followers)} followers · {yenOr(item.rateJpy)} /{" "}
-                      {yenOr(item.adRateJpy)}
+                      {compactOr(item.followers)} followers · {yenOr(item.rateJpy)} · 2차{" "}
+                      {yenOr(secondaryUse(item.rateJpy, item.adRateJpy))}
                     </small>
                   </div>
                   {duplicate ? (
@@ -4889,55 +5003,66 @@ type BulkApply = {
 
 function BulkImportModal({
   brands,
-  locked,
+  fixed,
   onClose,
   onApply,
 }: {
   brands: Brand[];
-  /** 브랜드 캠페인 안에서 열었을 때 — 브랜드·기간이 이미 정해져 있다. */
-  locked?: { brandName: string; periodId: string };
+  /** 브랜드 캠페인 안에서 열었을 때 — 대상 브랜드와 기간이 이미 정해져 있다. */
+  fixed?: { brandId: string; periodId: string };
   onClose: () => void;
   onApply: (value: BulkApply) => void;
 }) {
+  const targetBrands = brands.filter((brand) => !isCrmPool(brand));
   const [text, setText] = useState("");
   const [partner, setPartner] = useState("RL");
-  const { rows, skipped } = useMemo(() => parseBulkPaste(text, locked), [text, locked]);
+  /** 대상 — 브랜드 id 또는 CRM 전용. */
+  const [targetId, setTargetId] = useState(fixed?.brandId ?? CRM_POOL_BRAND_ID);
+  const [periodId, setPeriodId] = useState(fixed?.periodId ?? CURRENT_PERIOD_ID);
+  const [sectionId, setSectionId] = useState(DEFAULT_SECTION_ID);
+  /** 2차 사용 금액이 비어 온 행의 처리 — 행 번호별로 고른다. */
+  const [choices, setChoices] = useState<Record<number, "확인중" | "포함">>({});
 
-  const brandKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, "");
-  const summary = useMemo(() => {
-    const byBrand = new Map<string, Set<string>>();
-    for (const row of rows) {
-      const key = brandKey(row.brandName);
-      if (!byBrand.has(key)) byBrand.set(key, new Set());
-      byBrand.get(key)!.add(row.periodId);
-    }
-    const newBrands = [...byBrand.keys()].filter(
-      (key) => !brands.some((brand) => brandKey(brand.name) === key),
-    );
-    return {
-      brandCount: byBrand.size,
-      newBrandCount: newBrands.length,
-      periodCount: new Set(rows.map((row) => `${brandKey(row.brandName)}|${row.periodId}`))
-        .size,
-    };
-  }, [rows, brands]);
+  const toCrm = targetId === CRM_POOL_BRAND_ID;
+  const targetBrand = targetBrands.find((brand) => brand.id === targetId) ?? null;
+  const targetPeriod =
+    targetBrand?.periods.find((item) => item.id === periodId) ?? null;
+  const sections = targetPeriod?.sections ?? [defaultSection()];
+
+  const { rows, skipped } = useMemo(
+    () =>
+      parseBulkPaste(text, {
+        brandName: toCrm ? CRM_POOL_BRAND_NAME : targetBrand?.name ?? "",
+        periodId: toCrm ? CURRENT_PERIOD_ID : periodId,
+      }),
+    [text, toCrm, targetBrand, periodId],
+  );
+
+  // 2차 사용이 비어 온 행을 위로 올린다 — 고르지 않으면 등록이 막히기 때문이다.
+  const ordered = useMemo(() => {
+    const indexed = rows.map((row, index) => ({ row, index }));
+    return [
+      ...indexed.filter(({ row }) => row.adRateJpy === null),
+      ...indexed.filter(({ row }) => row.adRateJpy !== null),
+    ];
+  }, [rows]);
+  const pending = ordered.filter(
+    ({ row, index }) => row.adRateJpy === null && !choices[index],
+  );
+
+  /** 고른 값을 반영한 최종 금액. '포함'이면 받은 금액이 곧 총액이고 단가는 모른다. */
+  function resolveRates(row: BulkRow, index: number) {
+    if (row.adRateJpy !== null) return { rateJpy: row.rateJpy, adRateJpy: row.adRateJpy };
+    return choices[index] === "포함"
+      ? { rateJpy: null, adRateJpy: row.rateJpy }
+      : { rateJpy: row.rateJpy, adRateJpy: null };
+  }
 
   function build(): BulkApply {
-    const existing = new Map(brands.map((brand) => [brandKey(brand.name), brand]));
-    const created = new Map<string, Brand>();
-    // 브랜드 → 기간 → 추가할 인플루언서
-    const grouped = new Map<string, Map<string, BulkRow[]>>();
-
-    for (const row of rows) {
-      const key = brandKey(row.brandName);
-      if (!grouped.has(key)) grouped.set(key, new Map());
-      const periods = grouped.get(key)!;
-      if (!periods.has(row.periodId)) periods.set(row.periodId, []);
-      periods.get(row.periodId)!.push(row);
-    }
-
+    const resolved = rows.map((row, index) => ({ ...row, ...resolveRates(row, index) }));
     const stamp = Date.now();
     let counter = 0;
+
     const toInfluencer = (row: BulkRow, groups: Group[]): Influencer => ({
       id: `inf-${stamp}-${counter++}`,
       handle: row.handle,
@@ -4952,41 +5077,28 @@ function BulkImportModal({
       concept: "",
       comment: "",
       brandComment: "",
-      groupId: autoGroupId(groups, row.followers),
+      groupId: toCrm
+        ? UNASSIGNED_GROUP_ID
+        : autoGroupId(groups, row.followers, sectionId),
     });
 
     const mergeIntoPeriod = (period: Period, incoming: BulkRow[]): Period => {
-      // 미분류는 갈 곳 없는 행이 실제로 생겼을 때만 만든다.
-      const needsUnassigned = incoming.some(
-        (row) => autoGroupId(period.groups, row.followers) === UNASSIGNED_GROUP_ID,
-      );
-      const groups =
-        !needsUnassigned ||
-        period.groups.some((group) => group.id === UNASSIGNED_GROUP_ID)
-          ? period.groups
-          : [
-              ...period.groups,
-              {
-                id: UNASSIGNED_GROUP_ID,
-                name: "미분류",
-                target: 0,
-                active: true,
-                sectionId: DEFAULT_SECTION_ID,
-              },
-            ];
+      // 고른 상위 분류 안에 구간 그룹이 없으면 목표 0으로 만들어 넣는다.
+      const groups = toCrm
+        ? ensureUnassigned(period.groups)
+        : ensureTierGroups(period.groups, sectionId, incoming);
       const influencers = [...period.influencers];
       for (const row of incoming) {
-        const next = toInfluencer(row, period.groups);
-        // 플랫폼까지 같아야 "같은 계정"이다 — 같은 사람이라도 IG/TT/YT 핸들이
-        // 텍스트로 우연히 같으면 서로 다른 계정이므로 덮어써서는 안 된다.
+        const next = toInfluencer(row, groups);
         const key = crmKey(next) && `${crmKey(next)}|${next.platform}`;
         const index = influencers.findIndex(
           (candidate) => key && `${crmKey(candidate)}|${candidate.platform}` === key,
         );
         if (index >= 0) {
-          // 이미 있는 계정이면 값을 갱신하고 그룹은 유지한다.
           influencers[index] = {
             ...influencers[index],
+            // 지웠던 인원을 다시 넣으면 브랜드 화면에 되살아난다.
+            removed: false,
             displayName: next.displayName || influencers[index].displayName,
             followers: next.followers ?? influencers[index].followers,
             profileUrl: next.profileUrl || influencers[index].profileUrl,
@@ -5003,76 +5115,72 @@ function BulkImportModal({
       return { ...period, groups, influencers };
     };
 
-    for (const [key, periodMap] of grouped) {
-      const target = existing.get(key);
-      if (target) continue;
-      const sampleName = rows.find((row) => brandKey(row.brandName) === key)!.brandName;
-      let brand: Brand = {
-        id: `${sampleName
-          .toLowerCase()
-          .replace(/[^a-z0-9가-힣]+/g, "-")
-          .replace(/^-|-$/g, "")}-${stamp}`,
-        name: sampleName,
-        visibility: "visible",
-        partners: [...new Set([partner, ...DEFAULT_PARTNERS])],
-        concepts: [],
-        periods: [],
-        updatedAt: new Date().toISOString(),
-      };
-      for (const [periodId, incoming] of periodMap) {
-        brand = {
-          ...brand,
-          periods: sortPeriods([
-            ...brand.periods,
-            mergeIntoPeriod(importedPeriod(periodId), incoming),
-          ]),
+    if (toCrm) {
+      const pool = brands.find(isCrmPool);
+      if (!pool) {
+        const period = mergeIntoPeriod(newPeriod(CURRENT_PERIOD_ID, 0, 0), resolved);
+        return {
+          createdBrands: [
+            {
+              id: CRM_POOL_BRAND_ID,
+              name: CRM_POOL_BRAND_NAME,
+              visibility: "hidden",
+              partners: DEFAULT_PARTNERS,
+              concepts: [],
+              periods: [period],
+              updatedAt: new Date().toISOString(),
+            },
+          ],
+          updates: [],
         };
       }
-      created.set(key, brand);
+      return {
+        createdBrands: [],
+        updates: [
+          {
+            brandId: pool.id,
+            apply: (brand) => ({
+              ...brand,
+              periods: brand.periods.map((item, index) =>
+                index === 0 ? mergeIntoPeriod(item, resolved) : item,
+              ),
+            }),
+          },
+        ],
+      };
     }
 
-    const updates: BulkApply["updates"] = [];
-    for (const [key, periodMap] of grouped) {
-      const target = existing.get(key);
-      if (!target) continue;
-      updates.push({
-        brandId: target.id,
-        apply: (brand) => {
-          let periods = brand.periods;
-          for (const [periodId, incoming] of periodMap) {
-            const found = periods.find((item) => item.id === periodId);
-            periods = found
-              ? periods.map((item) =>
-                  item.id === periodId ? mergeIntoPeriod(item, incoming) : item,
-                )
-              : [...periods, mergeIntoPeriod(importedPeriod(periodId), incoming)];
-          }
-          return {
+    if (!targetBrand) return { createdBrands: [], updates: [] };
+    return {
+      createdBrands: [],
+      updates: [
+        {
+          brandId: targetBrand.id,
+          apply: (brand) => ({
             ...brand,
-            partners: brand.partners.includes(partner)
-              ? brand.partners
-              : [...brand.partners, partner],
-            periods: sortPeriods(periods),
-          };
+            periods: brand.periods.some((item) => item.id === periodId)
+              ? brand.periods.map((item) =>
+                  item.id === periodId ? mergeIntoPeriod(item, resolved) : item,
+                )
+              : sortPeriods([
+                  ...brand.periods,
+                  mergeIntoPeriod(importedPeriod(periodId), resolved),
+                ]),
+          }),
         },
-      });
-    }
-
-    return { createdBrands: [...created.values()], updates };
+      ],
+    };
   }
 
   const partnerOptions = [
     ...new Set([...DEFAULT_PARTNERS, ...brands.flatMap((brand) => brand.partners)]),
   ];
+  const blocked = !rows.length || !!pending.length || (!toCrm && !targetBrand);
 
   return (
     <Modal
       title="인플루언서 일괄 등록"
-      description={
-        locked
-          ? `${locked.brandName} · ${periodLabel(locked.periodId)} · 계정명 · 팔로워 · 링크 · 단가 · 광고 포함 단가 · 상태 순서로 붙여넣으세요.`
-          : "브랜드 · 기간 · 계정명 · 팔로워 · 링크 · 단가 · 광고 포함 단가 · 상태 순서로 붙여넣으세요."
-      }
+      description="계정명 · 팔로워 · 링크 · 단가 · 광고 포함 총액 · 상태 순서로 붙여넣으세요."
       onClose={onClose}
       wide
     >
@@ -5081,20 +5189,67 @@ function BulkImportModal({
           <div className="paste-guide">
             <span>1</span>
             <div>
-              <strong>엑셀에서 그대로 붙여넣기</strong>
+              <strong>대상 고르기</strong>
               <p>
-                {locked
-                  ? "브랜드와 기간 칸 없이 계정명부터 붙여넣으세요. "
-                  : "없는 브랜드와 기간은 자동으로 만들어지고, "}
-                이미 있는 계정은 값이 갱신됩니다. 단가가 없는 칸은 <code>-</code> 로
-                두면 됩니다. 상태 칸을 비우면 미진행으로 들어갑니다.
-              </p>
-              <p>
-                그룹은 팔로워 수로 자동 배정됩니다 — 20만 이상 매크로, 10만 이상
-                미들, 그 아래는 마이크로. 맞는 이름의 그룹이 없으면 미분류로
-                들어갑니다.
+                CRM 전용을 고르면 브랜드에 등록되지 않고 CRM 목록에만 올라갑니다.
+                브랜드를 고르면 팔로워 수로 그룹이 자동 배정됩니다 — 20만 이상
+                매크로, 10만 이상 미들, 그 아래는 마이크로.
               </p>
             </div>
+          </div>
+          <div className="bulk-target">
+            <label>
+              <span>대상</span>
+              <select
+                value={targetId}
+                disabled={!!fixed}
+                onChange={(event) => setTargetId(event.target.value)}
+              >
+                <option value={CRM_POOL_BRAND_ID}>CRM 전용 (브랜드 없음)</option>
+                {targetBrands.map((brand) => (
+                  <option key={brand.id} value={brand.id}>
+                    {brand.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {!toCrm && (
+              <label>
+                <span>기간</span>
+                <select
+                  value={periodId}
+                  disabled={!!fixed}
+                  onChange={(event) => setPeriodId(event.target.value)}
+                >
+                  {PERIOD_IDS.map((id) => (
+                    <option key={id} value={id}>
+                      {periodLabel(id)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {!toCrm && (
+              <label>
+                <span>상위 분류</span>
+                <select
+                  value={sectionId}
+                  onChange={(event) => setSectionId(event.target.value)}
+                >
+                  {sections.map((section) => (
+                    <option key={section.id} value={section.id}>
+                      {section.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label>
+              <span>협력사</span>
+              <select value={partner} onChange={(event) => setPartner(event.target.value)}>
+                {partnerOptions.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
           </div>
           <textarea
             className="paste-area tall"
@@ -5102,19 +5257,10 @@ function BulkImportModal({
             value={text}
             onChange={(event) => setText(event.target.value)}
             placeholder={
-              locked
-                ? "minamikato_0115\t204000\thttps://www.instagram.com/minamikato_0115/\t-\t514000\t확정\n" +
-                  "unn_nel\t16000\thttps://www.instagram.com/unn_nel/\t70000\t80000\t확정"
-                : "스킨앤랩\t26 Q3\tminamikato_0115\t204000\thttps://www.instagram.com/minamikato_0115/\t-\t514000\t확정\n" +
-                  "투슬래시포\t26 Q3\tunn_nel\t16000\thttps://www.instagram.com/unn_nel/\t70000\t80000\t확정"
+              "minamikato_0115\t204000\thttps://www.instagram.com/minamikato_0115/\t420000\t514000\t확정\n" +
+              "unn_nel\t16000\thttps://www.instagram.com/unn_nel/\t70000\t-\t확정"
             }
           />
-          <label className="partner-pick">
-            <span>협력사 (전체 적용)</span>
-            <select value={partner} onChange={(event) => setPartner(event.target.value)}>
-              {partnerOptions.map((item) => <option key={item}>{item}</option>)}
-            </select>
-          </label>
         </div>
         <div className="parse-preview">
           <div className="paste-guide">
@@ -5123,41 +5269,59 @@ function BulkImportModal({
               <strong>자동 인식 결과</strong>
               <p>
                 {rows.length
-                  ? locked
-                    ? `${rows.length}개 행`
-                    : `${rows.length}개 행 · 브랜드 ${summary.brandCount}개(신규 ${summary.newBrandCount}) · 기간 ${summary.periodCount}개`
+                  ? `${rows.length}개 행`
                   : "붙여넣으면 결과가 표시됩니다."}
                 {!!skipped && ` · 건너뜀 ${skipped}행`}
+                {!!pending.length && ` · 2차 사용 선택 필요 ${pending.length}행`}
               </p>
             </div>
           </div>
           <div className="preview-table">
-            {rows.slice(0, 7).map((row, index) => (
-              <div key={`${row.brandName}-${row.handle}-${index}`}>
-                <PlatformAvatar platform={row.platform} />
-                <div>
-                  <strong>{row.handle || "계정명 없음"}</strong>
-                  <small>
-                    {!locked && `${row.brandName} · ${periodLabel(row.periodId)} · `}
-                    {compactOr(row.followers)} · {yenOr(row.rateJpy)} /{" "}
-                    {yenOr(row.adRateJpy)}
-                  </small>
+            {ordered.map(({ row, index }) => {
+              const needsChoice = row.adRateJpy === null;
+              const rates = resolveRates(row, index);
+              return (
+                <div
+                  key={`${row.handle}-${index}`}
+                  className={needsChoice && !choices[index] ? "needs-choice" : undefined}
+                >
+                  <PlatformAvatar platform={row.platform} />
+                  <div>
+                    <strong>{row.handle || "계정명 없음"}</strong>
+                    <small>
+                      {compactOr(row.followers)} · {yenOr(rates.rateJpy)} · 2차{" "}
+                      {yenOr(secondaryUse(rates.rateJpy, rates.adRateJpy))}
+                    </small>
+                  </div>
+                  {needsChoice ? (
+                    <select
+                      className="secondary-pick"
+                      value={choices[index] ?? ""}
+                      aria-label={`${row.handle} 2차 사용 처리`}
+                      onChange={(event) =>
+                        setChoices((current) => ({
+                          ...current,
+                          [index]: event.target.value as "확인중" | "포함",
+                        }))
+                      }
+                    >
+                      <option value="" disabled>
+                        선택
+                      </option>
+                      <option value="포함">2차 사용 포함</option>
+                      <option value="확인중">확인중</option>
+                    </select>
+                  ) : (
+                    <em className={`status-tag status-${row.status}`}>{row.status}</em>
+                  )}
                 </div>
-                <em className={`status-tag status-${row.status}`}>{row.status}</em>
-              </div>
-            ))}
-            {rows.length > 7 && (
-              <p className="more-preview">외 {rows.length - 7}개 행</p>
-            )}
+              );
+            })}
             {!rows.length && (
               <EmptyState
                 icon={<Upload size={20} />}
                 title="아직 붙여넣은 내용이 없습니다"
-                description={
-                  locked
-                    ? "계정명이나 링크가 있는 행만 등록됩니다."
-                    : "브랜드와 기간 칸이 채워진 행만 등록됩니다."
-                }
+                description="계정명이나 링크가 있는 행만 등록됩니다."
               />
             )}
           </div>
@@ -5167,10 +5331,10 @@ function BulkImportModal({
         <button className="secondary-button" onClick={onClose}>취소</button>
         <button
           className="primary-button"
-          disabled={!rows.length}
+          disabled={blocked}
           onClick={() => onApply(build())}
         >
-          {rows.length}건 등록
+          {pending.length ? `2차 사용 ${pending.length}건 선택 필요` : `${rows.length}건 등록`}
         </button>
       </div>
     </Modal>
