@@ -1037,6 +1037,55 @@
   font-weight: 650;
 }
 
+/* CRM xlsx 내보내기 — 협력사 체크박스 */
+.brand-mgmt .export-partners {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.brand-mgmt .export-partners .check-label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.brand-mgmt .export-partners .check-label:has(input:checked) {
+  border-color: var(--ink);
+}
+
+.brand-mgmt .export-partners .check-label input:checked + .custom-check {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.brand-mgmt .export-partners .check-label strong {
+  font-size: 12px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brand-mgmt .export-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #777a7f;
+  font-size: 12px;
+  font-weight: 650;
+}
+
 /* 일괄 등록 — 대상 고르기 줄 */
 .brand-mgmt .bulk-target {
   display: flex;

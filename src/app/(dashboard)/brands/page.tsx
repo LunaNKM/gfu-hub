@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CircleDollarSign,
   CopyPlus,
+  Download,
   Eye,
   EyeOff,
   FileText,
@@ -139,7 +140,7 @@ type Influencer = {
   platform: Platform;
   /** 기본 단가 (JPY) — 광고 2차사용 제외 */
   rateJpy: number | null;
-  /** 광고 2차사용까지 포함한 단가 (JPY) — 예산 소진 기준 */
+  /** 2차 사용 단가 (JPY) — 입력받은 값을 그대로 쓴다 */
   adRateJpy: number | null;
   partner: string;
   status: InfluencerStatus;
@@ -204,6 +205,7 @@ type ModalState =
   | { type: "delete"; brandId: string }
   | { type: "import"; brandId: string; periodId: string; groupId: string }
   | { type: "crm"; key: string }
+  | { type: "crm-export" }
   | null;
 
 type DataStatus = "demo" | "connecting" | "connected" | "saving" | "error";
@@ -467,13 +469,6 @@ const compactOr = (value: number | null) =>
 const percent = (value: number, total: number) =>
   total > 0 ? Math.min(Math.round((value / total) * 100), 100) : 0;
 const numFmt = (value: number) => Math.round(value).toLocaleString("ko-KR");
-
-/**
- * 화면에 보여줄 2차 사용분. 저장은 계속 '광고 포함 총액'이라, 단가를 뺀 차액만
- * 보여준다. 총액이 없으면(확인중) null.
- */
-const secondaryUse = (rateJpy: number | null, adRateJpy: number | null) =>
-  adRateJpy === null ? null : adRateJpy - (rateJpy ?? 0);
 
 /** 예산 소진 기준가 — 광고 2차사용 포함 단가가 있으면 그 값, 없으면 기본 단가. */
 const billableRate = (influencer: Influencer) =>
@@ -1062,8 +1057,6 @@ type CrmRecord = {
   entries: CrmEntry[];
   latestRate: number | null;
   latestAdRate: number | null;
-  /** 최근 2차 사용분 — 광고 포함 총액을 준 그 건의 차액. */
-  latestSecondary: number | null;
   confirmedCount: number;
   /** 실제 캠페인 진행 건수 — CRM 전용 항목은 빼고 센다. */
   runCount: number;
@@ -1126,7 +1119,6 @@ function buildCrmRecords(brands: Brand[]): CrmRecord[] {
             entries: [entry],
             latestRate: null,
             latestAdRate: null,
-            latestSecondary: null,
             confirmedCount: 0,
             runCount: 0,
             comment: influencer.comment,
@@ -1149,9 +1141,6 @@ function buildCrmRecords(brands: Brand[]): CrmRecord[] {
         followers: withFollowers?.followers ?? null,
         latestRate: ordered.find((entry) => entry.rateJpy !== null)?.rateJpy ?? null,
         latestAdRate: withAdRate?.adRateJpy ?? null,
-        latestSecondary: withAdRate
-          ? secondaryUse(withAdRate.rateJpy, withAdRate.adRateJpy)
-          : null,
         confirmedCount: ordered.filter(
           (entry) => !entry.pool && entry.status === "확정",
         ).length,
@@ -1164,6 +1153,71 @@ function buildCrmRecords(brands: Brand[]): CrmRecord[] {
         b.runCount - a.runCount ||
         (b.followers ?? 0) - (a.followers ?? 0),
     );
+}
+
+/** 협력사 체크박스에서 '협력사 없음'을 가리키는 값. 실제 협력사 이름과 겹치지 않는다. */
+const NO_PARTNER = "__none__";
+
+/**
+ * 고른 협력사의 이력만 남긴 인플루언서 한 줄. 가격은 그 이력들 중 가장 최근 값이고,
+ * 남은 이력이 없으면 목록에서 빠진다.
+ */
+function exportRow(record: CrmRecord, partners: string[]) {
+  const entries = record.entries.filter((entry) =>
+    partners.includes(entry.partner || NO_PARTNER),
+  );
+  if (!entries.length) return null;
+  // entries 는 이미 최근 기간이 앞으로 오게 정렬돼 있다.
+  const usedPartners = [
+    ...new Set(entries.map((entry) => entry.partner).filter(Boolean)),
+  ];
+  return {
+    handle: record.handle,
+    displayName: record.displayName,
+    platform: entries.find((entry) => entry.platform)?.platform ?? "기타",
+    followers: entries.find((entry) => entry.followers !== null)?.followers ?? null,
+    profileUrl: record.profileUrl,
+    rateJpy: entries.find((entry) => entry.rateJpy !== null)?.rateJpy ?? null,
+    adRateJpy: entries.find((entry) => entry.adRateJpy !== null)?.adRateJpy ?? null,
+    partners: usedPartners.length ? usedPartners.join(", ") : "미지정",
+  };
+}
+
+async function downloadCrmXlsx(records: CrmRecord[], partners: string[]) {
+  const rows = records
+    .map((record) => exportRow(record, partners))
+    .filter((row): row is NonNullable<ReturnType<typeof exportRow>> => row !== null);
+  if (!rows.length) return 0;
+
+  const XLSX = await import("xlsx");
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    book,
+    XLSX.utils.json_to_sheet(
+      rows.map((row) => ({
+        계정: row.handle,
+        팔로워: row.followers,
+        링크: row.profileUrl,
+        단가: row.rateJpy,
+        "2차 사용": row.adRateJpy,
+        협력사: row.partners,
+      })),
+    ),
+    "인플루언서",
+  );
+  XLSX.utils.book_append_sheet(
+    book,
+    XLSX.utils.json_to_sheet(
+      rows.map((row) => ({
+        계정: row.handle,
+        플랫폼: row.platform,
+        링크: row.profileUrl,
+      })),
+    ),
+    "플랫폼",
+  );
+  XLSX.writeFile(book, `인플루언서_CRM_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  return rows.length;
 }
 
 function InstagramLogo({ size = 13 }: { size?: number }) {
@@ -1691,6 +1745,7 @@ export default function BrandManagementPage() {
           <CrmPage
             records={crmRecords}
             onOpen={(key) => setModal({ type: "crm", key })}
+            onExport={() => setModal({ type: "crm-export" })}
             onBulk={() => setModal({ type: "bulk" })}
           />
         ) : view === "hidden" ? (
@@ -1807,6 +1862,9 @@ export default function BrandManagementPage() {
             setModal(null);
           }}
         />
+      )}
+      {modal?.type === "crm-export" && (
+        <CrmExportModal records={crmRecords} onClose={() => setModal(null)} />
       )}
       {modal?.type === "crm" && (
         <CrmDetailModal
@@ -3092,9 +3150,7 @@ function CampaignDetail({
                                 adRateJpy: influencer.rateJpy,
                               });
                             } else if (event.target.value === "manual") {
-                              updateInfluencer(influencer.id, {
-                                adRateJpy: influencer.rateJpy ?? 0,
-                              });
+                              updateInfluencer(influencer.id, { adRateJpy: 0 });
                             }
                           }}
                         >
@@ -3106,16 +3162,11 @@ function CampaignDetail({
                         <div className="rate-input accent">
                           <span>¥</span>
                           <NumberInput
-                            value={secondaryUse(influencer.rateJpy, influencer.adRateJpy)}
+                            value={influencer.adRateJpy}
                             placeholder="-"
                             ariaLabel={`${influencer.handle} 2차 사용`}
                             onChange={(value) =>
-                              updateInfluencer(influencer.id, {
-                                adRateJpy:
-                                  value === null
-                                    ? null
-                                    : (influencer.rateJpy ?? 0) + value,
-                              })
+                              updateInfluencer(influencer.id, { adRateJpy: value })
                             }
                           />
                         </div>
@@ -3701,10 +3752,12 @@ function CrmPage({
   records,
   onOpen,
   onBulk,
+  onExport,
 }: {
   records: CrmRecord[];
   onOpen: (key: string) => void;
   onBulk: () => void;
+  onExport: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [brandFilter, setBrandFilter] = useState<string[]>([]);
@@ -3788,6 +3841,10 @@ function CrmPage({
           <p>브랜드·기간을 넘나드는 인플루언서 단가와 진행 이력을 모아봅니다.</p>
         </div>
         <div className="header-actions">
+          <button className="secondary-button" onClick={onExport}>
+            <Download size={16} />
+            xlsx 다운로드
+          </button>
           <button className="secondary-button" onClick={onBulk}>
             <CopyPlus size={16} />
             일괄 등록
@@ -3954,7 +4011,7 @@ function CrmPage({
                   : "-"}
               </span>
               <span className="crm-num accent">{yenOr(record.latestRate)}</span>
-              <span className="crm-num accent">{yenOr(record.latestSecondary)}</span>
+              <span className="crm-num accent">{yenOr(record.latestAdRate)}</span>
             </button>
           ))}
         </div>
@@ -3979,6 +4036,104 @@ function CrmPage({
         />
       )}
     </div>
+  );
+}
+
+/** 협력사를 골라 CRM 목록을 xlsx 로 받는다. 대상은 화면 필터와 무관하게 CRM 전체다. */
+function CrmExportModal({
+  records,
+  onClose,
+}: {
+  records: CrmRecord[];
+  onClose: () => void;
+}) {
+  const options = useMemo(() => {
+    const names = [
+      ...new Set(
+        records.flatMap((record) => record.entries.map((entry) => entry.partner)),
+      ),
+    ]
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    const hasNone = records.some((record) =>
+      record.entries.some((entry) => !entry.partner),
+    );
+    return [
+      ...names.map((name) => ({ value: name, label: name })),
+      ...(hasNone ? [{ value: NO_PARTNER, label: "미지정" }] : []),
+    ];
+  }, [records]);
+
+  const [selected, setSelected] = useState<string[]>(() =>
+    options.map((option) => option.value),
+  );
+  const [busy, setBusy] = useState(false);
+
+  const count = records.filter((record) => exportRow(record, selected)).length;
+
+  return (
+    <Modal
+      title="인플루언서 목록 내보내기"
+      description="협력사를 고르면 그 협력사의 이력만 추립니다. 가격은 남은 이력 중 가장 최근 값입니다."
+      onClose={onClose}
+    >
+      <div className="export-partners">
+        {options.map((option) => (
+          <label className="check-label" key={option.value}>
+            <input
+              type="checkbox"
+              checked={selected.includes(option.value)}
+              onChange={() =>
+                setSelected((current) =>
+                  current.includes(option.value)
+                    ? current.filter((item) => item !== option.value)
+                    : [...current, option.value],
+                )
+              }
+            />
+            <span className="custom-check">
+              {selected.includes(option.value) && <Check size={13} />}
+            </span>
+            <strong>{option.label}</strong>
+          </label>
+        ))}
+        {!options.length && <p className="multi-filter-empty">협력사 정보가 없습니다.</p>}
+      </div>
+      <div className="export-summary">
+        <button
+          type="button"
+          className="filter-reset"
+          onClick={() =>
+            setSelected(
+              selected.length === options.length
+                ? []
+                : options.map((option) => option.value),
+            )
+          }
+        >
+          {selected.length === options.length ? "전체 해제" : "전체 선택"}
+        </button>
+        <span>{numFmt(count)}명이 내려받아집니다</span>
+      </div>
+      <div className="modal-actions">
+        <button className="secondary-button" onClick={onClose}>취소</button>
+        <button
+          className="primary-button"
+          disabled={!count || busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await downloadCrmXlsx(records, selected);
+              onClose();
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <Download size={16} /> {busy ? "만드는 중…" : "xlsx 내려받기"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -4095,9 +4250,7 @@ function CrmDetailModal({
                 <em className={`status-tag status-${entry.status}`}>{entry.status}</em>
               </span>
               <span className="crm-num accent">{yenOr(entry.rateJpy)}</span>
-              <span className="crm-num accent">
-                {yenOr(secondaryUse(entry.rateJpy, entry.adRateJpy))}
-              </span>
+              <span className="crm-num accent">{yenOr(entry.adRateJpy)}</span>
             </div>
           ))}
         </div>
@@ -4945,7 +5098,7 @@ function ImportModal({
                     <strong>{item.handle || "계정명 없음"}</strong>
                     <small>
                       {compactOr(item.followers)} followers · {yenOr(item.rateJpy)} · 2차{" "}
-                      {yenOr(secondaryUse(item.rateJpy, item.adRateJpy))}
+                      {yenOr(item.adRateJpy)}
                     </small>
                   </div>
                   {duplicate ? (
@@ -5290,7 +5443,7 @@ function BulkImportModal({
                     <strong>{row.handle || "계정명 없음"}</strong>
                     <small>
                       {compactOr(row.followers)} · {yenOr(rates.rateJpy)} · 2차{" "}
-                      {yenOr(secondaryUse(rates.rateJpy, rates.adRateJpy))}
+                      {yenOr(rates.adRateJpy)}
                     </small>
                   </div>
                   {needsChoice ? (
