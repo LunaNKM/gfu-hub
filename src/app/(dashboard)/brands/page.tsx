@@ -1183,6 +1183,15 @@ function exportRow(record: CrmRecord, partners: string[]) {
   };
 }
 
+/** 내보내기 시트 — 플랫폼마다 탭 하나. 해당 인원이 없는 플랫폼은 탭을 만들지 않는다. */
+const EXPORT_SHEETS: { platform: Platform; sheet: string }[] = [
+  { platform: "IG", sheet: "인스타그램" },
+  { platform: "TT", sheet: "틱톡" },
+  { platform: "X", sheet: "X" },
+  { platform: "YT", sheet: "유튜브" },
+  { platform: "기타", sheet: "기타" },
+];
+
 async function downloadCrmXlsx(records: CrmRecord[], partners: string[]) {
   const rows = records
     .map((record) => exportRow(record, partners))
@@ -1191,31 +1200,24 @@ async function downloadCrmXlsx(records: CrmRecord[], partners: string[]) {
 
   const XLSX = await import("xlsx");
   const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(
-    book,
-    XLSX.utils.json_to_sheet(
-      rows.map((row) => ({
-        계정: row.handle,
-        팔로워: row.followers,
-        링크: row.profileUrl,
-        단가: row.rateJpy,
-        "2차 사용": row.adRateJpy,
-        협력사: row.partners,
-      })),
-    ),
-    "인플루언서",
-  );
-  XLSX.utils.book_append_sheet(
-    book,
-    XLSX.utils.json_to_sheet(
-      rows.map((row) => ({
-        계정: row.handle,
-        플랫폼: row.platform,
-        링크: row.profileUrl,
-      })),
-    ),
-    "플랫폼",
-  );
+  for (const { platform, sheet } of EXPORT_SHEETS) {
+    const forPlatform = rows.filter((row) => row.platform === platform);
+    if (!forPlatform.length) continue;
+    XLSX.utils.book_append_sheet(
+      book,
+      XLSX.utils.json_to_sheet(
+        forPlatform.map((row) => ({
+          계정: row.handle,
+          팔로워: row.followers,
+          링크: row.profileUrl,
+          단가: row.rateJpy,
+          "2차 사용": row.adRateJpy,
+          협력사: row.partners,
+        })),
+      ),
+      sheet,
+    );
+  }
   XLSX.writeFile(book, `인플루언서_CRM_${new Date().toISOString().slice(0, 10)}.xlsx`);
   return rows.length;
 }
