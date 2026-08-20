@@ -470,9 +470,9 @@ const percent = (value: number, total: number) =>
   total > 0 ? Math.min(Math.round((value / total) * 100), 100) : 0;
 const numFmt = (value: number) => Math.round(value).toLocaleString("ko-KR");
 
-/** 예산 소진 기준가 — 광고 2차사용 포함 단가가 있으면 그 값, 없으면 기본 단가. */
+/** 예산 소진 기준가 — 기본 단가에 2차 사용 단가를 더한 값. */
 const billableRate = (influencer: Influencer) =>
-  influencer.adRateJpy ?? influencer.rateJpy ?? 0;
+  (influencer.rateJpy ?? 0) + (influencer.adRateJpy ?? 0);
 
 function detectPlatform(url: string): Platform {
   const value = url.toLowerCase();
@@ -3742,11 +3742,14 @@ function inRange(value: number | null, range: RangeValue | null) {
 }
 
 /**
- * 단가 구간 필터의 기준가. 광고 포함을 켜면 광고 2차사용 포함 단가를 쓰되,
- * 그 값이 없는 인플루언서는 기본 단가로 대신 본다 (billableRate 와 같은 규칙).
+ * 단가 구간 필터의 기준가. 2차 사용 포함을 켜면 기본 단가에 2차 사용 단가를
+ * 더해서 본다 (billableRate 와 같은 규칙). 둘 다 없으면 null.
  */
-const filterRate = (record: CrmRecord, useAdRate: boolean) =>
-  useAdRate ? record.latestAdRate ?? record.latestRate : record.latestRate;
+const filterRate = (record: CrmRecord, useAdRate: boolean) => {
+  if (!useAdRate) return record.latestRate;
+  if (record.latestRate === null && record.latestAdRate === null) return null;
+  return (record.latestRate ?? 0) + (record.latestAdRate ?? 0);
+};
 
 function CrmPage({
   records,
@@ -4149,8 +4152,8 @@ function CrmDetailModal({
   if (!record) return null;
   const confirmed = record.entries.filter((entry) => entry.status === "확정");
   const rates = record.entries
-    .map((entry) => entry.adRateJpy ?? entry.rateJpy)
-    .filter((value): value is number => value !== null);
+    .filter((entry) => entry.rateJpy !== null || entry.adRateJpy !== null)
+    .map((entry) => (entry.rateJpy ?? 0) + (entry.adRateJpy ?? 0));
   const average = rates.length
     ? Math.round(rates.reduce((sum, value) => sum + value, 0) / rates.length)
     : null;
