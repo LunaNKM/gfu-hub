@@ -480,6 +480,29 @@
   font-size: 12px;
 }
 
+.brand-mgmt .search-clear {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #ebedf0;
+  color: #6f7277;
+  display: grid;
+  place-items: center;
+}
+
+.brand-mgmt .search-clear:hover {
+  background: #dfe1e4;
+  color: var(--ink);
+}
+
+.brand-mgmt .heading-actions .search-field {
+  width: 200px;
+  height: 34px;
+}
+
 .brand-mgmt .brand-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

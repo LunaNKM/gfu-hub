@@ -770,6 +770,20 @@ function normalizeBrand(raw: unknown): Brand | null {
   };
 }
 
+/** 계정명·표시 이름·협력사·콘셉트·링크 중 하나라도 걸리면 검색에 잡힌다. */
+function matchesInfluencer(influencer: Influencer, term: string) {
+  if (!term) return true;
+  const needle = term.trim().toLowerCase();
+  if (!needle) return true;
+  return [
+    influencer.handle,
+    influencer.displayName,
+    influencer.partner,
+    influencer.concept,
+    influencer.profileUrl,
+  ].some((value) => value.toLowerCase().includes(needle));
+}
+
 /** 브랜드 화면에 보이는 인원 — CRM 이력으로만 남긴 인원은 뺀다. */
 const livingInfluencers = (period: Period) =>
   period.influencers.filter((influencer) => !influencer.removed);
@@ -2737,6 +2751,7 @@ function CampaignDetail({
         period.groups.filter((group) => group.active).map((group) => group.id),
       ),
   );
+  const [search, setSearch] = useState("");
   const [drag, setDrag] = useState<DragItem | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
@@ -2967,13 +2982,15 @@ function CampaignDetail({
   }
 
   function renderGroupCard(group: Group) {
-    const items = livingInfluencers(period).filter(
+    const all = livingInfluencers(period).filter(
       (influencer) => influencer.groupId === group.id,
     );
-    const confirmed = items.filter(
-      (influencer) => influencer.status === "확정",
-    ).length;
-    const isOpen = openGroups.has(group.id);
+    // 목표 대비 확정 인원은 검색과 무관하게 그룹 전체 기준으로 센다.
+    const confirmed = all.filter((influencer) => influencer.status === "확정").length;
+    const items = all.filter((influencer) => matchesInfluencer(influencer, search));
+    // 검색 중에는 걸린 그룹만 펼쳐서 보여준다.
+    if (searching && !items.length) return null;
+    const isOpen = searching || openGroups.has(group.id);
     return (
       <article
         className={[
@@ -3440,6 +3457,11 @@ function CampaignDetail({
     }));
   }
 
+  const searching = !!search.trim();
+  const matchedCount = livingInfluencers(period).filter((influencer) =>
+    matchesInfluencer(influencer, search),
+  ).length;
+
   return (
     <div className={drag ? "campaign-page no-select" : "campaign-page"}>
       <header className="campaign-header">
@@ -3512,8 +3534,28 @@ function CampaignDetail({
               </div>
             </div>
             <div className="heading-actions">
+              <label className="search-field">
+                <Search size={16} />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="계정명, 협력사, 콘셉트 검색"
+                />
+                {!!search && (
+                  <button
+                    type="button"
+                    className="search-clear"
+                    aria-label="검색어 지우기"
+                    onClick={() => setSearch("")}
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </label>
               <span className="count-pill">
-                {numFmt(livingInfluencers(period).length)}명 등록
+                {searching
+                  ? `${numFmt(matchedCount)}명 검색됨`
+                  : `${numFmt(livingInfluencers(period).length)}명 등록`}
               </span>
               <button className="secondary-button" onClick={onBulk}>
                 <CopyPlus size={16} /> 일괄 등록
@@ -3528,6 +3570,8 @@ function CampaignDetail({
                   const sectionGroups = metrics.activeGroups.filter(
                     (group) => group.sectionId === section.id,
                   );
+                  const cards = sectionGroups.map(renderGroupCard).filter(Boolean);
+                  if (searching && !cards.length) return null;
                   return (
                     <section
                       className={[
@@ -3561,8 +3605,8 @@ function CampaignDetail({
                         <span>{numFmt(sectionGroups.length)}개 그룹</span>
                       </header>
                       <div className="section-body">
-                        {sectionGroups.length ? (
-                          sectionGroups.map(renderGroupCard)
+                        {cards.length ? (
+                          cards
                         ) : (
                           <p className="section-empty">그룹을 여기로 끌어다 놓으세요</p>
                         )}
