@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import {
   Home,
   MessageSquare,
-  AppWindow,
+  CalendarDays,
   BarChart2,
   Settings,
   ChevronLeft,
@@ -20,7 +20,7 @@ import { clsx } from 'clsx'
 const navItems = [
   { href: '/', label: '홈', icon: Home },
   { href: '/chat', label: 'AI 채팅', icon: MessageSquare },
-  { href: '/apps', label: '앱 런처', icon: AppWindow },
+  { href: '/calendar', label: '광고 캘린더', icon: CalendarDays },
   // 브랜드 · 인플루언서 CRM · 숨긴 브랜드는 이 탭 안의 하위 탭으로 들어갔다.
   { href: '/brands', label: '브랜드 관리', icon: Briefcase },
   { href: '/analytics', label: '애널리틱스', icon: BarChart2 },

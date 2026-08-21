@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { MessageSquare, AppWindow, ArrowRight, Send } from 'lucide-react'
+import { MessageSquare, CalendarDays, ArrowRight, Send } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { getConversations, createConversation } from '@/lib/services/chat'
 import { Conversation } from '@/types'
@@ -91,14 +91,14 @@ export default function HomePage() {
           </Link>
 
           <Link
-            href="/apps"
+            href="/calendar"
             className="flex flex-col items-center gap-2 p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-300 hover:shadow-sm transition-all text-center"
           >
             <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
-              <AppWindow size={20} className="text-purple-500" />
+              <CalendarDays size={20} className="text-purple-500" />
             </div>
-            <span className="text-sm font-medium text-gray-800">앱 런처</span>
-            <span className="text-xs text-gray-400">업무 앱 바로가기</span>
+            <span className="text-sm font-medium text-gray-800">광고 캘린더</span>
+            <span className="text-xs text-gray-400">캠페인 일정 · 일예산</span>
           </Link>
         </div>
 

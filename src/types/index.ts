@@ -8,18 +8,6 @@ export interface User {
   lastLoginAt: Date
 }
 
-export interface App {
-  id: string
-  name: string
-  url: string
-  icon: string
-  category: string
-  createdAt: Date
-  updatedAt: Date
-  createdBy: string
-  updatedBy: string
-}
-
 export interface Doc {
   id: string
   title: string
@@ -199,3 +187,72 @@ export interface WeeklyMarketReport {
   createdAt: Date
 }
 
+
+// ===== 광고 캘린더 =====
+// 브랜드 목록은 브랜드 관리 탭의 `brands` 와 분리된 전용 컬렉션이다.
+// 자세한 배경은 docs/ad-calendar.md 참고.
+
+export interface AdCalendarBrand {
+  id: string
+  name: string
+  /** 달력 바에 붙는 약칭 (WISH, RJR ...) */
+  short: string
+  /** #rrggbb */
+  color: string
+  /** 집행 시장. 현재는 JP 만 쓴다. */
+  market: string
+  /** 표시용. 일예산 계산에는 쓰지 않는다(넷 기준). */
+  markupRate: number
+  order: number
+  archived: boolean
+  /** 브랜드 관리 탭 brands 문서와의 느슨한 연결 (선택) */
+  linkedBrandId?: string
+  createdAt: Date
+  updatedAt: Date
+  createdBy: string
+  updatedBy: string
+}
+
+export interface AdCampaignLine {
+  /** 's-meta' | 'meta' | 'X' | 'TikTok' 등. 자유 입력이다. */
+  media: string
+  objective: string
+  target: string
+  /** 마크업 제외(넷) JP 매체비 */
+  budgetJpNet: number
+  /** 마크업 제외(넷) KR 매체비 */
+  budgetKrNet: number
+  /** 믹스안이 일예산을 나눈 일수. 캠페인 기간과 다를 수 있다. */
+  days: number
+  /** 라인 기간이 캠페인과 다를 때만 채운다. */
+  startDate?: string
+  endDate?: string
+}
+
+export interface AdCampaignSource {
+  fileName: string
+  sheetName: string
+  importedAt: Date
+}
+
+export interface AdCampaign {
+  id: string
+  brandId: string
+  name: string
+  /** 'Qoo10' | '자사몰' 등 주요 채널 */
+  channel: string
+  /** YYYY-MM-DD */
+  startDate: string
+  endDate: string
+  /** 걸치는 달 목록. Firestore 월별 조회용 (['2026-08','2026-09']) */
+  months: string[]
+  color: string
+  targetRoas?: number
+  memo?: string
+  source?: AdCampaignSource
+  lines: AdCampaignLine[]
+  createdAt: Date
+  updatedAt: Date
+  createdBy: string
+  updatedBy: string
+}

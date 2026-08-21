@@ -36,6 +36,16 @@ service cloud.firestore {
       allow read, write: if isGfutures();
     }
 
+    // 광고 캘린더 — 브랜드 관리 탭의 brands 와는 별개인 전용 목록이다.
+    // 공유 링크 대상이 아니라 스태프만 읽고 쓴다. (docs/ad-calendar.md)
+    match /adCalendarBrands/{brandId} {
+      allow read, write: if isGfutures();
+    }
+
+    match /adCalendarCampaigns/{campaignId} {
+      allow read, write: if isGfutures();
+    }
+
     // ?? ?щ궡 臾몄꽌 ?????????????????????????????????????????????
     // ?쒕쾭 痢?Drive ?숆린??request.auth == null)???덉슜
     match /docs/{docId} {
